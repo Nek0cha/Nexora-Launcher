@@ -17,6 +17,10 @@ pub const MAX_FINISHED_TASKS: usize = 50;
 pub const PROGRESS_NOTIFY_INTERVAL: Duration = Duration::from_millis(100);
 
 /// タスクの状態の変化を外へ伝える口。Tauri 側が実装する。
+///
+/// Notifications may arrive out of revision order across threads. Consumers must
+/// ignore any revision <= the last revision seen for that task and re-fetch the
+/// snapshot when accepting a newer notification.
 pub trait TaskNotifier: Send + Sync {
     fn notify(&self, task_id: &str, revision: u64, change: TaskChange);
 }
@@ -25,6 +29,8 @@ struct Entry {
     snapshot: TaskSnapshot,
     token: CancellationToken,
     last_progress_notify: Option<Instant>,
+    last_progress_revision: u64,
+    progress_flush_pending: bool,
 }
 
 #[derive(Clone)]
@@ -129,6 +135,8 @@ impl TaskManager {
                 },
                 token: token.clone(),
                 last_progress_notify: None,
+                last_progress_revision: 0,
+                progress_flush_pending: false,
             },
         );
         (id, token)
@@ -147,7 +155,14 @@ impl TaskManager {
                 token,
                 manager: manager.clone(),
             };
-            let (state, error) = match work(handle).await {
+            let result = tokio::spawn(async move { work(handle).await })
+                .await
+                .unwrap_or_else(|_| {
+                    Err(CoreError::Unexpected {
+                        message: "task panicked".into(),
+                    })
+                });
+            let (state, error) = match result {
                 Ok(()) => (TaskState::Succeeded, None),
                 Err(CoreError::Cancelled) => (TaskState::Cancelled, None),
                 Err(err) => {
@@ -184,7 +199,7 @@ impl TaskManager {
     }
 
     fn set_progress(&self, id: &str, current: u32, total: u32) {
-        let notify_revision = {
+        let (notify_revision, flush_at) = {
             let mut tasks = self.tasks.lock().unwrap();
             let Some(entry) = tasks.get_mut(id) else {
                 return;
@@ -199,15 +214,49 @@ impl TaskManager {
             let due = entry
                 .last_progress_notify
                 .is_none_or(|last| now.duration_since(last) >= PROGRESS_NOTIFY_INTERVAL);
-            if due {
+            // A pending flush owns the next notification, even if it is delayed
+            // past its deadline while another thread updates progress.
+            if due && !entry.progress_flush_pending {
                 entry.last_progress_notify = Some(now);
-                Some(entry.snapshot.revision)
+                entry.last_progress_revision = entry.snapshot.revision;
+                (Some(entry.snapshot.revision), None)
+            } else if !entry.progress_flush_pending {
+                entry.progress_flush_pending = true;
+                (
+                    None,
+                    entry
+                        .last_progress_notify
+                        .map(|last| last + PROGRESS_NOTIFY_INTERVAL),
+                )
             } else {
-                None
+                (None, None)
             }
         };
         if let Some(revision) = notify_revision {
             self.notifier.notify(id, revision, TaskChange::Progress);
+        }
+        if let Some(deadline) = flush_at {
+            let manager = self.clone();
+            let id = id.to_string();
+            tokio::spawn(async move {
+                tokio::time::sleep_until(deadline).await;
+                let revision = {
+                    let mut tasks = manager.tasks.lock().unwrap();
+                    let Some(entry) = tasks.get_mut(&id) else {
+                        return;
+                    };
+                    entry.progress_flush_pending = false;
+                    if entry.snapshot.state.is_terminal()
+                        || entry.snapshot.revision <= entry.last_progress_revision
+                    {
+                        return;
+                    }
+                    entry.last_progress_notify = Some(Instant::now());
+                    entry.last_progress_revision = entry.snapshot.revision;
+                    entry.snapshot.revision
+                };
+                manager.notifier.notify(&id, revision, TaskChange::Progress);
+            });
         }
     }
 
@@ -358,6 +407,69 @@ mod tests {
         let snap = tasks.get(&id).unwrap();
         assert_eq!(snap.state, TaskState::Failed);
         assert_eq!(snap.error.unwrap().code, "demo.failed");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_task_fails_and_releases_its_unique_kind() {
+        let (tasks, recorder) = manager();
+        let id = tasks.spawn_unique("panic", |_| async {
+            panic!("private panic payload");
+        });
+        settle().await;
+        let snap = tasks.get(&id).unwrap();
+        assert_eq!(snap.state, TaskState::Failed);
+        let error = snap.error.unwrap();
+        assert_eq!(error.code, "app.unexpected");
+        assert_eq!(
+            error,
+            CoreError::Unexpected {
+                message: "task panicked".into()
+            }
+            .to_payload()
+        );
+        assert_eq!(
+            recorder.changes_for(&id).last(),
+            Some(&(snap.revision, TaskChange::State))
+        );
+        let next = tasks.spawn_unique("panic", |_| async { Ok(()) });
+        assert_ne!(id, next);
+        settle().await;
+        assert_eq!(tasks.get(&next).unwrap().state, TaskState::Succeeded);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn suppressed_progress_is_flushed_while_worker_stalls() {
+        let (tasks, recorder) = manager();
+        let id = tasks.spawn("test", |handle| async move {
+            for i in 1..=100 {
+                handle.set_progress(i, 100);
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            Ok(())
+        });
+        settle().await;
+        let latest = tasks.get(&id).unwrap().revision;
+        let progress = || {
+            recorder
+                .changes_for(&id)
+                .into_iter()
+                .filter(|(_, change)| *change == TaskChange::Progress)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(progress().len(), 1);
+        assert!(progress()[0].0 < latest);
+        tokio::time::advance(Duration::from_millis(99)).await;
+        settle().await;
+        assert_eq!(progress().len(), 1);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        settle().await;
+        assert_eq!(progress().len(), 2);
+        assert_eq!(progress()[1], (latest, TaskChange::Progress));
+        assert_eq!(tasks.get(&id).unwrap().state, TaskState::Running);
+        tokio::time::advance(Duration::from_millis(900)).await;
+        settle().await;
+        assert_eq!(progress().len(), 2);
+        assert_eq!(tasks.get(&id).unwrap().state, TaskState::Succeeded);
     }
 
     #[tokio::test(start_paused = true)]
