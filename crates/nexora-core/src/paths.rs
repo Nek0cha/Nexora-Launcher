@@ -94,6 +94,17 @@ impl AppPaths {
     }
 }
 
+use crate::error::CoreError;
+
+impl AppPaths {
+    /// OS の基本のデータフォルダに、プロファイルごとのフォルダ名を付け足す。
+    /// Linux では dirs が $XDG_DATA_HOME を優先する。
+    pub fn resolve(profile: Profile) -> Result<Self, CoreError> {
+        let base = dirs::data_dir().ok_or(CoreError::DataDirUnavailable)?;
+        Ok(Self::from_root(base.join(profile.dir_name())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
