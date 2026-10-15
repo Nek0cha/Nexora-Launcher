@@ -10,7 +10,7 @@ pub const DEMO_KIND: &str = "demo";
 /// 0.1 秒ごとに 1% ずつ進むタスクを始める。fail_at を指定すると、その % でエラーになる。
 /// 実行中のデモタスクがあれば、その ID を返す。
 pub fn start_demo(tasks: &TaskManager, fail_at: Option<u8>) -> String {
-    tasks.spawn_unique(DEMO_KIND, move |handle| async move {
+    tasks.spawn_unique(DEMO_KIND, None, move |handle| async move {
         for percent in 1..=100u32 {
             tokio::select! {
                 _ = handle.token().cancelled() => return Err(CoreError::Cancelled),

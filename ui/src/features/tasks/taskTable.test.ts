@@ -6,6 +6,7 @@ function snap(id: string, revision: number, state: TaskSnapshot["state"] = "runn
   return {
     id,
     kind: "demo",
+    instanceId: null,
     state,
     progress: { current: revision, total: 100 },
     revision,

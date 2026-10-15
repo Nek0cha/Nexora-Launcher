@@ -24,7 +24,7 @@ function mount(tasks: TaskSnapshot[] = []) {
 
 function running(): TaskSnapshot {
   return {
-    id: "t1", kind: "demo", state: "running", progress: { current: 40, total: 100 }, revision: 1,
+    id: "t1", kind: "demo", instanceId: null, state: "running", progress: { current: 40, total: 100 }, revision: 1,
     error: null, createdAt: 0, updatedAt: Date.now(),
   };
 }

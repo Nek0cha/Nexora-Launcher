@@ -11,7 +11,7 @@ import { TaskTray } from "./TaskTray";
 vi.mock("../api/commands", () => ({ cancelTask: vi.fn() }));
 
 const running: TaskSnapshot = {
-  id: "t1", kind: "demo", state: "running", progress: { current: 40, total: 100 }, revision: 1,
+  id: "t1", kind: "demo", instanceId: null, state: "running", progress: { current: 40, total: 100 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0,
 };
 

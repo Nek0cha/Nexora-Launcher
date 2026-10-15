@@ -39,6 +39,8 @@ pub struct TaskProgress {
 pub struct TaskSnapshot {
     pub id: String,
     pub kind: String,
+    /// このタスクが対象とするインスタンス。インスタンスに属さないタスクは None。
+    pub instance_id: Option<String>,
     pub state: TaskState,
     pub progress: TaskProgress,
     pub revision: u64,

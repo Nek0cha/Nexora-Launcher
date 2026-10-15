@@ -51,7 +51,7 @@ fn secret_does_not_reach_logs() {
 async fn secret_does_not_reach_error_payload_or_snapshot() {
     let secret = SecretString::from(SENTINEL.to_string());
     let tasks = TaskManager::new(Arc::new(Silent));
-    let id = tasks.spawn("test", move |_| async move {
+    let id = tasks.spawn("test", None, move |_| async move {
         // 秘密の値を含む文脈でエラーを作っても、Debug は中身を出さない
         Err(CoreError::Unexpected {
             message: format!("refresh failed with {secret:?}"),

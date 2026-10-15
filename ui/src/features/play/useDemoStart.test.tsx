@@ -28,7 +28,7 @@ function setup(tasks: TaskSnapshot[] = []) {
 }
 
 const demo = (state: TaskSnapshot["state"]): TaskSnapshot => ({
-  id: "t1", kind: "demo", state, progress: { current: 1, total: 10 }, revision: 1,
+  id: "t1", kind: "demo", instanceId: null, state, progress: { current: 1, total: 10 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0,
 });
 

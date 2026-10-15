@@ -6,6 +6,7 @@ function snap(state: TaskSnapshot["state"], current = 0, extra: Partial<TaskSnap
   return {
     id: "t1",
     kind: "demo",
+    instanceId: null,
     state,
     progress: { current, total: 100 },
     revision: 1,
