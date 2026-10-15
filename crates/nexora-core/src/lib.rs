@@ -6,3 +6,5 @@ pub mod error;
 
 pub mod db;
 pub mod settings;
+
+pub mod task;

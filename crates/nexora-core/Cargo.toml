@@ -15,6 +15,11 @@ thiserror = "2"
 ts-rs = "12"
 tracing = "0.1"
 
+tokio = { version = "1.53", features = ["rt", "sync", "time", "macros"] }
+tokio-util = "0.7"
+uuid = { version = "1", features = ["v7"] }
+
 [dev-dependencies]
+tokio = { version = "1.53", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "test-util"] }
 insta = { version = "1", features = ["json"] }
 tempfile = "3"
