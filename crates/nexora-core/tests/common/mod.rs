@@ -148,3 +148,26 @@ impl FakeMojang {
             .count()
     }
 }
+
+use std::path::Path;
+use std::pin::Pin;
+
+use nexora_core::error::CoreError;
+use nexora_core::java::verify::{JavaInfo, JavaProbe};
+
+pub struct FixedProbe(pub u32);
+
+impl JavaProbe for FixedProbe {
+    fn probe<'a>(
+        &'a self,
+        _java: &'a Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<JavaInfo, CoreError>> + Send + 'a>> {
+        let major = self.0;
+        Box::pin(async move {
+            Ok(JavaInfo {
+                major,
+                arch: std::env::consts::ARCH.to_string(),
+            })
+        })
+    }
+}

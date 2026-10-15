@@ -1,0 +1,151 @@
+mod common;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use nexora_core::db::Db;
+use nexora_core::install::{InstallEnv, Urls, install};
+use nexora_core::instance::{self, InstanceState};
+use nexora_core::java::find_registered;
+use nexora_core::paths::AppPaths;
+use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
+
+use common::{FakeMojang, FixedProbe, http};
+
+struct Silent;
+impl TaskNotifier for Silent {
+    fn notify(&self, _: &str, _: u64, _: TaskChange) {}
+}
+
+struct Harness {
+    _temp: tempfile::TempDir,
+    env: InstallEnv,
+    tasks: TaskManager,
+}
+
+fn harness(fake: &FakeMojang) -> Harness {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_root(temp.path());
+    paths.ensure_dirs().unwrap();
+    let urls = Urls {
+        manifest: fake.manifest_url(),
+        runtime_index: fake.runtime_index_url(),
+        resources: fake.resources_url(),
+    };
+    let env = InstallEnv::new(
+        paths,
+        Db::open_in_memory().unwrap(),
+        http(),
+        urls,
+        Arc::new(FixedProbe(17)),
+    );
+    Harness {
+        _temp: temp,
+        env,
+        tasks: TaskManager::new(Arc::new(Silent)),
+    }
+}
+
+async fn run_install(h: &Harness, id: &str) -> TaskSnapshot {
+    let env = h.env.clone();
+    let iid = id.to_string();
+    let task = h
+        .tasks
+        .spawn("install", Some(id.into()), move |handle| async move {
+            install(&env, &iid, &handle).await
+        });
+    wait(&h.tasks, &task).await
+}
+
+pub async fn wait(tasks: &TaskManager, id: &str) -> TaskSnapshot {
+    for _ in 0..1500 {
+        let snap = tasks.get(id).unwrap();
+        if snap.state.is_terminal() {
+            return snap;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("task {id} did not finish");
+}
+
+#[tokio::test]
+async fn installs_everything_and_marks_ready() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake);
+    let inst = instance::create(&h.env.db, &h.env.paths, "test", "1.99-test", 1).unwrap();
+    let snap = run_install(&h, &inst.id).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    assert!(snap.progress.total > 0);
+    assert_eq!(snap.progress.current, snap.progress.total);
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Ready
+    );
+    let shared = h.env.paths.shared_dir();
+    assert!(shared.join("versions/1.99-test/1.99-test.jar").is_file());
+    assert!(shared.join("versions/1.99-test/1.99-test.json").is_file());
+    assert!(
+        shared
+            .join("libraries/com/example/lib/1.0/lib-1.0.jar")
+            .is_file()
+    );
+    assert!(find_registered(&h.env.db, "jre-test").unwrap().is_some());
+}
+
+#[tokio::test]
+async fn unknown_version_marks_broken() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake);
+    let inst = instance::create(&h.env.db, &h.env.paths, "x", "9.9.9", 1).unwrap();
+    let snap = run_install(&h, &inst.id).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "meta.version_not_found");
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Broken
+    );
+}
+
+#[tokio::test]
+async fn failed_install_resumes_without_refetching_finished_files() {
+    let fake = FakeMojang::start_with(false).await;
+    let h = harness(&fake);
+    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let first = run_install(&h, &inst.id).await;
+    assert_eq!(first.state, TaskState::Failed);
+    assert_eq!(first.error.unwrap().code, "net.http_status");
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Broken
+    );
+
+    fake.serve_library().await;
+    let second = run_install(&h, &inst.id).await;
+    assert_eq!(second.state, TaskState::Succeeded, "{:?}", second.error);
+    assert_eq!(fake.hits("/client.jar").await, 1);
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Ready
+    );
+}
+
+#[tokio::test]
+async fn cancelled_install_stays_installing() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake);
+    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let env = h.env.clone();
+    let iid = inst.id.clone();
+    let task = h
+        .tasks
+        .spawn("install", Some(inst.id.clone()), move |handle| async move {
+            install(&env, &iid, &handle).await
+        });
+    h.tasks.cancel(&task).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.state, TaskState::Cancelled);
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Installing
+    );
+}

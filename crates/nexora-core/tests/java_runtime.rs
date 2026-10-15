@@ -11,24 +11,7 @@ use nexora_core::net::{Depth, fetch_all};
 use nexora_core::paths::AppPaths;
 use tokio_util::sync::CancellationToken;
 
-use common::{FakeMojang, http};
-
-struct FixedProbe(u32);
-
-impl JavaProbe for FixedProbe {
-    fn probe<'a>(
-        &'a self,
-        _java: &'a Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<JavaInfo, CoreError>> + Send + 'a>> {
-        let major = self.0;
-        Box::pin(async move {
-            Ok(JavaInfo {
-                major,
-                arch: std::env::consts::ARCH.to_string(),
-            })
-        })
-    }
-}
+use common::{FakeMojang, FixedProbe, http};
 
 #[tokio::test]
 async fn installs_and_registers_runtime() {
