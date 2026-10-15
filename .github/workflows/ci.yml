@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     strategy:
@@ -29,7 +36,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust toolchain
-        run: rustup show
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 
@@ -54,10 +61,11 @@ jobs:
           git add -N ui/src/bindings
           git diff --exit-code -- ui/src/bindings
 
-      - name: Frontend typecheck and tests
-        run: |
-          pnpm --filter ui typecheck
-          pnpm --filter ui test --run
+      - name: Frontend typecheck
+        run: pnpm --filter ui typecheck
+
+      - name: Frontend tests
+        run: pnpm --filter ui test --run
 
       - name: Build desktop app (no bundle)
         run: pnpm tauri build --no-bundle
