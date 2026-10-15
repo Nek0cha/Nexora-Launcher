@@ -12,7 +12,7 @@ import type { Theme } from "../bindings/Theme";
 function Section({ title, twoLine = false, children }: { title: string; twoLine?: boolean; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="select-none text-xs font-medium tracking-[0.08em] text-text-muted">{title}</h2>
+      <h2 className="text-xs font-medium tracking-[0.08em] text-text-muted">{title}</h2>
       {/* 設定の項目は細い線で区切る */}
       <div
         className={`flex flex-col divide-y divide-line border-y border-line [&>*]:py-1 ${twoLine ? "[&>*]:min-h-13" : "[&>*]:min-h-11"}`}

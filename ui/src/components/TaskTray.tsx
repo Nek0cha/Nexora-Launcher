@@ -22,7 +22,7 @@ const popoverClass = [
 ].join(" ");
 
 const tooltipClass = [
-  "select-none rounded-sm border border-line bg-surface-2 px-2 py-1 text-xs text-text shadow-float",
+  "rounded-sm border border-line bg-surface-2 px-2 py-1 text-xs text-text shadow-float",
   "transition-[opacity,translate] duration-(--duration-fast) ease-out-quint",
   "data-entering:opacity-0 data-exiting:opacity-0",
   "motion-safe:data-[placement=top]:data-entering:translate-y-1 motion-safe:data-[placement=bottom]:data-entering:-translate-y-1",
@@ -79,7 +79,7 @@ function TaskRow({ task }: { task: TaskSnapshot }) {
                 // 失敗は mutation の error に入り、行の中に出す（未処理の拒否にしない）
                 cancel.mutate(task.id);
               }}
-              className={`grid size-7 shrink-0 select-none place-items-center rounded-sm text-text-muted transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-3 data-hovered:text-text data-pressed:bg-surface-3 ${focusRing}`}
+              className={`grid size-7 shrink-0 place-items-center rounded-sm text-text-muted transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-3 data-hovered:text-text data-pressed:bg-surface-3 ${focusRing}`}
             >
               <IconX aria-hidden className="size-4" />
             </Button>
@@ -92,7 +92,7 @@ function TaskRow({ task }: { task: TaskSnapshot }) {
       {failure && (
         <p role="alert" className="flex items-start gap-2 text-sm text-text">
           <IconWarning aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
-          <span>
+          <span className="select-text">
             {t(errorKey(failure.code, (k) => i18n.exists(k)) as never, {
               ...(failure.params as Record<string, unknown>),
               code: failure.code,
@@ -118,7 +118,7 @@ export function TaskTray() {
     <DialogTrigger>
       <Button
         aria-label={`${t("tasks.title")}, ${t("tasks.running", { count: running })}`}
-        className={`flex h-10 w-full select-none items-center justify-between rounded-md px-3 text-text-muted transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-2 data-pressed:bg-surface-3 ${focusRing}`}
+        className={`flex h-10 w-full items-center justify-between rounded-md px-3 text-text-muted transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-2 data-pressed:bg-surface-3 ${focusRing}`}
       >
         <span>{t("tasks.title")}</span>
         <span className="tabular text-text">{running}</span>

@@ -15,7 +15,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
     <div className="flex max-w-xl flex-col gap-2">
       <p className="flex items-center gap-2 text-danger">
         <IconWarning aria-hidden className="size-4 shrink-0" />
-        <span>
+        <span className="select-text">
           {error
             ? t(errorKey(error.code, (k) => i18n.exists(k)) as never, {
                 ...(error.params as Record<string, unknown>),
@@ -29,7 +29,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
           onPress={() => setShowDetail((v) => !v)}
           aria-expanded={showDetail}
           aria-controls={showDetail ? detailId : undefined}
-          className="self-start select-none rounded-sm text-sm text-text-muted underline underline-offset-2 data-hovered:text-text data-pressed:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="self-start rounded-sm text-sm text-text-muted underline underline-offset-2 data-hovered:text-text data-pressed:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {t("play.details")}
         </Button>
@@ -37,7 +37,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
       {showDetail && error?.detail && (
         <pre
           id={detailId}
-          className="tabular max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
+          className="tabular select-text max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
         >
           {error.detail}
         </pre>

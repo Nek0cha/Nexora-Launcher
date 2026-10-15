@@ -4,7 +4,7 @@ import { Button, Group, Input, Label, NumberField as AriaNumberField, Text } fro
 
 // 押せる範囲は 28px 四方。押した瞬間に面を1段深くし、長押しの連続増減は React Aria の標準の動作に任せる
 const stepButton = [
-  "grid size-7 shrink-0 select-none place-items-center rounded-sm text-text-muted",
+  "grid size-7 shrink-0 place-items-center rounded-sm text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
   "disabled:text-text-faint disabled:hover:bg-transparent",
@@ -33,7 +33,7 @@ export function NumberField(props: {
       className="flex items-center justify-between gap-4"
     >
       <div className="flex flex-col">
-        <Label className="select-none text-text">{props.label}</Label>
+        <Label className="text-text">{props.label}</Label>
         {props.description && (
           <Text slot="description" className="text-xs text-text-muted">
             {props.description}

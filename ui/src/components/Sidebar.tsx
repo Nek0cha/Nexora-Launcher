@@ -31,7 +31,7 @@ const ITEMS: Item[] = [
 ];
 
 const itemBase = [
-  "flex h-10 select-none items-center gap-2.5 rounded-md px-3",
+  "flex h-10 items-center gap-2.5 rounded-md px-3",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   // 押した瞬間に面を1段深くする（離すのを待たない）
   "active:bg-surface-3",
@@ -45,7 +45,7 @@ export function Sidebar({ materialOn, footer }: { materialOn: boolean; footer?: 
       aria-label="Nexora"
       className={`flex w-56 shrink-0 flex-col gap-1 px-3 py-4 ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
     >
-      <p className="mb-3 select-none px-3 font-display text-base font-semibold tracking-[-0.01em] text-text-strong">
+      <p className="mb-3 px-3 font-display text-base font-semibold tracking-[-0.01em] text-text-strong">
         {t("appName")}
       </p>
       {ITEMS.map(({ to, key, Icon, ActiveIcon }) => (

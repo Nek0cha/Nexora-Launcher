@@ -102,7 +102,7 @@ export function CommandPalette() {
                 placeholder={t("palette.placeholder")}
                 className="h-11 min-w-0 flex-1 bg-transparent text-text outline-hidden placeholder:text-text-muted [&::-webkit-search-cancel-button]:hidden"
               />
-              <kbd className="tabular shrink-0 select-none rounded-sm border border-line px-1.5 text-xs text-text-muted">
+              <kbd className="tabular shrink-0 rounded-sm border border-line px-1.5 text-xs text-text-muted">
                 {mod === "⌘" ? "⌘K" : "Ctrl+K"}
               </kbd>
             </SearchField>
@@ -122,7 +122,7 @@ export function CommandPalette() {
                 <MenuItem
                   id={item.id}
                   textValue={item.label}
-                  className="flex h-10 cursor-default select-none items-center rounded-sm px-3 text-text outline-hidden data-focused:bg-surface-3"
+                  className="flex h-10 cursor-default items-center rounded-sm px-3 text-text outline-hidden data-focused:bg-surface-3"
                 >
                   {item.label}
                 </MenuItem>

@@ -15,7 +15,7 @@ const popoverMotion = [
 ].join(" ");
 
 const triggerClass = [
-  "flex h-9 min-w-48 select-none items-center justify-between gap-2 rounded-md border border-line-control bg-surface-1 px-3 text-left text-text",
+  "flex h-9 min-w-48 items-center justify-between gap-2 rounded-md border border-line-control bg-surface-1 px-3 text-left text-text",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 pressed:bg-surface-3",
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
@@ -24,7 +24,7 @@ const triggerClass = [
 // キーボードで移動中の項目は、ホバーと同じ面の明度で示す。この面がフォーカスの印の代わりになる。
 // キーボードを使った後はホバーでフォーカスが移らないため、ホバーにも同じ面を直接付ける
 const optionClass =
-  "flex h-9 cursor-default select-none items-center gap-2 rounded-sm px-2 text-text outline-none hover:bg-surface-3 focused:bg-surface-3 selected:text-text-strong";
+  "flex h-9 cursor-default items-center gap-2 rounded-sm px-2 text-text outline-none hover:bg-surface-3 focused:bg-surface-3 selected:text-text-strong";
 
 export function Select<T extends string>(props: {
   label: string;
@@ -40,7 +40,7 @@ export function Select<T extends string>(props: {
       }}
       className="flex items-center justify-between gap-4"
     >
-      <Label className="select-none text-text">{props.label}</Label>
+      <Label className="text-text">{props.label}</Label>
       <Button className={triggerClass}>
         {/* 項目の中身（チェックの場所）ごと写さず、文字だけを表示する */}
         <SelectValue className="truncate">{({ selectedText }) => selectedText}</SelectValue>

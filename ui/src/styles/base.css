@@ -5,6 +5,16 @@ html {
   background: var(--color-surface-0);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
+  /* 文字は既定で選択できないようにし、コピーする意味のある内容だけ select-text で戻す（設計 8.5 節） */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 入力欄は、既定の選択不可にかかわらず選択できるようにする */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 :lang(ja) body {

@@ -140,7 +140,7 @@ export function PlayButton() {
         aria-label={name}
         aria-describedby={view.kind === "preparing" ? describedBy : undefined}
         className={[
-          "play-press relative h-14 w-72 select-none overflow-hidden rounded-lg font-display text-lg font-semibold",
+          "play-press relative h-14 w-72 overflow-hidden rounded-lg font-display text-lg font-semibold",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
           "data-pending:cursor-progress",
           view.kind === "done" ? "bg-surface-3 text-text-strong" : "bg-text-strong text-surface-0",
