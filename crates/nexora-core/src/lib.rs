@@ -12,3 +12,5 @@ pub mod task;
 pub mod demo;
 
 pub mod app_info;
+
+pub mod instance;
