@@ -120,7 +120,7 @@ Rust のクレートは `nexora-core` の 1 つとし、モジュールで区切
 
 ### 3.4 ユーザーデータの置き場所
 
-`directories` クレートで OS 標準の場所を求める（Windows：`%APPDATA%\Nexora`、macOS：`~/Library/Application Support/Nexora`、Linux：`~/.local/share/nexora`）。
+OS の基本のデータフォルダに、`Nexora` を明示的に付け足した場所を使う（Windows：`%APPDATA%\Nexora`、macOS：`~/Library/Application Support/Nexora`、Linux：`$XDG_DATA_HOME/nexora`、未設定なら `~/.local/share/nexora`）。`directories` の `ProjectDirs` は OS によって余分な階層が付くため使わない（調査 7 の 10 節）。開発ビルドでは `Nexora-dev` を使う。
 
 ```
 Nexora/
@@ -569,7 +569,7 @@ GitHub Actions で、Windows、Linux、macOS のビルドとテストを行う�
 | シリアライズ | serde 1、serde_json 1、quick-xml 0.42、fastnbt 2.6 |
 | 圧縮とハッシュ | zip 9、sha1 0.11、sha2 0.11 |
 | 認証 | oauth2 5.0（採否はフェーズ 3 で決める）、keyring-core 1.0 と OS ごとのストア、secrecy 0.10 |
-| OS の情報 | directories 6、sysinfo 0.39 |
+| OS の情報 | dirs 7（基本のデータフォルダの取得）、sysinfo 0.39 |
 | 流量制御 | governor 0.10 |
 | エラーとログ | thiserror 2、tracing 0.1、tracing-subscriber 0.3、tracing-appender |
 | 型の生成 | ts-rs 12 |
