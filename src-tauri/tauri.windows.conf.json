@@ -1,0 +1,16 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nexora",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 880,
+        "minHeight": 600,
+        "transparent": true,
+        "windowEffects": { "effects": ["mica"] }
+      }
+    ]
+  }
+}

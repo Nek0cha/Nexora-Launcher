@@ -148,4 +148,17 @@ mod tests {
         .unwrap();
         assert!(Db::open(&path).is_err());
     }
+
+    #[test]
+    fn corrupt_file_maps_to_db_failed_code() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("nexora.db");
+        std::fs::write(
+            &path,
+            b"this is not a sqlite database at all, just garbage bytes",
+        )
+        .unwrap();
+        let err = Db::open(&path).err().unwrap();
+        assert_eq!(err.to_payload().code, "db.failed");
+    }
 }
