@@ -27,9 +27,10 @@ function StartupError({ data }: { data: ErrorPayload }) {
   return (
     <main role="alert" className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 bg-surface-0 p-8">
       <IconWarning aria-hidden className="size-8 text-danger" />
-      <h1 className="font-display text-xl font-semibold text-text-strong">{t("startup.title")}</h1>
-      <p className="text-text">{t("startup.body")}</p>
-      {/* 利用者向けの説明。コードと詳細はその下に、報告用として残す */}
+      {/* 見出しと定型文は報告に使わないため、選択できないようにする */}
+      <h1 className="select-none font-display text-xl font-semibold text-text-strong">{t("startup.title")}</h1>
+      <p className="select-none text-text">{t("startup.body")}</p>
+      {/* 利用者向けの説明。報告に貼れるよう選択できるまま残す。コードと詳細はその下に置く */}
       <p className="text-text">
         {t(errorKey(data.code, (k) => i18n.exists(k)) as never, {
           ...(data.params as Record<string, unknown>),
