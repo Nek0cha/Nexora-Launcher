@@ -1,2 +1,7 @@
 # Implementation plans are kept out of version control.
 docs/plans/
+
+/target/
+node_modules/
+/ui/dist/
+/src-tauri/gen/schemas/

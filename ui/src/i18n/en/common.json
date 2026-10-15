@@ -1,0 +1,61 @@
+{
+  "appName": "Nexora",
+  "nav": {
+    "home": "Home",
+    "instances": "Instances",
+    "browse": "Browse",
+    "accounts": "Accounts",
+    "settings": "Settings"
+  },
+  "empty": {
+    "instances": "No instances yet. Creating and importing instances will arrive in a future version.",
+    "browse": "Browsing mods and resource packs will arrive in a future version.",
+    "accounts": "Signing in with a Microsoft account will arrive in a future version."
+  },
+  "home": {
+    "placeholderInstance": "Instance name goes here"
+  },
+  "play": {
+    "play": "Play",
+    "cancel": "Cancel",
+    "cancelling": "Cancelling",
+    "playing": "Playing",
+    "retry": "Try again",
+    "details": "Details",
+    "preparingPercent": "Preparing {{percent}}%",
+    "announce": {
+      "started": "Started preparing",
+      "progress": "{{percent}}% complete",
+      "done": "Ready",
+      "failed": "Preparation failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "tasks": {
+    "title": "Tasks",
+    "running": "{{count}} running",
+    "cancel": "Cancel",
+    "kind": {
+      "demo": "Demo task"
+    },
+    "state": {
+      "queued": "Queued",
+      "running": "Running",
+      "cancelling": "Cancelling",
+      "succeeded": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "palette": {
+    "placeholder": "Search commands",
+    "goTo": "Open {{page}}",
+    "toggleTheme": "Toggle theme",
+    "startDemo": "Start demo task",
+    "noResults": "No matching commands"
+  },
+  "startup": {
+    "title": "Nexora could not start",
+    "body": "A problem occurred while loading data. Please include the details below when reporting it."
+  }
+}

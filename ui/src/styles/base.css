@@ -1,0 +1,87 @@
+html {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--color-surface-0);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  /* 文字は既定で選択できないようにし、コピーする意味のある内容だけ select-text で戻す（設計 8.5 節） */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 入力欄は、既定の選択不可にかかわらず選択できるようにする */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:lang(ja) body {
+  letter-spacing: 0.05em;
+  line-height: 1.8;
+  line-break: strict;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+  font-synthesis: none;
+}
+
+/* 素材（Mica など）が使えるときだけ、ウィンドウの背景を透明にする。Task 10 で data-material を付ける */
+html[data-material="on"] {
+  background: transparent;
+}
+
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* プレイボタン。押した瞬間に縮み、離すとスプリングで戻る。押下は data-pressed（キーボードの Space と Enter も含む）で判定する */
+.play-press {
+  transition:
+    transform var(--duration-slow) var(--ease-spring),
+    background-color var(--duration-fast) var(--ease-out-quint),
+    opacity var(--duration-fast) var(--ease-out-quint);
+}
+/* 押しても何も起きない状態（aria-disabled）では縮めない */
+.play-press[data-pressed]:not([aria-disabled="true"]) {
+  transform: scale(0.97);
+  transition-duration: var(--duration-fast);
+  transition-timing-function: var(--ease-out-quint);
+}
+/* ボタン自体が進捗のバーになる。100ms ごとの進捗の通知を、減速のカーブで今の位置からつなぐ */
+.play-fill {
+  transform-origin: left center;
+  transition:
+    transform var(--duration-base) var(--ease-out-quint),
+    opacity var(--duration-base) var(--ease-out-quint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .play-press,
+  .play-press[data-pressed]:not([aria-disabled="true"]) {
+    transform: none;
+    transition: none;
+  }
+  /* 縮める代わりに、面の濃さだけで押下を伝える */
+  .play-press[data-pressed]:not([aria-disabled="true"]) {
+    opacity: 0.85;
+  }
+  .play-fill {
+    transition: none;
+  }
+}

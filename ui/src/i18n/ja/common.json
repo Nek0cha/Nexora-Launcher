@@ -1,0 +1,61 @@
+{
+  "appName": "Nexora",
+  "nav": {
+    "home": "ホーム",
+    "instances": "インスタンス",
+    "browse": "探す",
+    "accounts": "アカウント",
+    "settings": "設定"
+  },
+  "empty": {
+    "instances": "インスタンスはまだありません。作成とインポートは今後のバージョンで使えるようになります。",
+    "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
+    "accounts": "Microsoft アカウントでのログインは、今後のバージョンで使えるようになります。"
+  },
+  "home": {
+    "placeholderInstance": "ここにインスタンス名"
+  },
+  "play": {
+    "play": "プレイ",
+    "cancel": "キャンセル",
+    "cancelling": "キャンセルしています",
+    "playing": "プレイ中",
+    "retry": "もう一度",
+    "details": "詳細",
+    "preparingPercent": "準備中 {{percent}}%",
+    "announce": {
+      "started": "準備を始めました",
+      "progress": "{{percent}}% 完了",
+      "done": "準備が終わりました",
+      "failed": "準備に失敗しました",
+      "cancelled": "キャンセルしました"
+    }
+  },
+  "tasks": {
+    "title": "タスク",
+    "running": "実行中 {{count}} 件",
+    "cancel": "キャンセル",
+    "kind": {
+      "demo": "デモタスク"
+    },
+    "state": {
+      "queued": "待機中",
+      "running": "実行中",
+      "cancelling": "キャンセル中",
+      "succeeded": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み"
+    }
+  },
+  "palette": {
+    "placeholder": "コマンドを検索",
+    "goTo": "{{page}} を開く",
+    "toggleTheme": "テーマを切り替える",
+    "startDemo": "デモタスクを開始する",
+    "noResults": "一致するコマンドはありません"
+  },
+  "startup": {
+    "title": "Nexora を起動できませんでした",
+    "body": "データの読み込み中に問題が起きました。下の詳細を添えて報告してください。"
+  }
+}

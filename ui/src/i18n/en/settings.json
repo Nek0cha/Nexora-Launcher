@@ -1,0 +1,20 @@
+{
+  "title": "Settings",
+  "appearance": "Appearance",
+  "theme": {
+    "label": "Theme",
+    "system": "Match system",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "language": {
+    "label": "Language",
+    "ja": "日本語",
+    "en": "English"
+  },
+  "downloads": {
+    "section": "Downloads",
+    "label": "Concurrent downloads",
+    "description": "How many files are downloaded in parallel."
+  }
+}
