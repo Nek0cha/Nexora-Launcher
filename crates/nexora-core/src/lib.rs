@@ -17,3 +17,5 @@ pub mod install;
 pub mod instance;
 pub mod meta;
 pub mod net;
+
+pub mod java;
