@@ -48,3 +48,13 @@ describe("taskTable", () => {
     expect(sortedTasks(table).map((t) => t.id)).toEqual(["0003", "0002", "0001"]);
   });
 });
+
+it("mergeList preserves only explicitly protected missing ids without mutating inputs", () => {
+  const table = { a: snap("a", 9), b: snap("b", 2), c: snap("c", 3) };
+  const list = [snap("a", 1)];
+  const preserve = new Set(["b", "unknown"]);
+  expect(mergeList(table, list, preserve)).toEqual({ a: snap("a", 9), b: snap("b", 2) });
+  expect(Object.keys(table)).toEqual(["a", "b", "c"]);
+  expect(list).toEqual([snap("a", 1)]);
+  expect([...preserve]).toEqual(["b", "unknown"]);
+});

@@ -12,7 +12,9 @@ export class IpcError extends Error {
 function isErrorPayload(value: unknown): value is ErrorPayload {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.code === "string" && typeof v.params === "object" && v.params !== null;
+  return typeof v.code === "string"
+    && typeof v.params === "object" && v.params !== null && !Array.isArray(v.params)
+    && (v.detail === undefined || v.detail === null || typeof v.detail === "string");
 }
 
 /** Rust から返ったエラーの形を実行時に確かめる。形が違えば app.unexpected にする。 */

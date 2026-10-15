@@ -16,8 +16,11 @@ export function mergeSnapshot(table: TaskTable, snapshot: TaskSnapshot): TaskTab
 }
 
 /** 一覧を正として置き換える。ただし手元の方が新しいタスクは手元を残す。 */
-export function mergeList(table: TaskTable, list: TaskSnapshot[]): TaskTable {
+export function mergeList(table: TaskTable, list: TaskSnapshot[], preserveIds: ReadonlySet<string> = new Set()): TaskTable {
   const next: TaskTable = {};
+  for (const id of preserveIds) {
+    if (table[id]) next[id] = table[id];
+  }
   for (const snapshot of list) {
     const current = table[snapshot.id];
     next[snapshot.id] = current && current.revision > snapshot.revision ? current : snapshot;
