@@ -4,7 +4,9 @@ import { I18nProvider } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { Outlet } from "react-router";
 import { appInfo } from "../api/commands";
+import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
+import { TaskTray } from "../components/TaskTray";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
@@ -56,10 +58,11 @@ export function App() {
     // React Aria の部品（数値の書式、増減ボタンの読み上げ名）もアプリの言語に合わせる
     <I18nProvider locale={i18n.language}>
       <div className="flex h-screen">
-        <Sidebar materialOn={materialOn} />
+        <Sidebar materialOn={materialOn} footer={<TaskTray />} />
         <main className="min-w-0 flex-1 overflow-auto bg-surface-0">
           <Outlet />
         </main>
+        <CommandPalette />
       </div>
     </I18nProvider>
   );
