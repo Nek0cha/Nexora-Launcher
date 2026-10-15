@@ -34,7 +34,7 @@ Minecraft Java Edition 向けのデスクトップランチャーである。環
 |---|---|
 | ライセンス | **要決定**（Apache-2.0 を予定）。公開前に正式に決める。 |
 | 実装方針 | ゲームのインストールと起動を含めて自前で実装する。外部のランチャー用ライブラリには依存しない。 |
-| 他のランチャーのコード | GPL のコード（Prism Launcher、MultiMC、Modrinth App）は、仕様や挙動の確認のために読むだけとし、複製しない。Apache-2.0 の portablemc は参考資料として読み、取り込む場合は Apache-2.0 の条件（ライセンス文の同梱、著作権表示の保持、変更の明記）に従う。 |
+| 他のランチャーのコード | GPL のコード（Prism Launcher、MultiMC、Modrinth App）は、仕様や挙動の確認のために読むだけとし、複製しない。portablemc はリビジョンによってライセンスが異なる。v4 以前（Python 版）は GPL-3.0 であり、読むだけとする。v5 以降（Rust 版、2026-10 時点の main は Apache-2.0 を確認済み）は参考資料として読み、取り込む場合は Apache-2.0 の条件（ライセンス文の同梱、著作権表示の保持、変更の明記）に従う。取り込む前に、対象リビジョンのライセンスを確認する。 |
 | 対応 OS | Windows 11 を先に作る。Linux と macOS も設計段階から考慮し、CI で 3 つの OS のビルドとテストを最初から行う。 |
 | 対応する Minecraft バージョン | **1.8.9 以降**。1.8.9 より前は対象外とする。 |
 | UI の言語 | 日本語と英語。最初から i18n の仕組みを入れる。 |
@@ -74,8 +74,9 @@ Minecraft Java Edition 向けのデスクトップランチャーである。環
 
 1. ビジネスロジックはすべて `nexora-core` に置く。`nexora-core` は Tauri に依存せず、UI なしで `cargo test` できる。
 2. Tauri 側（`src-tauri`）は、引数を受け取り、core を呼び、結果かエラーを返すだけの薄い層とする。
-3. 時間のかかる処理はタスクとして扱う。command は `task_id` をすぐに返し、進捗はイベントで UI に通知する。キャンセルはタスク単位で行う（`tokio_util::sync::CancellationToken`）。
+3. 時間のかかる処理はタスクとして扱う（3.5 節）。
 4. 認証トークンなどの秘密情報は Rust 側だけで扱い、JavaScript 側には渡さない。
+5. インスタンスを変更する操作（インストール、Mod の適用、同期、復元、削除）は、インスタンス単位の排他（3.6 節）を取ってから行う。
 
 ### 3.2 リポジトリ構成
 
@@ -129,11 +130,41 @@ Nexora/
 │  ├─ versions/<id>/<id>.jar, <id>.json
 │  ├─ libraries/<Maven のパス>
 │  ├─ assets/indexes/, assets/objects/<先頭2文字>/<hash>
-│  └─ runtimes/<component>/      # Mojang 配布の Java
-├─ cache/             # メタデータ、ダウンロード途中のファイル、ステージング
+│  └─ runtimes/<platform>/<component>/<manifest の sha1>/   # Mojang 配布の Java（版ごとに共存させる）
+├─ cache/             # 削除してよいもの：検索結果、バージョン一覧、ダウンロード途中のファイル
+├─ staging/           # 操作の途中のファイル（3.7 節）
 ├─ backups/
 └─ logs/
 ```
+
+- インストール済みのインスタンスの起動に必要なメタデータ（version JSON、ローダーのプロファイル、asset index）は、`shared/` に固定して保存し、これを正とする。オフラインでの起動は `shared/` だけで行えるようにする。
+- `cache/` には、削除しても再取得できるものだけを置く。
+
+### 3.5 タスクの契約
+
+- 長い処理を始める command は `task_id` をすぐに返す。
+- 進捗、完了、失敗、キャンセル完了は、イベントで通知する。イベントは更新の通知として扱い、状態の正とはしない。
+- UI は `get_task(task_id)` と `list_tasks()` で `TaskSnapshot` を取得できる。`TaskSnapshot` は、状態（queued、running、cancelling、succeeded、failed、cancelled）、進捗、結果または構造化エラー（11.1 節）を持つ。UI を再読み込みした場合や、イベントを取りこぼした場合は、これで状態を復元する。
+- キャンセルの要求（cancelling）と、実際の終了（cancelled）は区別する。
+- タスクの記録はメモリ上だけに持ち、終了したものは一定数を残して破棄する。
+
+### 3.6 インスタンスの排他とゲームの実行
+
+- インスタンスを変更する操作は、インスタンス単位のロックを取ってから行う。同じインスタンスへの変更操作は直列に処理する。
+- ゲームの実行中は、インストール、Mod の適用と更新、同期の適用、上書きでの復元、削除を拒否する。
+- ランチャーを閉じても、ゲームは終了させない。起動したゲームのプロセス ID と起動時刻を DB（`running_sessions`）に記録し、ランチャーを再起動したときに、そのプロセスがまだ動いているかを確認する。動いていれば実行中として扱う。
+- ランチャーが閉じている間にゲームが終了した場合、終了後の処理（同期の読み取り、プレイ時間の加算）は、次にランチャーを起動したときに行う。クラッシュ診断は、その時点で残っているログを使って行う。
+
+### 3.7 操作の記録と復旧
+
+複数のファイルと DB をまたぐ操作（Mod の適用、同期の適用、復元、インポート）は、次の手順で行う。
+
+1. `operations` テーブルに、操作 ID、種類、対象のインスタンス、状態（prepared）を記録する。
+2. 新しいファイルを `staging/<操作 ID>/` に用意し、置き換えられるファイルを `staging/<操作 ID>/backup/` に退避する。変更の対象と退避先の一覧を、操作の記録に含める。
+3. ファイルを所定の場所に移動し、DB を 1 つのトランザクションで更新する。同じトランザクションで、操作の状態を committed にする。
+4. `staging/<操作 ID>/` を削除し、操作の記録を消す。
+
+ランチャーを起動したときに、prepared のまま残っている操作があれば、退避したファイルを戻して元の状態に復旧する。committed の操作は、`staging/` の削除だけを行う。復旧が終わるまで、ファイルのスキャンによる DB の更新（4.1 節）は行わない。
 
 ## 4. データモデル
 
@@ -164,16 +195,20 @@ Nexora/
 
 | 列 | 内容 |
 |---|---|
-| instance_id, kind, file_name | kind は mod、resourcepack、shader、datapack のいずれか |
+| instance_id, kind, rel_path | kind は mod、resourcepack、shader、datapack のいずれか。rel_path はゲームディレクトリからの相対パス（例：`mods/sodium.jar`、`saves/World1/datapacks/x.zip`）で、インスタンス内で一意とする |
 | enabled | ディスク上ではファイル名の末尾に `.disabled` を付けるかどうかで表す |
 | sha1, sha512, size | 照合と検証に使う |
 | provider, project_id, version_id | provider は modrinth、curseforge、local のいずれか |
 | pinned | バージョンを固定しているか |
 | installed_as | explicit（ユーザーが導入）または dependency（依存として自動導入） |
 
-**accounts**：id（Minecraft の UUID）、username、skin_url、is_active、added_at、last_verified_at。トークンは保存しない。
+**accounts**：id（Minecraft の UUID）、username、skin_url、is_active、added_at、profile_fetched_at、entitlement_state（verified、not_owned、unknown）、entitlement_checked_at。トークンは保存しない。プロフィールを取得できたことと、Java 版の利用権を確認できたことは区別して記録する。
 
-**java_runtimes**：path、major_version、arch、vendor、source（mojang、system、user）、last_verified_at。
+**java_runtimes**：path、major_version、component、os、arch、vendor、source（mojang、system、user）、last_verified_at。
+
+**running_sessions**：instance_id、pid、process_started_at、launched_at、account_id。3.6 節で使う。
+
+**operations**：id、kind、instance_id、state（prepared、committed）、targets（変更の対象と退避先の一覧）、created_at。3.7 節で使う。
 
 **backups**：instance_id、created_at、reason（manual、pre-update、pre-sync、pre-restore）、path、size。
 
@@ -195,7 +230,9 @@ Nexora/
 「プレイ」を押してから起動するまでを 5 つの段階に分け、それぞれを独立してテストできる関数とする。
 
 1. **解決（resolve）**：インスタンスの設定から完全なバージョンプロファイルを組み立てる。Vanilla の version JSON にローダーのプロファイルを重ねる（`inheritsFrom`）。メタデータは `cache/meta/` を参照し、ETag で更新を確認する。オフラインの場合はキャッシュだけで進める。
-2. **計画（plan）**：必要なファイル（クライアントの jar、ライブラリ、natives、assets、ログ設定、Java）を「URL、保存先、sha1、サイズ」の一覧にする。副作用を持たない純粋な処理とする。
+2. **計画（plan）**：必要なもの（クライアントの jar、ライブラリ、natives、assets、ログ設定、Java）の一覧を作る。
+   - 各項目は、ファイル、ディレクトリ、リンクのいずれかとする。ファイルは URL、保存先、サイズ、期待するハッシュ（ない場合もある）、実行権限の要否を持つ。
+   - 環境（OS、アーキテクチャ）と既存ファイルの情報は引数として受け取り、計画の作成自体は副作用を持たない純粋な処理とする。
 3. **取得（fetch）**：足りないファイルだけをダウンロードする。
    - 同時ダウンロード数の既定値は 8 とし、設定で変更できる。
    - 失敗した場合は指数バックオフで 3 回まで再試行する。
@@ -225,17 +262,19 @@ Nexora/
 | ローダー | 方式 | 初期の対応範囲 |
 |---|---|---|
 | Fabric、Quilt | 公式のプロファイル JSON を Vanilla に重ねる | 1.8.9 以降のうち、各ローダーが提供している全バージョン |
-| Forge | インストーラを取得して展開し、install_profile の processor を自前の実行エンジンで順に実行する。出力の sha1 を検証し、成功したら完了マーカーを書く | 1.16.5 以降 |
-| NeoForge | Forge と同じ実行エンジン | 全バージョン |
+| Forge | インストーラを取得して展開し、install_profile の processor を自前の実行エンジンで順に実行する。出力のハッシュが宣言されている場合だけ検証する。完了時に、インストーラ、入力、使用した Java の識別情報を完了記録として残す | 1.16.5 以降のうち、フェーズ 7 で検証したビルド |
+| NeoForge | Forge と同じ実行エンジン | フェーズ 7 で検証したビルド（1.20.1 以降） |
 
 - 1.8.9〜1.12.2 の Forge は旧形式（universal jar と LaunchWrapper）であり、別のアダプターが必要になる。初期の対応範囲から外し、後続のフェーズで扱うかを判断する。
 - 1.13.2〜1.16.4 の Forge は、実行エンジンが同じ形式に対応できるため、検証が済んだ時点で範囲に加える。
-- processor の実行に使う Java は、インスタンスの Java と同じものとする。
+- processor の実行に使う Java は、インストーラの要件に合うものを選ぶ。ゲームの起動に使う Java と同じとは限らない（調査 2 の 6 節）。
+- 検証していない新しい形式（例：26.x の番号の NeoForge）は、形式を確認してから対応範囲に加える。
 - Forge と NeoForge の公式インストーラは `--installClient` に対応している（調査 2）。この方式は、自前の実行エンジンで問題が起きたときの代替案として記録しておく。初期実装では使わない。
 
 ### 5.4 Java
 
-- 既定では、version JSON の `javaVersion.majorVersion` に合う Mojang 配布の Java を自動で導入して使う。
+- 既定では、version JSON の `javaVersion`（component と majorVersion）、OS、アーキテクチャに合う Mojang 配布の Java を自動で導入して使う。
+- 新しい版の Java を導入しても、使用中の版は削除しない。
 - システムにインストールされた Java を検出し、詳細設定で選べるようにする。
 
 ### 5.5 メモリの自動設定
@@ -260,7 +299,7 @@ Nexora/
 
 ### 6.1 ログインの方式
 
-- 主な方式は、システムブラウザを使う認可コードフローと PKCE（S256）とする。リダイレクト先は `127.0.0.1` のランダムなポートとし、1 回だけ受け付ける。
+- 主な方式は、システムブラウザを使う認可コードフローと PKCE（S256）とする。Azure には `http://localhost` を登録し、要求では `http://localhost:<空いているポート>` を使う（Microsoft は localhost のリダイレクト URI に限ってポートの違いを無視する）。待ち受けはループバックだけに限定し、1 回だけ受け付ける。`127.0.0.1` を使う方式は、Nexora 自身の登録で動作を確認できた場合にだけ採用する。
 - アプリ内の WebView ではログインさせない。
 - 代替の方式として、デバイスコードフローを用意する。
 
@@ -279,7 +318,8 @@ Microsoft（refresh token）→ Xbox Live ユーザートークン → XSTS（rp
 | Xbox、XSTS、Minecraft のトークン | メモリだけ。期限が切れたら refresh token から取得し直す |
 | UUID、名前、スキン | DB の accounts テーブル |
 
-- Windows の資格情報ストアには、1 件あたり 2,560 バイトの上限がある。refresh token がこれを超える場合は、`nexora:<uuid>:0`、`nexora:<uuid>:1` のように複数の件に分けて保存する。トークンの切り詰めや、平文ファイルへの退避は行わない。
+- Windows の資格情報ストアには、1 件あたり 2,560 バイトの上限がある。Windows では Local persistence を明示して保存する。refresh token が 1 件に収まらない場合や、保存に失敗した場合は、そのセッションの間だけログインした状態にし、その旨を UI に表示する。トークンの切り詰めや、平文ファイルへの退避は行わない。複数の件に分けて保存する方式は、実際に必要と分かった時点で別途設計する。
+- 新しい refresh token の保存に成功するまで、古い refresh token は削除しない。
 - 資格情報ストアを使えない環境（例：Secret Service のない Linux）では、そのセッションの間だけログインした状態で動かす。
 
 ### 6.4 更新とエラー
@@ -293,13 +333,18 @@ Microsoft（refresh token）→ Xbox Live ユーザートークン → XSTS（rp
   - 所有権の確認に失敗した場合（一時的な失敗と、所有していない場合を区別する）
 - `oauth2` 5.0 は reqwest 0.12 に依存し、本体の reqwest 0.13 とバージョンが合わない。HTTP クライアントの抽象を実装するか、PKCE とトークン交換を自前で実装するかを、フェーズ 3 の spec で決める。
 
-### 6.5 オフラインの方針
+### 6.5 起動への受け渡し
+
+- 認証の結果は、Rust 内部の起動用セッション型（UUID、名前、Minecraft のアクセストークン、XUID、ユーザーの種別）として起動処理に渡す。
+- 開発用のオフラインアカウントと本来の認証は、同じ型と同じ入口を使う。フェーズ 2 で型を定め、フェーズ 3 で本来の認証を接続する。
+
+### 6.6 オフラインの方針
 
 - 製品版では、ユーザー名だけのオフラインアカウントは作成させない。
 - 一度正常に認証できたアカウントに限り、ネットワークに接続できないときに「オフラインで起動」と明示したうえで起動できる。
 - 開発版では、ビルドのフラグによってオフラインアカウントを使えるようにする。Minecraft API の審査を待つ間の開発に使う。
 
-### 6.6 クライアント ID
+### 6.7 クライアント ID
 
 - ビルド時の環境変数 `NEXORA_MS_CLIENT_ID` で埋め込む。
 - Minecraft API の利用には、クライアント ID ごとの審査（aka.ms/mce-reviewappid）が必要である。README に、フォークする場合は自分でクライアント ID を取得して審査を受ける必要があることを記載する。
@@ -324,9 +369,11 @@ Microsoft（refresh token）→ Xbox Live ユーザートークン → XSTS（rp
 
 ### 7.3 適用のトランザクション
 
+3.7 節の操作の記録に従う。
+
 ```
-cache/ にダウンロード → ハッシュを検証 → 影響を受けるファイルをバックアップ
-→ mods/ に移動 → DB を 1 つのトランザクションで更新 → 途中で失敗したらすべて元に戻す
+staging/ にダウンロード → ハッシュを検証 → 置き換えられるファイルを退避
+→ mods/ などに移動 → DB を 1 つのトランザクションで更新（操作を committed にする）
 ```
 
 ### 7.4 その他の操作
@@ -367,7 +414,8 @@ cache/ にダウンロード → ハッシュを検証 → 影響を受けるフ
 1. インスタンスが実行中であれば適用しない。
 2. `options.txt` のうち、管理対象の行だけを書き換える。それ以外の行、並び順、認識しないキーはそのまま残す。
 3. バックアップを取り、一時ファイルに書き込んでから、原子的にリネームする。
-4. `options.txt` が存在しない場合は、`version:<DataVersion>` の行も書き込む。この行がない場合の挙動は、フェーズ 6 でサンプルファイルを使って確認する。
+4. 対象のゲームの版（クライアント jar から取得した DataVersion）と、既存の `options.txt` の `version` の行が一致しない場合は、同期を適用しない。ゲームが一度起動してファイルを書き直した後に適用する。DataVersion を取得できない場合も、適用しない。
+5. `options.txt` が存在しない新しいインスタンスに対して、`version:<DataVersion>` の行を含むファイルを作成して適用する方式は、フェーズ 6 でサンプルファイルを使って動作を確認できた場合にだけ採用する。確認できない場合は、初回の起動ではゲームにファイルを作成させ、2 回目の起動から適用する。
 
 ### 8.4 終了後の読み取り
 
@@ -417,6 +465,8 @@ cache/ にダウンロード → ハッシュを検証 → 影響を受けるフ
 5. Mod の出どころを復元する。インポート元のメタデータ（Prism Launcher の `.pw.toml`、CurseForge App の `installedAddons`、Modrinth App の DB）を使い、分からないものは Modrinth にハッシュで一括して問い合わせる。それでも特定できないものは `local` とする。
 6. ゲームとローダーを通常のインストール処理で導入し、状態を `ready` にする。
 
+v1 で取り込めるのは、Minecraft のバージョンと 5 種類のローダーで表現できる構成だけとする。独自の version JSON、Prism Launcher の patches や jar mods、未知のコンポーネントを含むインスタンスは「未対応の構成」として一覧に表示し、取り込まない。Vanilla や通常のローダーに置き換えて取り込むことはしない。
+
 ### 9.2 資格情報の除外
 
 資格情報を含むファイルは除外リストで明示し、読み取りもコピーもしない（`launcher_accounts.json`、Prism Launcher の `accounts.json`、Modrinth App の DB の認証テーブル、GDLauncher の `gdl_conf.db` の認証情報など）。
@@ -427,7 +477,7 @@ cache/ にダウンロード → ハッシュを検証 → 影響を受けるフ
 |---|---|
 | 公式ランチャー | プロファイル単位で取り込む。複数のプロファイルが同じ `.minecraft` を共有している場合は警告を表示する。Microsoft Store 版の置き場所にも対応する。 |
 | Prism Launcher / MultiMC | `prismlauncher.cfg` の `InstanceDir` で場所が変更されている場合にも対応する。`mmc-pack.json` の components からローダーを判定する。 |
-| Modrinth App | DB には旧形式（`profiles`）と新形式（`instances`）がある。両方に対応し、未知の形式の場合は「未対応のバージョン」として処理を止める。DB は一時フォルダにコピーしてから、読み取り専用で開く。 |
+| Modrinth App | DB には旧形式（`profiles`）と新形式（`instances`）がある。両方に対応し、未知の形式の場合は「未対応のバージョン」として処理を止める。DB には認証情報も含まれるため、コピーしない。元の DB を読み取り専用で開き、許可した列だけを読み出す。 |
 | CurseForge App | `minecraftinstance.json` を読み取る。ローカルのファイルをコピーするため、API キーは不要である。 |
 | GDLauncher | 旧版（`config.json`）と Carbon（DB と `instance.json`）の両方に対応する。 |
 
@@ -452,7 +502,8 @@ cache/ にダウンロード → ハッシュを検証 → 影響を受けるフ
 
 - `installing` の状態のまま残っているインスタンスを `broken` にし、再試行の操作を表示する。
 - 残っている `.part` ファイルを削除する。
-- Mod の適用の途中で中断していた場合は、ステージング用のフォルダの内容から元に戻す。
+- 中断した操作を、3.7 節の手順で復旧する。
+- `running_sessions` に記録されたゲームが終了していれば、終了後の処理を行う（3.6 節）。
 
 ### 10.3 クラッシュ診断
 
