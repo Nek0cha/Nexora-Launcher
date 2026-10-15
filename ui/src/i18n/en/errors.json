@@ -1,0 +1,19 @@
+{
+  "generic": "Something went wrong ({{code}})",
+  "app": {
+    "not_ready": "Startup has not finished yet",
+    "data_dir_unavailable": "The data folder could not be found",
+    "unexpected": "An unexpected problem occurred"
+  },
+  "io": { "failed": "Could not read or write a file: {{path}}" },
+  "db": {
+    "failed": "A database operation failed",
+    "migration_failed": "Updating the database failed"
+  },
+  "settings": { "invalid_value": "The setting value is invalid" },
+  "task": {
+    "not_found": "The task was not found",
+    "cancelled": "Cancelled"
+  },
+  "demo": { "failed": "The demo task failed at {{percent}}%" }
+}

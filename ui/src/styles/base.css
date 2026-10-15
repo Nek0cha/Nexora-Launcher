@@ -1,0 +1,42 @@
+html {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--color-surface-0);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+:lang(ja) body {
+  letter-spacing: 0.05em;
+  line-height: 1.8;
+  line-break: strict;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+  font-synthesis: none;
+}
+
+/* 素材（Mica など）が使えるときだけ、ウィンドウの背景を透明にする。Task 10 で data-material を付ける */
+html[data-material="on"] {
+  background: transparent;
+}
+
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

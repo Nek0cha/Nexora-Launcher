@@ -1,0 +1,19 @@
+{
+  "generic": "問題が起きました（{{code}}）",
+  "app": {
+    "not_ready": "起動の処理が終わっていません",
+    "data_dir_unavailable": "データを保存するフォルダが見つかりません",
+    "unexpected": "予期しない問題が起きました"
+  },
+  "io": { "failed": "ファイルを読み書きできませんでした：{{path}}" },
+  "db": {
+    "failed": "データベースの処理に失敗しました",
+    "migration_failed": "データベースの更新に失敗しました"
+  },
+  "settings": { "invalid_value": "設定の値が正しくありません" },
+  "task": {
+    "not_found": "タスクが見つかりません",
+    "cancelled": "キャンセルしました"
+  },
+  "demo": { "failed": "デモタスクが {{percent}}% で失敗しました" }
+}

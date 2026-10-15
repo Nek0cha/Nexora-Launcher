@@ -1,0 +1,19 @@
+{
+  "title": "設定",
+  "appearance": "外観",
+  "theme": {
+    "label": "テーマ",
+    "system": "システムに合わせる",
+    "dark": "ダーク",
+    "light": "ライト"
+  },
+  "language": {
+    "label": "言語",
+    "ja": "日本語",
+    "en": "English"
+  },
+  "downloads": {
+    "label": "同時ダウンロード数",
+    "description": "一度に並行して取得するファイルの数です。"
+  }
+}
