@@ -13,6 +13,7 @@
     "en": "English"
   },
   "downloads": {
+    "section": "ダウンロード",
     "label": "同時ダウンロード数",
     "description": "一度に並行して取得するファイルの数です。"
   }
