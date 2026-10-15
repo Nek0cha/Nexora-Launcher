@@ -40,3 +40,37 @@ html[data-material="on"] {
     scroll-behavior: auto !important;
   }
 }
+
+/* プレイボタン。押した瞬間に縮み、離すとスプリングで戻る。押下は data-pressed（キーボードの Space と Enter も含む）で判定する */
+.play-press {
+  transition:
+    transform var(--duration-slow) var(--ease-spring),
+    background-color var(--duration-fast) var(--ease-out-quint),
+    opacity var(--duration-fast) var(--ease-out-quint);
+}
+.play-press[data-pressed] {
+  transform: scale(0.97);
+  transition-duration: var(--duration-fast);
+  transition-timing-function: var(--ease-out-quint);
+}
+/* ボタン自体が進捗のバーになる。100ms ごとの進捗の通知を、減速のカーブで今の位置からつなぐ */
+.play-fill {
+  transform-origin: left center;
+  transition:
+    transform var(--duration-base) var(--ease-out-quint),
+    opacity var(--duration-base) var(--ease-out-quint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .play-press,
+  .play-press[data-pressed] {
+    transform: none;
+    transition: none;
+  }
+  /* 縮める代わりに、面の濃さだけで押下を伝える */
+  .play-press[data-pressed] {
+    opacity: 0.85;
+  }
+  .play-fill {
+    transition: none;
+  }
+}
