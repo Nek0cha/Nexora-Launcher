@@ -48,7 +48,8 @@ html[data-material="on"] {
     background-color var(--duration-fast) var(--ease-out-quint),
     opacity var(--duration-fast) var(--ease-out-quint);
 }
-.play-press[data-pressed] {
+/* 押しても何も起きない状態（aria-disabled）では縮めない */
+.play-press[data-pressed]:not([aria-disabled="true"]) {
   transform: scale(0.97);
   transition-duration: var(--duration-fast);
   transition-timing-function: var(--ease-out-quint);
@@ -62,12 +63,12 @@ html[data-material="on"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .play-press,
-  .play-press[data-pressed] {
+  .play-press[data-pressed]:not([aria-disabled="true"]) {
     transform: none;
     transition: none;
   }
   /* 縮める代わりに、面の濃さだけで押下を伝える */
-  .play-press[data-pressed] {
+  .play-press[data-pressed]:not([aria-disabled="true"]) {
     opacity: 0.85;
   }
   .play-fill {

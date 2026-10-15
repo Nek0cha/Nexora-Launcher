@@ -1,5 +1,6 @@
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
+import type { TaskState } from "../../bindings/TaskState";
 import { sortedTasks, type TaskTable } from "../tasks/taskTable";
 
 export const DEMO_KIND = "demo";
@@ -48,9 +49,18 @@ export function playStateFrom(snapshot: TaskSnapshot | undefined, nowMs: number)
   }
 }
 
-export function announcement(prev: PlayState, next: PlayState): Announcement | null {
+/**
+ * 状態の変化から読み上げる文を決める。`latest` は next を作ったタスクの状態で、
+ * どちらも「準備完了」になる、キャンセルの完了と、表示時間を過ぎてから届いた完了を見分けるために使う。
+ */
+export function announcement(prev: PlayState, next: PlayState, latest?: TaskState): Announcement | null {
   const wasActive = prev.kind === "preparing" || prev.kind === "cancelling";
   if (next.kind === "preparing" && !wasActive) return { key: "play.announce.started" };
+  if (next.kind === "ready" && wasActive) {
+    if (latest === "succeeded") return { key: "play.announce.done" };
+    if (latest === "cancelled" || prev.kind === "cancelling") return { key: "play.announce.cancelled" };
+    return null;
+  }
   if (next.kind === "preparing" && prev.kind === "preparing") {
     const before = Math.floor(prev.percent / 25);
     const after = Math.floor(next.percent / 25);
@@ -59,6 +69,5 @@ export function announcement(prev: PlayState, next: PlayState): Announcement | n
   }
   if (next.kind === "done" && prev.kind !== "done") return { key: "play.announce.done" };
   if (next.kind === "failed" && prev.kind !== "failed") return { key: "play.announce.failed" };
-  if (next.kind === "ready" && prev.kind === "cancelling") return { key: "play.announce.cancelled" };
   return null;
 }

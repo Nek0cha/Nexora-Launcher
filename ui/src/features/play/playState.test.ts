@@ -67,4 +67,28 @@ describe("announcement", () => {
     expect(announcement(prep(10), { kind: "failed", error: null })).toEqual({ key: "play.announce.failed" });
     expect(announcement({ kind: "cancelling", percent: 10, taskId: "t1" }, ready)).toEqual({ key: "play.announce.cancelled" });
   });
+
+  it("announces cancel when the cancelled snapshot arrives without a cancelling one", () => {
+    expect(announcement(prep(40), ready, "cancelled")).toEqual({ key: "play.announce.cancelled" });
+  });
+
+  it("announces done when the success arrives after the done window", () => {
+    expect(announcement(prep(90), ready, "succeeded")).toEqual({ key: "play.announce.done" });
+  });
+
+  it("does not announce 100% as a milestone", () => {
+    expect(announcement(prep(80), prep(100))).toBeNull();
+  });
+
+  it("announces start again when retrying after a failure", () => {
+    expect(announcement({ kind: "failed", error: null }, prep(0))).toEqual({ key: "play.announce.started" });
+  });
+
+  it("announces only the highest milestone crossed in one jump", () => {
+    expect(announcement(prep(10), prep(80))).toEqual({ key: "play.announce.progress", percent: 75 });
+  });
+
+  it("stays quiet when an expired success reloads as ready", () => {
+    expect(announcement(ready, ready, "succeeded")).toBeNull();
+  });
 });
