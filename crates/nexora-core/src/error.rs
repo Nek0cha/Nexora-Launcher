@@ -27,6 +27,32 @@ pub enum CoreError {
     Cancelled,
     #[error("demo task failed at {percent}%")]
     DemoFailed { percent: u8 },
+    #[error("network unavailable: {message}")]
+    Offline { message: String },
+    #[error("HTTP {status} from {url}")]
+    HttpStatus { status: u16, url: String },
+    #[error("downloaded file did not match its expected hash: {path}")]
+    HashMismatch { path: String },
+    #[error("invalid metadata: {message}")]
+    InvalidMetadata { message: String },
+    #[error("version {id} was not found in the version manifest")]
+    VersionNotFound { id: String },
+    #[error("unsupported version profile: {reason}")]
+    UnsupportedProfile { reason: String },
+    #[error("no Java runtime {component} is available for {platform}")]
+    NoCompatibleRuntime { component: String, platform: String },
+    #[error("installed Java did not match: expected major {expected_major}, found {found}")]
+    JavaVerifyFailed { expected_major: u32, found: String },
+    #[error("instance {instance_id} is already running")]
+    AlreadyRunning { instance_id: String },
+    #[error("command line is too long ({length} characters)")]
+    CommandTooLong { length: usize },
+    #[error("failed to start the game: {message}")]
+    SpawnFailed { message: String },
+    #[error("no account is available to launch the game")]
+    NoAccount,
+    #[error("instance {instance_id} was not found")]
+    InstanceNotFound { instance_id: String },
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
 }
@@ -43,6 +69,19 @@ impl CoreError {
             CoreError::TaskNotFound { .. } => "task.not_found",
             CoreError::Cancelled => "task.cancelled",
             CoreError::DemoFailed { .. } => "demo.failed",
+            CoreError::Offline { .. } => "net.offline",
+            CoreError::HttpStatus { .. } => "net.http_status",
+            CoreError::HashMismatch { .. } => "net.hash_mismatch",
+            CoreError::InvalidMetadata { .. } => "meta.invalid",
+            CoreError::VersionNotFound { .. } => "meta.version_not_found",
+            CoreError::UnsupportedProfile { .. } => "install.unsupported_profile",
+            CoreError::NoCompatibleRuntime { .. } => "java.no_compatible_runtime",
+            CoreError::JavaVerifyFailed { .. } => "java.verify_failed",
+            CoreError::AlreadyRunning { .. } => "launch.already_running",
+            CoreError::CommandTooLong { .. } => "launch.command_too_long",
+            CoreError::SpawnFailed { .. } => "launch.spawn_failed",
+            CoreError::NoAccount => "launch.no_account",
+            CoreError::InstanceNotFound { .. } => "instance.not_found",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
     }
@@ -61,6 +100,38 @@ impl CoreError {
             }
             CoreError::DemoFailed { percent } => {
                 params.insert("percent".into(), ParamValue::Num(f64::from(*percent)));
+            }
+            CoreError::HttpStatus { status, .. } => {
+                params.insert("status".into(), ParamValue::Num(f64::from(*status)));
+            }
+            CoreError::HashMismatch { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
+            }
+            CoreError::VersionNotFound { id } => {
+                params.insert("id".into(), ParamValue::Str(id.clone()));
+            }
+            CoreError::UnsupportedProfile { reason } => {
+                params.insert("reason".into(), ParamValue::Str(reason.clone()));
+            }
+            CoreError::NoCompatibleRuntime {
+                component,
+                platform,
+            } => {
+                params.insert("component".into(), ParamValue::Str(component.clone()));
+                params.insert("platform".into(), ParamValue::Str(platform.clone()));
+            }
+            CoreError::JavaVerifyFailed {
+                expected_major,
+                found,
+            } => {
+                params.insert(
+                    "expectedMajor".into(),
+                    ParamValue::Num(f64::from(*expected_major)),
+                );
+                params.insert("found".into(), ParamValue::Str(found.clone()));
+            }
+            CoreError::CommandTooLong { length } => {
+                params.insert("length".into(), ParamValue::Num(*length as f64));
             }
             _ => {}
         }
@@ -152,5 +223,118 @@ mod tests {
         assert_eq!(payload.code, "app.not_ready");
         assert!(payload.params.is_empty());
         assert!(payload.detail.is_none());
+    }
+
+    #[test]
+    fn phase2_codes_are_stable() {
+        let cases: Vec<(CoreError, &str)> = vec![
+            (
+                CoreError::Offline {
+                    message: "x".into(),
+                },
+                "net.offline",
+            ),
+            (
+                CoreError::HttpStatus {
+                    status: 404,
+                    url: "u".into(),
+                },
+                "net.http_status",
+            ),
+            (
+                CoreError::HashMismatch { path: "p".into() },
+                "net.hash_mismatch",
+            ),
+            (
+                CoreError::InvalidMetadata {
+                    message: "m".into(),
+                },
+                "meta.invalid",
+            ),
+            (
+                CoreError::VersionNotFound { id: "1.0".into() },
+                "meta.version_not_found",
+            ),
+            (
+                CoreError::UnsupportedProfile { reason: "r".into() },
+                "install.unsupported_profile",
+            ),
+            (
+                CoreError::NoCompatibleRuntime {
+                    component: "c".into(),
+                    platform: "p".into(),
+                },
+                "java.no_compatible_runtime",
+            ),
+            (
+                CoreError::JavaVerifyFailed {
+                    expected_major: 8,
+                    found: "21 x86_64".into(),
+                },
+                "java.verify_failed",
+            ),
+            (
+                CoreError::AlreadyRunning {
+                    instance_id: "i".into(),
+                },
+                "launch.already_running",
+            ),
+            (
+                CoreError::CommandTooLong { length: 40_000 },
+                "launch.command_too_long",
+            ),
+            (
+                CoreError::SpawnFailed {
+                    message: "m".into(),
+                },
+                "launch.spawn_failed",
+            ),
+            (CoreError::NoAccount, "launch.no_account"),
+            (
+                CoreError::InstanceNotFound {
+                    instance_id: "i".into(),
+                },
+                "instance.not_found",
+            ),
+        ];
+        for (err, code) in cases {
+            assert_eq!(err.code(), code);
+        }
+    }
+
+    #[test]
+    fn phase2_params_shape() {
+        let payload = CoreError::HttpStatus {
+            status: 503,
+            url: "https://x".into(),
+        }
+        .to_payload();
+        assert_eq!(payload.params.get("status"), Some(&ParamValue::Num(503.0)));
+        let payload = CoreError::JavaVerifyFailed {
+            expected_major: 8,
+            found: "17 x86_64".into(),
+        }
+        .to_payload();
+        assert_eq!(
+            payload.params.get("expectedMajor"),
+            Some(&ParamValue::Num(8.0))
+        );
+        assert_eq!(
+            payload.params.get("found"),
+            Some(&ParamValue::Str("17 x86_64".into()))
+        );
+        let payload = CoreError::NoCompatibleRuntime {
+            component: "jre-legacy".into(),
+            platform: "mac-os-arm64".into(),
+        }
+        .to_payload();
+        assert_eq!(
+            payload.params.get("component"),
+            Some(&ParamValue::Str("jre-legacy".into()))
+        );
+        assert_eq!(
+            payload.params.get("platform"),
+            Some(&ParamValue::Str("mac-os-arm64".into()))
+        );
     }
 }

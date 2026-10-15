@@ -16,7 +16,12 @@ use tauri::Manager;
 use crate::state::{AppState, Services, Startup};
 
 fn start_services(app: &tauri::AppHandle) -> Result<Services, ErrorPayload> {
-    let paths = AppPaths::resolve(Profile::current())?;
+    let override_dir = if cfg!(debug_assertions) {
+        std::env::var_os(nexora_core::paths::DATA_DIR_ENV)
+    } else {
+        None
+    };
+    let paths = AppPaths::resolve_with(Profile::current(), override_dir)?;
     paths.ensure_dirs().map_err(|source| {
         CoreError::Io {
             path: paths.root().display().to_string(),
