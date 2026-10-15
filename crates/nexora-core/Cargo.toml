@@ -33,7 +33,7 @@ regex = "1"
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 serde_json = "1"
-tokio = { version = "1.53", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "test-util"] }
+tokio = { version = "1.53", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "test-util", "fs", "process", "io-util"] }
 insta = { version = "1", features = ["json"] }
 tempfile = "3"
 wiremock = "0.6"
