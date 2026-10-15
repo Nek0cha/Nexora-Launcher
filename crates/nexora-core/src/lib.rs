@@ -3,3 +3,5 @@
 pub mod paths;
 
 pub mod error;
+
+pub mod db;
