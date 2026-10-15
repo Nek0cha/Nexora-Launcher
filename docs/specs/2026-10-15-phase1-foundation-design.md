@@ -29,7 +29,7 @@
 | 項目 | 値 |
 |---|---|
 | アプリの識別子 | `net.ny4n.nexora` |
-| 開発ビルドの識別子 | `net.ny4n.nexora.dev` |
+| 開発ビルドの識別子 | `net.ny4n.nexora.dev`。`src-tauri/tauri.dev.conf.json` に識別子とウィンドウタイトル（Nexora Dev）だけを書き、ルートの `dev` スクリプト（`tauri dev --config src-tauri/tauri.dev.conf.json`）で重ねる。これにより、開発版と製品版は single-instance の識別も分かれる |
 | リポジトリ | `Nek0cha/Nexora-Launcher` |
 | ウィンドウタイトル | Nexora |
 | データの置き場所 | spec 0 の 3.4 節のとおり。開発ビルドは `Nexora-dev` |
@@ -40,6 +40,8 @@
 
 ```
 Nexora-Launcher/
+├─ package.json               # Tauri CLI とルートのスクリプト
+├─ pnpm-workspace.yaml        # パッケージ：ui
 ├─ Cargo.toml                 # ワークスペース（members: crates/nexora-core, src-tauri）
 ├─ Cargo.lock
 ├─ .cargo/config.toml         # TS_RS_EXPORT_DIR、TS_RS_LARGE_INT
@@ -59,8 +61,10 @@ Nexora-Launcher/
 └─ docs/
 ```
 
-- `tauri.conf.json` の `build` には、`frontendDist: "../ui/dist"`、`devUrl: "http://localhost:5173"`、`beforeDevCommand: "pnpm --dir ui dev"`、`beforeBuildCommand: "pnpm --dir ui build"` を設定する。
-- Tauri CLI は `ui/` の devDependencies（`@tauri-apps/cli`）として入れ、リポジトリのルートから `pnpm --dir ui tauri dev` で起動する。具体的な起動方法は、実装時に Windows で確かめて README に書く。
+- ルートに `package.json` と `pnpm-workspace.yaml`（パッケージは `ui`）を置く。Tauri CLI（`@tauri-apps/cli`）はルートの devDependencies に入れ、リポジトリのルートで `pnpm tauri dev` と `pnpm tauri build` を実行する。CLI はルート以下から `src-tauri/` を見つける。
+- `tauri.conf.json` の `build` には、`frontendDist: "../ui/dist"`、`devUrl: "http://localhost:5173"` を設定する。`beforeDevCommand` と `beforeBuildCommand` は、`{ "script": "pnpm dev", "cwd": <ui ディレクトリ> }` のように作業ディレクトリを明示した形で書く。`cwd` の基準となるディレクトリは、実装の最初のタスクで Windows で確かめて確定する。
+- Vite は `port: 5173`、`strictPort: true` とする。
+- 開発の起動方法は README に書く。
 
 ## 4. Rust：nexora-core
 
@@ -68,6 +72,7 @@ Nexora-Launcher/
 
 - `AppPaths` 構造体が、データのルートと各サブフォルダ（`instances/`、`shared/`、`cache/`、`staging/`、`backups/`、`logs/`）のパスを持つ。
 - `AppPaths::resolve(profile)` は、`dirs::data_dir()`（Linux では `$XDG_DATA_HOME` を優先）に `Nexora` または `Nexora-dev`（Linux は小文字）を付け足して求める。
+- `profile` は Rust のビルド設定で決める。debug ビルド（`pnpm tauri dev`）は dev、release ビルド（`pnpm tauri build`）は release とする。`cargo test` は `resolve` を使わず、常に `from_root` で一時フォルダを使う。
 - テストでは `AppPaths::from_root(temp_dir)` を使う。
 - 起動時に、必要なフォルダを作成する。
 
@@ -77,7 +82,7 @@ Nexora-Launcher/
 - 呼び出し側（Tauri）は `tokio::task::spawn_blocking` の中でロックを取り、処理を終えてからロックを解放する。`.await` をまたいでロックを持たない。
 - 起動時に `PRAGMA journal_mode=WAL`、`PRAGMA foreign_keys=ON`、busy timeout 5 秒を設定する。
 - マイグレーションは `rusqlite_migration` で、`include_str!` で埋め込んだ SQL を順に適用する。適用済みのマイグレーションは変更しない。
-- `0001_init.sql` で作るテーブルは `app_settings`（key TEXT PRIMARY KEY、value TEXT NOT NULL、updated_at INTEGER NOT NULL）と `operations`（spec 0 の 4.2 節）だけとする。他のテーブルは、使うフェーズで追加する。
+- `0001_init.sql` で作るテーブルは `app_settings`（key TEXT PRIMARY KEY、value TEXT NOT NULL、updated_at INTEGER NOT NULL）だけとする。`operations` を含む他のテーブルは、使うフェーズで追加する。
 
 ### 4.3 error
 
@@ -117,10 +122,18 @@ Nexora-Launcher/
 ### 5.1 起動の順序
 
 1. `tauri-plugin-single-instance` を最初に登録する。2 つ目の起動を検出したら、既存の `main` ウィンドウを前面に出す。
-2. ログを初期化する（5.4 節）。
+2. 標準出力へのログを初期化する。
 3. `AppPaths` を求め、フォルダを作成する。
-4. DB を開いてマイグレーションを適用する。失敗した場合は、エラーの内容を表示する画面に切り替える（UI は `get_startup_error` で取得する）。
-5. `TaskManager` を作り、Tauri の state に登録する。
+4. ファイルへのログを開始する（5.4 節）。
+5. DB を開いてマイグレーションを適用する。
+6. `TaskManager` を作る。
+
+起動の状態は `Starting`、`Ready`、`Failed(IpcError)` の 3 つとし、Tauri の state に登録する。
+
+- 3〜6 が成功したら `Ready` にし、DB と `TaskManager` を持つ `Services` を登録する。
+- 途中で失敗したら `Failed` にする。`Failed` の間も `app_info` と `get_startup_error` は使える。それ以外の command は `app.not_ready` のエラーを返す。
+- UI は最初に `get_startup_error` を呼ぶ。エラーがあれば起動エラーの画面を表示し、通常のデータの取得は始めない。
+- マイグレーションに失敗した場合、DB は失敗前の状態のまま残る。`rusqlite_migration` がマイグレーションをトランザクションの中で適用するかを実装時に確かめ、適用しない場合は自前でトランザクションを張る。
 
 ### 5.2 commands
 
@@ -148,16 +161,21 @@ Nexora-Launcher/
 - `tracing-subscriber` と `tracing-appender` で、`logs/nexora.YYYY-MM-DD.log` に日ごとに書き込む。7 日より古いファイルは起動時に削除する。
 - 開発ビルドでは、標準出力にも出す。
 - 既定のレベルは info とし、環境変数 `NEXORA_LOG` で変更できる。
+- 非同期の書き込み（`tracing_appender::non_blocking`）の `WorkerGuard` は、アプリが終了するまで保持する。
+- ログに出してよいのは、エラーコード、タスクの ID と種類、パス、件数、所要時間などとする。トークン、認証の URL、リクエストやレスポンスの本文は出さない。秘密の値は `secrecy::SecretString` で持ち、`Debug` で中身が出ないようにする。
 
 ### 5.5 capabilities
 
 - `main` ウィンドウにだけ、`core:default`、イベント、`opener` の URL を開く権限を与える。
+- ウィンドウのテーマは Rust 側で変更する（7.3 節）ため、JavaScript にウィンドウ操作の追加の権限は与えない。
 - `opener` で開ける URL は https に限る。
 
 ### 5.6 ウィンドウ
 
 - OS 標準のタイトルバーを使う（`decorations: true`）。
-- Windows では `transparent: true` と `windowEffects: { effects: ["mica"] }` を設定する。macOS では `sidebar` の素材を使う。Linux では効果を使わない。
+- Windows では `transparent: true` と `windowEffects: { effects: ["mica"] }` を設定する。macOS では `sidebar` の素材を使う。Linux では効果を使わない。OS ごとの設定は、`tauri.windows.conf.json`、`tauri.macos.conf.json` に分けて書く。
+- `app_info` は `material_available`（素材が実際に表示される見込みがあるか）を返す。Windows では、ビルド番号が 22000 以上で、かつレジストリの `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency` が 1 のときに真とする。macOS では真、Linux では偽とする。
+- UI は、`material_available` が真で、かつ `forced-colors: active` でないときだけ、サイドバーを透明にする。それ以外は不透明な surface-1 で塗る。既定は不透明とし、透明は条件を満たしたときの追加の表現とする。
 - 初期サイズは 1100×720、最小サイズは 880×600 とする。
 - Windows の「透明効果」がオフのとき、ハイコントラストのとき、DPI が 100%・150%・200% のときの表示を、実機で確認する。
 
@@ -206,7 +224,7 @@ spec 0 の 3.2 節と、次の分担に従う。
 
 - 設定値が `system` の場合は `matchMedia('(prefers-color-scheme: dark)')` で決め、OS の変更に追従する。
 - 決まったテーマを `<html data-theme="dark|light">` に設定する。最初の描画の前に設定し、ちらつきを防ぐ。
-- Tauri のウィンドウのテーマも合わせて変更する。
+- ウィンドウのテーマ（タイトルバーの色）は Rust 側で変更する。`set_setting` でテーマを変えたときと起動時に、`dark` と `light` は `Window::set_theme(Some(..))`、`system` は `set_theme(None)` で OS に追従させる。
 
 ### 7.4 多言語
 
@@ -219,7 +237,13 @@ spec 0 の 3.2 節と、次の分担に従う。
 ### 7.5 データの取得
 
 - 設定とタスクの一覧は TanStack Query で取得する。
-- `task://changed` を受け取ったら、該当するタスクのクエリを更新する。イベントの購読は、最初の取得より先に始める。
+- タスクは、`list_tasks` の結果を 1 つのキャッシュ（タスクの ID をキーとする表）として持ち、これを UI の正とする。個別のタスクのクエリは作らない。
+- イベントの購読を始めてから、`list_tasks` で最初の一覧を取得する。
+- `task://changed` を受け取ったときの処理：
+  - `progress` と `state`：`get_task` で取得し、手元の `revision` より新しい場合だけ表に反映する。表にない ID なら追加する。
+  - `removed`：取得せずに表から削除する。
+- `get_task` や `list_tasks` の応答も、手元より古い `revision` のタスクでは表を上書きしない。
+- ウィンドウが再表示されたときと、イベントの購読をやり直したときは、`list_tasks` で一覧を取得し直す。
 
 ## 8. デザイン
 
@@ -252,6 +276,21 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 ### 8.3 色
 
 - 色は `oklch()` で定義し、役割名のトークンだけを部品から参照する。
+- トークンは次の形で Tailwind につなぐ。テーマの切り替えは変数の差し替えだけで行い、部品のクラスに `dark:` は原則として使わない。
+
+```css
+@import "tailwindcss";
+@plugin "tailwindcss-react-aria-components";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+:root, [data-theme="light"] { --surface-0: oklch(0.985 0.004 220); /* ほかの役割も同様 */ color-scheme: light; }
+[data-theme="dark"] { --surface-0: oklch(0.16 0.008 220); /* ほかの役割も同様 */ color-scheme: dark; }
+
+@theme inline {
+  --color-surface-0: var(--surface-0);
+  /* ほかの役割も同様。これで bg-surface-0 などのクラスが生成される */
+}
+```
 - グレーはアクセントの色相（200 度前後）にわずかに寄せる（彩度 0.006〜0.010）。
 - アクセントは 1 色とし、使う場所は選択中と肯定的な状態（ダウンロード中、完了、ON）に限る。
 
@@ -264,15 +303,17 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 | line | oklch(0.32 0.010 220) | oklch(0.87 0.008 220) |
 | line-strong | oklch(0.42 0.010 220) | oklch(0.78 0.008 220) |
 | line-control、text-faint | oklch(0.55 0.010 220) | oklch(0.60 0.010 220) |
+|  | text-faint は無効な部品の文字にだけ使う。背景とのコントラストが 4.5:1 に満たないため、通常の文字には使わない | |
 | text-muted | oklch(0.70 0.010 220) | oklch(0.48 0.010 220) |
 | text | oklch(0.87 0.006 220) | oklch(0.28 0.008 220) |
 | text-strong | oklch(0.96 0.004 220) | oklch(0.18 0.008 220) |
-| accent | oklch(0.80 0.11 200) | oklch(0.52 0.13 205) |
+| accent | oklch(0.80 0.11 200) | oklch(0.52 0.09 210) |
 | accent-ink（アクセントの面の上の文字） | oklch(0.18 0.02 200) | oklch(0.985 0.004 220) |
 | danger | oklch(0.72 0.15 25) | oklch(0.52 0.17 25) |
 | warning | oklch(0.80 0.13 80) | oklch(0.55 0.13 75) |
 
-- 上の値は初期値であり、コントラスト（本文 4.5:1 以上、操作できる部品の輪郭 3:1 以上）を確かめて調整する。
+- 上の値は初期値であり、コントラスト（本文 4.5:1 以上、操作できる部品の輪郭 3:1 以上）を確かめて調整する。2026-10-15 の計算では、text-muted は surface-0〜3 のすべてで 4.5:1 以上（最小 4.99）、line-control は 3:1 以上（最小 3.02）、accent と accent-ink はダークで 10.45、ライトで 5.09 である。ライトの accent は、当初の値（彩度 0.13）が sRGB の色域外だったため、色域内の値に改めた。
+- 値を変えたときは、sRGB の色域内であることと、上のコントラストを再計算で確かめる。
 - 主要な操作は、色を足さずに明暗の反転で示す（ダークでは text-strong の面に surface-0 の文字）。反転した面は 1 つの領域に 1 つまでとする。
 - 面の区切りは明度差で行う。影は浮いているもの（メニュー、ポップオーバー、ダイアログ、トースト）にだけ付け、ダークでは 1px の線も付ける。
 
@@ -292,7 +333,8 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 | インスタンス、探す、アカウント | 空の状態。何ができるようになるかを 1 文で示す |
 | 設定 | テーマ、言語、同時ダウンロード数 |
 
-- サイドバーは、上にナビゲーション、下にタスクトレイを置く。Windows と macOS では、サイドバーの面を透明にして、ウィンドウの素材が見えるようにする。本文の面は surface-0 で塗る。
+- サイドバーは、上にナビゲーション、下にタスクトレイを置く。サイドバーの面は 5.6 節の条件を満たすときだけ透明にし、それ以外は surface-1 で塗る。本文の面は surface-0 で塗る。
+- `forced-colors: active` のときは、文字、輪郭、フォーカスの表示に OS のシステムカラーを使い、透明や影の表現をやめる。
 - ナビゲーションの各項目にはアイコンとラベルを付ける。
 
 ### 8.6 プレイボタン
@@ -307,9 +349,18 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 
 - 押したときに 0.97 倍に縮み、スプリングに近い動きで戻る。
 - 進捗は `transform: scaleX()` で描画する。
-- Enter と Space で操作できる。進捗は 25% ごとに `aria-live="polite"` で読み上げる。
+- Enter と Space で操作できる。
+- ボタンのアクセシブルな名前は、操作を表すものにする。準備完了では「プレイ」、準備中は見た目の表示にかかわらず常に「キャンセル」とする。進捗の割合は、ボタンの名前には含めず、`aria-describedby` で結び付けた説明（例：「準備中 37%」）で伝える。
+- `aria-live="polite"` の領域で、開始、25% ごとの進捗、完了、失敗、キャンセル完了を読み上げる。状態が変わっても、フォーカスはボタンに残す。
 - フォーカスリングはアクセントの色で 2px とする。
 - 状態の決め方（タスクのスナップショットからボタンの状態を求める関数）は、純粋な関数として切り出してテストする。
+
+タスクとの対応：
+
+- フェーズ 1 では、デモタスクは同時に 1 件までとする。実行中のデモタスクがあるときに `start_demo_task` を呼ぶと、新しく作らずに実行中のタスクの ID を返す。ホームとコマンドパレットは、同じ開始処理を使う。
+- プレイボタンは、タスクの一覧のうち、最新のデモタスクを表示する。UI を再読み込みした後も、一覧から同じように選ぶ。
+- 開始を押してから応答が返るまでは、ボタンを押せない状態にし、連打による重複を防ぐ。
+- スナップショットの状態との対応：`queued` と `running` は準備中、`cancelling` はキャンセル中、`succeeded` は完了、`failed` は失敗、`cancelled` は準備完了とする。
 
 ### 8.7 タスクトレイ
 
@@ -339,6 +390,9 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 | task の間引き | 進捗の通知が毎秒 10 回を超えない。終了の通知は間引かれない |
 | error | `IpcError` の JSON の形（insta のスナップショット） |
 | paths | `from_root` で全サブフォルダのパスが正しく求まる |
+| 起動の失敗 | 壊れた DB ファイルや、失敗するマイグレーションで `Failed` になり、DB の内容が失敗前のまま残る |
+| 秘密情報 | ダミーの秘密の値（`SecretString`）を含むエラーとタスクの失敗を作り、ログ、`IpcError`、`TaskSnapshot` のどれにもその値が出ない |
+| デモタスク | 実行中に再び開始しても、2 件目が作られない |
 
 ### 9.2 UI
 
@@ -366,13 +420,13 @@ versatile-design（design-core と web）と apple-design の手順に従う。
 
 手順：
 
-1. `pnpm --dir ui install --frozen-lockfile`
+1. `pnpm install --frozen-lockfile`（ルート）
 2. `cargo fmt --all --check`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace --locked`
 5. 生成した型が、コミット済みのものと一致することを確かめる（追跡されていない新しいファイルも検出する）
 6. `pnpm --dir ui typecheck`、`pnpm --dir ui test --run`
-7. `pnpm --dir ui tauri build --no-bundle`（tauri-action を使う場合は v1）
+7. `pnpm tauri build --no-bundle`（tauri-action を使う場合は v1）
 
 署名、インストーラの作成、リリースは行わない。
 
