@@ -9,8 +9,8 @@ export type Option<T extends string> = { id: T; label: string };
 const popoverMotion = [
   "transition-[opacity,translate] duration-(--duration-base) ease-out-quint",
   "entering:opacity-0 exiting:opacity-0 exiting:duration-(--duration-fast)",
-  "placement-bottom:entering:-translate-y-1 placement-bottom:exiting:-translate-y-1",
-  "placement-top:entering:translate-y-1 placement-top:exiting:translate-y-1",
+  "motion-safe:placement-bottom:entering:-translate-y-1 motion-safe:placement-bottom:exiting:-translate-y-1",
+  "motion-safe:placement-top:entering:translate-y-1 motion-safe:placement-top:exiting:translate-y-1",
   "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
 ].join(" ");
 

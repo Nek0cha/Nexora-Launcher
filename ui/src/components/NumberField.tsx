@@ -32,7 +32,7 @@ export function NumberField(props: {
       }}
       className="flex items-center justify-between gap-4"
     >
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col">
         <Label className="select-none text-text">{props.label}</Label>
         {props.description && (
           <Text slot="description" className="text-xs text-text-muted">

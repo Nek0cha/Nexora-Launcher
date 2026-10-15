@@ -25,6 +25,21 @@
   --color-danger-ink: oklch(0.16 0.008 220);
   --color-warning: oklch(0.8 0.13 80);
 
+  /* 本文は html の 14px のまま。余白の単位と文字の段階は rem ではなく px で固定する（rem だと 14px 基準で 3.5px 単位になる） */
+  --spacing: 4px;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.55;
+  --text-base: 14px;
+  --text-base--line-height: 1.55;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.5;
+  --text-xl: 20px;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 1.35;
+
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-island: 10px;

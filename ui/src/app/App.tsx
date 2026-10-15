@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { I18nProvider } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { Outlet } from "react-router";
@@ -9,6 +9,19 @@ import { useTaskSync } from "../features/tasks/useTasks";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
 import { applyTheme } from "./theme";
+
+const FORCED_COLORS = "(forced-colors: active)";
+
+function subscribeForcedColors(onChange: () => void): () => void {
+  const media = window.matchMedia(FORCED_COLORS);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+/** 強制カラーモードの切り替えに、再起動なしで追従する */
+function useForcedColors(): boolean {
+  return useSyncExternalStore(subscribeForcedColors, () => window.matchMedia(FORCED_COLORS).matches);
+}
 
 export function App() {
   useTaskSync();
@@ -32,7 +45,7 @@ export function App() {
     void setLanguage(settings.language);
   }, [settings?.language]);
 
-  const forcedColors = window.matchMedia("(forced-colors: active)").matches;
+  const forcedColors = useForcedColors();
   const materialOn = Boolean(info?.materialAvailable) && !forcedColors;
 
   useEffect(() => {
