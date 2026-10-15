@@ -8,3 +8,5 @@ pub mod db;
 pub mod settings;
 
 pub mod task;
+
+pub mod demo;
