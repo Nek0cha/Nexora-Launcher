@@ -21,9 +21,10 @@ const triggerClass = [
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 ].join(" ");
 
-// キーボードで移動中の項目は、ホバーと同じ面の明度で示す。この面がフォーカスの印の代わりになる
+// キーボードで移動中の項目は、ホバーと同じ面の明度で示す。この面がフォーカスの印の代わりになる。
+// キーボードを使った後はホバーでフォーカスが移らないため、ホバーにも同じ面を直接付ける
 const optionClass =
-  "flex h-9 cursor-default select-none items-center gap-2 rounded-sm px-2 text-text outline-none focused:bg-surface-3 selected:text-text-strong";
+  "flex h-9 cursor-default select-none items-center gap-2 rounded-sm px-2 text-text outline-none hover:bg-surface-3 focused:bg-surface-3 selected:text-text-strong";
 
 export function Select<T extends string>(props: {
   label: string;
