@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- プレイボタンが左から満ちていく形（spec 8.1 の記憶のフック）。色は tokens.css の text-strong と accent の値 -->
+  <style>
+    .frame { fill: none; stroke: #0e1214; stroke-width: 3; }
+    .fill { fill: #007785; }
+    @media (prefers-color-scheme: dark) {
+      .frame { stroke: #eff2f4; }
+      .fill { fill: #56d3da; }
+    }
+  </style>
+  <rect class="frame" x="3.5" y="6.5" width="25" height="19" rx="4.5" />
+  <rect class="fill" x="7" y="10" width="12" height="12" rx="1.5" />
+</svg>

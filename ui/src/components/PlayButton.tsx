@@ -87,7 +87,7 @@ function FailureNotice({ error }: { error: ErrorPayload | null }) {
           onPress={() => setShowDetail((v) => !v)}
           aria-expanded={showDetail}
           aria-controls={showDetail ? detailId : undefined}
-          className="self-start select-none rounded-sm text-sm text-text-muted underline underline-offset-2 data-hovered:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="self-start select-none rounded-sm text-sm text-text-muted underline underline-offset-2 data-hovered:text-text data-pressed:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {t("play.details")}
         </Button>
