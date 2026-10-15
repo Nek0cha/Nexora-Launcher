@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
-import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
+import { FailureNotice } from "../components/FailureNotice";
+import { toErrorPayload } from "../api/ipc";
+import { useSettings, useSettingsWriteError, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, type Lang } from "../i18n";
 import type { Theme } from "../bindings/Theme";
 
@@ -23,14 +25,34 @@ function Section({ title, twoLine = false, children }: { title: string; twoLine?
 
 export default function Settings() {
   const { t } = useTranslation("settings");
-  const { data } = useSettings();
+  const { data, error } = useSettings();
   const update = useUpdateSetting();
+  const writeError = useSettingsWriteError();
+  const title = (
+    <h1 className="font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">{t("title")}</h1>
+  );
+  // 読み込みに失敗しても空白にせず、理由を見せる
+  if (error)
+    return (
+      <div className="flex max-w-2xl flex-col gap-8 p-10">
+        {title}
+        <div role="alert">
+          <FailureNotice error={toErrorPayload(error)} />
+        </div>
+      </div>
+    );
   if (!data) return null;
   const language: Lang = data.language ?? detectLanguage(navigator.language);
 
   return (
     <div className="flex max-w-2xl flex-col gap-8 p-10">
-      <h1 className="font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">{t("title")}</h1>
+      {title}
+      {/* 書き込みの失敗は、コマンドパレットからのものも含めてここに出す。次の書き込みの成功で消える */}
+      {writeError && (
+        <div role="alert">
+          <FailureNotice error={writeError} />
+        </div>
+      )}
       <Section title={t("appearance")}>
         <Select<Theme>
           label={t("theme.label")}

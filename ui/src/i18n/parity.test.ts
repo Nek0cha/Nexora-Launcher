@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { detectLanguage, resources } from "./index";
 
 function keys(obj: unknown, prefix = ""): string[] {
@@ -16,5 +16,33 @@ describe("i18n", () => {
     expect(detectLanguage("ja-JP")).toBe("ja");
     expect(detectLanguage("en-US")).toBe("en");
     expect(detectLanguage("fr")).toBe("en");
+  });
+});
+
+describe("language hint", () => {
+  it("setLanguage writes the hint and the html lang", async () => {
+    localStorage.clear();
+    const { setLanguage } = await import("./index");
+    await setLanguage("en");
+    expect(localStorage.getItem("nexora.lang")).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
+  });
+
+  it("uses the hint for the initial language when present", async () => {
+    localStorage.setItem("nexora.lang", "ja");
+    vi.resetModules();
+    const fresh = await import("./index");
+    expect(fresh.default.language).toBe("ja");
+    localStorage.setItem("nexora.lang", "en");
+    vi.resetModules();
+    expect((await import("./index")).default.language).toBe("en");
+    localStorage.clear();
+  });
+
+  it("ignores an unknown hint", async () => {
+    localStorage.setItem("nexora.lang", "fr");
+    vi.resetModules();
+    expect(["ja", "en"]).toContain((await import("./index")).default.language);
+    localStorage.clear();
   });
 });

@@ -10,6 +10,7 @@
     "beforeBuildCommand": "pnpm --filter ui build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",

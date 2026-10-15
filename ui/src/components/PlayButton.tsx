@@ -5,11 +5,9 @@ import { useTranslation } from "react-i18next";
 import IconPlay from "~icons/ph/play-fill";
 import IconRetry from "~icons/ph/arrow-clockwise";
 import IconStop from "~icons/ph/x";
-import IconWarning from "~icons/ph/warning-circle";
 import { cancelTask } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
-import { errorKey } from "../features/errors/errorText";
 import {
   announcement,
   DONE_DISPLAY_MS,
@@ -19,7 +17,7 @@ import {
 } from "../features/play/playState";
 import { useDemoStart } from "../features/play/useDemoStart";
 import { useTasks } from "../features/tasks/useTasks";
-import i18n from "../i18n";
+import { FailureNotice } from "./FailureNotice";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -61,46 +59,6 @@ function PreparingLabel({ percent }: { percent: number }) {
       <span className="tabular inline-block min-w-[2ch] text-right">{percent}</span>
       {after}
     </span>
-  );
-}
-
-/** 失敗の説明。タスクの失敗と、開始やキャンセルの呼び出し自体の失敗の両方に使う。 */
-function FailureNotice({ error }: { error: ErrorPayload | null }) {
-  const { t } = useTranslation();
-  const [showDetail, setShowDetail] = useState(false);
-  const detailId = useId();
-  return (
-    <div className="flex max-w-xl flex-col gap-2">
-      <p className="flex items-center gap-2 text-danger">
-        <IconWarning aria-hidden className="size-4 shrink-0" />
-        <span>
-          {error
-            ? t(errorKey(error.code, (k) => i18n.exists(k)) as never, {
-                ...(error.params as Record<string, unknown>),
-                code: error.code,
-              })
-            : t("errors:generic" as never, { code: "unknown" })}
-        </span>
-      </p>
-      {error?.detail && (
-        <Button
-          onPress={() => setShowDetail((v) => !v)}
-          aria-expanded={showDetail}
-          aria-controls={showDetail ? detailId : undefined}
-          className="self-start select-none rounded-sm text-sm text-text-muted underline underline-offset-2 data-hovered:text-text data-pressed:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {t("play.details")}
-        </Button>
-      )}
-      {showDetail && error?.detail && (
-        <pre
-          id={detailId}
-          className="tabular max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
-        >
-          {error.detail}
-        </pre>
-      )}
-    </div>
   );
 }
 

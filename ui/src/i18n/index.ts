@@ -18,9 +18,21 @@ export function detectLanguage(navigatorLanguage: string): Lang {
   return navigatorLanguage.toLowerCase().startsWith("ja") ? "ja" : "en";
 }
 
+const LANG_HINT_KEY = "nexora.lang";
+
+/** 前回決めた言語の控え。最初の描画の前に言語を決めるために使う。 */
+function readLangHint(): Lang | null {
+  try {
+    const hint = localStorage.getItem(LANG_HINT_KEY);
+    return hint === "ja" || hint === "en" ? hint : null;
+  } catch {
+    return null;
+  }
+}
+
 void i18n.use(initReactI18next).init({
   resources,
-  lng: detectLanguage(typeof navigator === "undefined" ? "en" : navigator.language),
+  lng: readLangHint() ?? detectLanguage(typeof navigator === "undefined" ? "en" : navigator.language),
   fallbackLng: "en",
   ns: ["common", "errors", "settings"],
   defaultNS: "common",
@@ -30,6 +42,11 @@ void i18n.use(initReactI18next).init({
 export async function setLanguage(lang: Lang): Promise<void> {
   await i18n.changeLanguage(lang);
   document.documentElement.lang = lang;
+  try {
+    localStorage.setItem(LANG_HINT_KEY, lang);
+  } catch {
+    // 保存できない環境では控えを持たない
+  }
 }
 
 export default i18n;

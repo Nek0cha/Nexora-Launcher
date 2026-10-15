@@ -56,8 +56,11 @@ pub fn run() {
             let state = app.state::<AppState>();
             match start_services(&handle) {
                 Ok(services) => {
-                    if let Ok(s) = settings::load(&services.db) {
-                        commands::apply_window_theme(&handle, s.theme);
+                    match settings::load(&services.db) {
+                        Ok(s) => commands::apply_window_theme(&handle, s.theme),
+                        Err(err) => {
+                            tracing::warn!(code = %err.code(), "failed to load settings at startup");
+                        }
                     }
                     state.set(Startup::Ready(services));
                 }

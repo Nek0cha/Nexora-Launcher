@@ -66,6 +66,7 @@ export function CommandPalette() {
         label: t("palette.toggleTheme"),
         run: () => {
           const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+          // 失敗は設定画面の書き込みエラーと共有される（useSettingsWriteError）
           update.mutate({ key: "theme", value: nextTheme(current) });
         },
       },

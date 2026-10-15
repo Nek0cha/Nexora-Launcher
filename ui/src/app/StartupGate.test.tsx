@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import "../i18n";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import i18n from "../i18n";
 import { getStartupStatus } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import { StartupGate } from "./StartupGate";
@@ -18,6 +18,10 @@ function mount() {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
+});
 
 afterEach(() => {
   cleanup();
@@ -39,6 +43,7 @@ describe("StartupGate", () => {
     mount();
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("db.migration_failed");
+    expect(alert.textContent).toContain("Updating the database failed");
     expect(screen.queryByText("app")).toBeNull();
   });
 

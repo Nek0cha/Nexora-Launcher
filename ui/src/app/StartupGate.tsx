@@ -5,6 +5,8 @@ import IconWarning from "~icons/ph/warning-circle";
 import { getStartupStatus } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
+import { errorKey } from "../features/errors/errorText";
+import i18n from "../i18n";
 
 export function StartupGate({ children }: { children: ReactNode }) {
   const { data: status, error } = useQuery({
@@ -27,6 +29,13 @@ function StartupError({ data }: { data: ErrorPayload }) {
       <IconWarning aria-hidden className="size-8 text-danger" />
       <h1 className="font-display text-xl font-semibold text-text-strong">{t("startup.title")}</h1>
       <p className="text-text">{t("startup.body")}</p>
+      {/* 利用者向けの説明。コードと詳細はその下に、報告用として残す */}
+      <p className="text-text">
+        {t(errorKey(data.code, (k) => i18n.exists(k)) as never, {
+          ...(data.params as Record<string, unknown>),
+          code: data.code,
+        })}
+      </p>
       {/* 報告に貼れるよう、コードと詳細は選択できるまま残す */}
       <pre className="tabular overflow-auto rounded-md border border-line bg-surface-1 p-3 text-xs whitespace-pre-wrap text-text">
         {data.code}

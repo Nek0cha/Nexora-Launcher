@@ -11,6 +11,11 @@
         var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.dataset.theme = dark ? "dark" : "light";
       } catch (e) {}
+      try {
+        var lang = localStorage.getItem("nexora.lang");
+        if (lang !== "ja" && lang !== "en") lang = /^ja/i.test(navigator.language) ? "ja" : "en";
+        document.documentElement.lang = lang;
+      } catch (e) {}
     </script>
   </head>
   <body>
