@@ -284,7 +284,6 @@ impl Launcher {
         };
 
         let launched_at = now_ms();
-        instance::record_launch(&env.db, id, launched_at)?;
         self.processes
             .spawn(SpawnSpec {
                 instance_id: id.to_string(),
@@ -301,6 +300,15 @@ impl Launcher {
                 secret: Some(session.access_token.clone()),
             })
             .await?;
+        // 起動できたときだけ「最後に遊んだ日時」を更新する（セッションと同じ時刻）。
+        // ゲームはもう動いているので、記録に失敗してもタスクは失敗にしない
+        if let Err(err) = instance::record_launch(&env.db, id, launched_at) {
+            tracing::warn!(
+                instance_id = id,
+                code = err.code(),
+                "failed to record the launch time"
+            );
+        }
         Ok(())
     }
 }

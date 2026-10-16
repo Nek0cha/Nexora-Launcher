@@ -252,3 +252,35 @@ async fn installed_instance_launches_offline() {
     let snap = wait(&h.tasks, &task).await;
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
 }
+
+#[tokio::test]
+async fn failed_spawn_does_not_update_last_played() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake);
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let installed = wait(&h.tasks, &created.task_id).await;
+    assert_eq!(
+        installed.state,
+        TaskState::Succeeded,
+        "{:?}",
+        installed.error
+    );
+    let id = &created.instance.id;
+    // 登録済みの Java を、どの OS でも実行できないファイルに差し替える
+    let java = nexora_core::java::find_registered(h.launcher.db(), "jre-test")
+        .unwrap()
+        .unwrap();
+    std::fs::write(&java, b"not an executable").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&java, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    let task = h.launcher.launch_instance(id).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "launch.spawn_failed");
+    let inst = instance::get(h.launcher.db(), id).unwrap();
+    assert_eq!(inst.last_played_at, None);
+    assert!(h.launcher.list_running().unwrap().is_empty());
+}
