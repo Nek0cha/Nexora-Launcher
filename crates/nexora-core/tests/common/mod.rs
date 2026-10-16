@@ -135,8 +135,20 @@ impl FakeMojang {
     }
 
     /// serve_library が false なら、ライブラリだけ 404 にする（あとで serve_library を呼ぶ）。
+    ///
+    /// fetch_all は最初の失敗で取得中のほかのファイルを打ち切るため、404 を遅らせて、
+    /// ほかのファイルの取得が先に終わるようにする。
     pub async fn start_with(serve_library: bool) -> Self {
-        Self::build(serve_library, None).await
+        let fake = Self::build(serve_library, None).await;
+        if !serve_library {
+            Mock::given(method("GET"))
+                .and(path("/lib.jar"))
+                .respond_with(ResponseTemplate::new(404).set_delay(Duration::from_millis(500)))
+                .up_to_n_times(1)
+                .mount(&fake.server)
+                .await;
+        }
+        fake
     }
 
     /// ライブラリ（中身は LIBRARY）だけを、別のサーバーの url から取得させる。
