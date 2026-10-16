@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::AuthUrls;
-use super::http::{AuthHttp, status_is_transient, transient};
+use super::http::{AuthHttp, http_status, json_post, send};
 use crate::error::CoreError;
 use crate::install::now_ms;
 
@@ -134,37 +134,16 @@ async fn post_json(
     url: &str,
     body: &serde_json::Value,
 ) -> Result<TokenBody, CoreError> {
-    let response = http
-        .client()
-        .post(url)
-        .header("Accept", "application/json")
-        .header("x-xbl-contract-version", "1")
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| transient(&e))?;
-    let status = response.status().as_u16();
-    let bytes = response.bytes().await.map_err(|e| transient(&e))?;
-    if status_is_transient(status) {
-        return Err(CoreError::Offline {
-            message: format!("HTTP {status}"),
-        });
+    let reply = send(json_post(http, url, body).header("x-xbl-contract-version", "1")).await?;
+    if reply.is_success() {
+        return reply.json("Xbox");
     }
-    if (200..300).contains(&status) {
-        return serde_json::from_slice(&bytes).map_err(|_| CoreError::Unexpected {
-            message: "invalid Xbox response".into(),
-        });
-    }
-    match serde_json::from_slice::<ErrBody>(&bytes)
+    match serde_json::from_slice::<ErrBody>(&reply.body)
         .ok()
         .and_then(|b| b.xerr)
     {
         Some(xerr) => Err(CoreError::AuthXbox { xerr }),
-        None => Err(CoreError::HttpStatus {
-            status,
-            url: url.to_string(),
-        }),
+        None => Err(http_status(reply.status, url)),
     }
 }
 

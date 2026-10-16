@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use super::AuthUrls;
-use super::http::{AuthHttp, status_is_transient, transient};
+use super::http::{AuthHttp, Reply, http_status, send};
 use crate::error::CoreError;
 
 const SCOPE: &str = "XboxLive.signin offline_access";
@@ -63,35 +63,15 @@ fn slowed(interval: Duration) -> Duration {
 }
 
 /// トークンのエンドポイントの応答。
-enum Reply {
+enum TokenReply {
     Ok(TokenBody),
     /// 400 系の `error` の値。
     Error(String),
 }
 
-/// フォームを POST して、応答を分類する。本文はエラーに入れない。
-async fn post_form(
-    http: &AuthHttp,
-    url: &str,
-    form: &[(&str, &str)],
-) -> Result<(u16, Vec<u8>), CoreError> {
-    let response = http
-        .client()
-        .post(url)
-        .form(form)
-        .send()
-        .await
-        .map_err(|e| transient(&e))?;
-    let status = response.status().as_u16();
-    let body = response.bytes().await.map_err(|e| transient(&e))?;
-    Ok((status, body.to_vec()))
-}
-
-fn http_status(status: u16, url: &str) -> CoreError {
-    CoreError::HttpStatus {
-        status,
-        url: url.to_string(),
-    }
+/// フォームを POST して、応答を読む。本文はエラーに入れない。
+async fn post_form(http: &AuthHttp, url: &str, form: &[(&str, &str)]) -> Result<Reply, CoreError> {
+    send(http.client().post(url).form(form)).await
 }
 
 /// `error` の値を CoreError にする。None は未分類。
@@ -108,25 +88,16 @@ fn classify_error(error: &str) -> Option<CoreError> {
     }
 }
 
-fn read_reply(status: u16, body: &[u8], url: &str) -> Result<Reply, CoreError> {
-    if status_is_transient(status) {
-        return Err(CoreError::Offline {
-            message: format!("HTTP {status}"),
-        });
+fn read_reply(reply: &Reply, url: &str) -> Result<TokenReply, CoreError> {
+    if reply.is_success() {
+        return reply.json("token").map(TokenReply::Ok);
     }
-    if (200..300).contains(&status) {
-        return serde_json::from_slice::<TokenBody>(body)
-            .map(Reply::Ok)
-            .map_err(|_| CoreError::Unexpected {
-                message: "invalid token response".into(),
-            });
-    }
-    match serde_json::from_slice::<ErrorBody>(body)
+    match serde_json::from_slice::<ErrorBody>(&reply.body)
         .ok()
         .and_then(|b| b.error)
     {
-        Some(error) => Ok(Reply::Error(error)),
-        None => Err(http_status(status, url)),
+        Some(error) => Ok(TokenReply::Error(error)),
+        None => Err(http_status(reply.status, url)),
     }
 }
 
@@ -149,10 +120,10 @@ async fn token_request(
     form: &[(&str, &str)],
     now_ms: i64,
 ) -> Result<MsTokens, CoreError> {
-    let (status, body) = post_form(http, &urls.token, form).await?;
-    match read_reply(status, &body, &urls.token)? {
-        Reply::Ok(b) => Ok(into_tokens(b, now_ms)),
-        Reply::Error(e) => Err(fail(&e, status, &urls.token)),
+    let reply = post_form(http, &urls.token, form).await?;
+    match read_reply(&reply, &urls.token)? {
+        TokenReply::Ok(b) => Ok(into_tokens(b, now_ms)),
+        TokenReply::Error(e) => Err(fail(&e, reply.status, &urls.token)),
     }
 }
 
@@ -211,23 +182,13 @@ pub async fn request_device_code(
     client_id: &str,
     now_ms: i64,
 ) -> Result<DeviceCode, CoreError> {
-    let (status, body) = post_form(
+    let reply = post_form(
         http,
         &urls.device_code,
         &[("client_id", client_id), ("scope", SCOPE)],
     )
     .await?;
-    if status_is_transient(status) {
-        return Err(CoreError::Offline {
-            message: format!("HTTP {status}"),
-        });
-    }
-    if !(200..300).contains(&status) {
-        return Err(http_status(status, &urls.device_code));
-    }
-    let b: DeviceBody = serde_json::from_slice(&body).map_err(|_| CoreError::Unexpected {
-        message: "invalid device code response".into(),
-    })?;
+    let b: DeviceBody = reply.json_or_status("device code", &urls.device_code)?;
     Ok(DeviceCode {
         user_code: b.user_code,
         verification_uri: b.verification_uri,
@@ -260,16 +221,16 @@ pub async fn poll_device_code(
             ("grant_type", DEVICE_GRANT),
             ("device_code", code.device_code.expose_secret()),
         ];
-        let (status, body) = tokio::select! {
+        let reply = tokio::select! {
             _ = cancel.cancelled() => return Err(CoreError::Cancelled),
             r = post_form(http, &urls.token, &form) => r?,
         };
-        match read_reply(status, &body, &urls.token)? {
-            Reply::Ok(b) => return Ok(into_tokens(b, now())),
-            Reply::Error(e) => match e.as_str() {
+        match read_reply(&reply, &urls.token)? {
+            TokenReply::Ok(b) => return Ok(into_tokens(b, now())),
+            TokenReply::Error(e) => match e.as_str() {
                 "authorization_pending" => {}
                 "slow_down" => interval = slowed(interval),
-                other => return Err(fail(other, status, &urls.token)),
+                other => return Err(fail(other, reply.status, &urls.token)),
             },
         }
     }
