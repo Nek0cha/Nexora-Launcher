@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use secrecy::SecretString;
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -234,26 +235,38 @@ impl AuthService {
 
     /// Microsoft のトークンからアカウントを追加し、使用中にする。
     /// Java 版を所有していなければ、何も保存せずに `NotOwned` を返す。
+    ///
+    /// 通信の間（トークンの連鎖とロックの待ち）は `cancel` で打ち切れる（`Cancelled`、何も保存しない）。
+    /// 保存を始めたら、途中で打ち切らずに最後まで書く。
     pub async fn complete_login(
         &self,
         tokens: MsTokens,
         progress: ProgressFn<'_>,
+        cancel: &CancellationToken,
     ) -> Result<Uuid, CoreError> {
-        let signed = self
-            .sign_in(&tokens.access, progress)
-            .await
-            .map_err(|e| match e {
-                CoreError::Offline { .. } => CoreError::AuthOffline {
-                    offline_available: false,
-                },
-                other => other,
-            })?;
+        let signed = tokio::select! {
+            _ = cancel.cancelled() => return Err(CoreError::Cancelled),
+            r = self.sign_in(&tokens.access, progress) => r,
+        }
+        .map_err(|e| match e {
+            CoreError::Offline { .. } => CoreError::AuthOffline {
+                offline_available: false,
+            },
+            other => other,
+        })?;
         if signed.entitlement == EntitlementState::NotOwned {
             return Err(CoreError::NotOwned);
         }
         let id = signed.profile.id;
         let lock = self.lock_for(id);
-        let _guard = lock.lock().await;
+        let _guard = tokio::select! {
+            _ = cancel.cancelled() => return Err(CoreError::Cancelled),
+            g = lock.lock() => g,
+        };
+        // ここから先は保存を伴うため、打ち切らない
+        if cancel.is_cancelled() {
+            return Err(CoreError::Cancelled);
+        }
         self.record(&signed)?;
         match tokens.refresh {
             Some(refresh) => self.keep_refresh(id, refresh).await,
@@ -524,7 +537,8 @@ mod tests {
         };
         assert_send(&auth.session_for_launch());
         assert_send(&auth.warm_up());
-        assert_send(&auth.complete_login(tokens, &|_| {}));
+        let cancel = CancellationToken::new();
+        assert_send(&auth.complete_login(tokens, &|_| {}, &cancel));
         assert_send(&auth.remove(id));
         assert_send(&auth.skin_path(id));
     }

@@ -758,8 +758,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use common::{
     ALL_SECRETS, MC_TOKEN, MS_ACCESS, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, REFRESH_2,
-    REFRESH_3, XUID, hits_on, mount_chain, mount_entitlements, mount_mc_login, mount_mc_profile,
-    mount_refresh, mount_token_failure, mount_xbox,
+    REFRESH_3, XBL_TOKEN, XUID, hits_on, mount_chain, mount_entitlements, mount_mc_login,
+    mount_mc_profile, mount_refresh, mount_token_failure, mount_xbox,
 };
 use nexora_core::auth::OFFLINE_GRACE_MS;
 use nexora_core::auth::accounts::{self, ProfileRecord};
@@ -873,7 +873,9 @@ impl Env {
             refresh: Some(secret(REFRESH_1)),
             expires_at_ms: T0 + 3_600_000,
         };
-        self.auth.complete_login(tokens, &|_| {}).await
+        self.auth
+            .complete_login(tokens, &|_| {}, &CancellationToken::new())
+            .await
     }
 
     async fn requests(&self) -> usize {
@@ -943,7 +945,11 @@ async fn service_complete_login_saves_the_account_and_refresh_token() {
     };
     let id = e
         .auth
-        .complete_login(tokens, &|p| seen.lock().unwrap().push(p))
+        .complete_login(
+            tokens,
+            &|p| seen.lock().unwrap().push(p),
+            &CancellationToken::new(),
+        )
         .await
         .unwrap();
     assert_eq!(id, profile_id());
@@ -1434,7 +1440,7 @@ async fn service_errors_do_not_contain_tokens() {
 use nexora_core::auth::login::{
     LOGIN_KIND, LoginMethod, LoginNotifier, LoginProgressEvent, UrlOpener, run_login,
 };
-use nexora_core::task::{TaskChange, TaskManager, TaskNotifier};
+use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskState};
 
 const AUTH_CODE: &str = "AUTH-CODE-SECRET";
 
@@ -1553,46 +1559,70 @@ async fn mount_device(server: &MockServer, verification_uri: &str) {
         .await;
 }
 
-type LoginResult = tokio::sync::oneshot::Receiver<Result<Uuid, CoreError>>;
+/// run_login の結果。エラーはコードで持つ（CoreError は Clone できないため、本体はタスクに返す）。
+type LoginResult = Result<Uuid, &'static str>;
 
-/// TaskManager の中で run_login を動かす。タスクの ID と結果の受け口を返す。
+/// TaskManager の中で動かしているログイン。
+struct LoginRun {
+    tasks: TaskManager,
+    id: String,
+    rx: tokio::sync::oneshot::Receiver<LoginResult>,
+}
+
+/// TaskManager の中で run_login を動かす。タスクには run_login の結果をそのまま返す。
 fn start_login(
-    tasks: &TaskManager,
     auth: AuthService,
     method: LoginMethod,
     opener: Arc<dyn UrlOpener>,
     notifier: Arc<Progress>,
-) -> (String, LoginResult) {
+) -> LoginRun {
+    let tasks = TaskManager::new(Arc::new(NoTasks));
     let (tx, rx) = tokio::sync::oneshot::channel();
     let id = tasks.spawn_unique(LOGIN_KIND, None, move |handle| async move {
         let r = run_login(&auth, method, opener.as_ref(), notifier.as_ref(), &handle).await;
-        let cancelled = matches!(r, Err(CoreError::Cancelled));
-        let _ = tx.send(r);
-        if cancelled {
-            Err(CoreError::Cancelled)
-        } else {
-            Ok(())
-        }
+        let _ = tx.send(r.as_ref().map(|id| *id).map_err(|e| e.code()));
+        r.map(|_| ())
     });
-    (id, rx)
+    LoginRun { tasks, id, rx }
 }
 
-async fn finish(rx: LoginResult) -> Result<Uuid, CoreError> {
-    tokio::time::timeout(std::time::Duration::from_secs(20), rx)
-        .await
-        .expect("ログインが終わらない")
-        .unwrap()
+impl LoginRun {
+    /// 終わるまで待ち、結果とタスクの最後の状態を返す。両者が食い違わないことも確かめる。
+    async fn finish(self) -> (LoginResult, TaskState) {
+        let r = tokio::time::timeout(std::time::Duration::from_secs(20), self.rx)
+            .await
+            .expect("ログインが終わらない")
+            .unwrap();
+        let mut snap = self.tasks.get(&self.id).unwrap();
+        for _ in 0..500 {
+            if snap.state.is_terminal() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            snap = self.tasks.get(&self.id).unwrap();
+        }
+        match r {
+            Ok(_) => assert_eq!(snap.state, TaskState::Succeeded),
+            Err("task.cancelled") => assert_eq!(snap.state, TaskState::Cancelled),
+            Err(code) => {
+                assert_eq!(snap.state, TaskState::Failed);
+                assert_eq!(snap.error.as_ref().map(|p| p.code.as_str()), Some(code));
+            }
+        }
+        (r, snap.state)
+    }
 }
 
 async fn login_with(
     auth: &AuthService,
     method: LoginMethod,
     opener: Arc<dyn UrlOpener>,
-) -> (Result<Uuid, CoreError>, Arc<Progress>, String) {
-    let tasks = TaskManager::new(Arc::new(NoTasks));
+) -> (LoginResult, Arc<Progress>, String) {
     let progress = Arc::new(Progress::default());
-    let (id, rx) = start_login(&tasks, auth.clone(), method, opener, progress.clone());
-    (finish(rx).await, progress, id)
+    let run = start_login(auth.clone(), method, opener, progress.clone());
+    let id = run.id.clone();
+    let (r, _) = run.finish().await;
+    (r, progress, id)
 }
 
 async fn wait_for_url(progress: &Progress) -> String {
@@ -1662,7 +1692,7 @@ async fn login_browser_without_client_id_is_no_client_id() {
     let browser = Arc::new(FakeBrowser::default());
     for method in [LoginMethod::Browser, LoginMethod::DeviceCode] {
         let (r, progress, _) = login_with(&auth, method, browser.clone()).await;
-        assert!(matches!(r, Err(CoreError::NoClientId)), "{r:?}");
+        assert_eq!(r, Err("auth.no_client_id"));
         assert!(progress.stages().is_empty());
     }
     assert!(browser.0.lock().unwrap().is_empty());
@@ -1674,11 +1704,9 @@ async fn login_opener_failure_still_waits_and_reports_the_url() {
     let e = env().await;
     mount_code_exchange(&e.server).await;
     mount_chain(&e.server, 86_400, Ownership::Owned).await;
-    let tasks = TaskManager::new(Arc::new(NoTasks));
     let progress = Arc::new(Progress::default());
     let opener = Arc::new(BrokenOpener::default());
-    let (_, rx) = start_login(
-        &tasks,
+    let run = start_login(
         e.auth.clone(),
         LoginMethod::Browser,
         opener.clone(),
@@ -1686,19 +1714,18 @@ async fn login_opener_failure_still_waits_and_reports_the_url() {
     );
     let url = wait_for_url(&progress).await;
     // 開けなくても待ち続ける。UI から開き直した、とみなしてコールバックを送る
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     send_callback(&url);
-    assert_eq!(finish(rx).await.unwrap(), profile_id());
+    let (r, state) = run.finish().await;
+    assert_eq!(r, Ok(profile_id()));
+    assert_eq!(state, TaskState::Succeeded);
     assert_eq!(*opener.0.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn login_cancel_during_browser_wait_is_cancelled() {
     let e = env().await;
-    let tasks = TaskManager::new(Arc::new(NoTasks));
     let progress = Arc::new(Progress::default());
-    let (task_id, rx) = start_login(
-        &tasks,
+    let run = start_login(
         e.auth.clone(),
         LoginMethod::Browser,
         Arc::new(BrokenOpener::default()),
@@ -1706,13 +1733,77 @@ async fn login_cancel_during_browser_wait_is_cancelled() {
     );
     let url = wait_for_url(&progress).await;
     let (_, port) = callback_target(&url);
-    tasks.cancel(&task_id).unwrap();
-    let r = finish(rx).await;
-    assert!(matches!(r, Err(CoreError::Cancelled)), "{r:?}");
+    run.tasks.cancel(&run.id).unwrap();
+    let (r, state) = run.finish().await;
+    assert_eq!(r, Err("task.cancelled"));
+    assert_eq!(state, TaskState::Cancelled);
     // ポートが解放されている
     std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
     assert!(accounts::list(&e.db).unwrap().is_empty());
     assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn login_cancel_during_the_xbox_check_saves_nothing() {
+    let e = env().await;
+    // 元のアカウント（別の UUID）が使用中。キャンセルしたら切り替わってはいけない
+    let other = Uuid::from_u128(2);
+    accounts::save_profile(
+        &e.db,
+        &ProfileRecord {
+            id: other,
+            username: "Alex".into(),
+            xuid: None,
+            skin_url: None,
+        },
+        EntitlementState::Verified,
+        T0,
+    )
+    .unwrap();
+    accounts::set_active(&e.db, other).unwrap();
+    mount_code_exchange(&e.server).await;
+    // Xbox のユーザートークンだけ遅らせる。キャンセルが効かなければ、3 秒後に連鎖が成功する
+    Mock::given(method("POST"))
+        .and(path("/xbox/user"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!(
+                    r#"{{"Token":"{XBL_TOKEN}","NotAfter":"2100-01-01T00:00:00Z"}}"#
+                ))
+                .set_delay(std::time::Duration::from_secs(3)),
+        )
+        .with_priority(1)
+        .mount(&e.server)
+        .await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let progress = Arc::new(Progress::default());
+    let run = start_login(
+        e.auth.clone(),
+        LoginMethod::Browser,
+        Arc::new(FakeBrowser::default()),
+        progress.clone(),
+    );
+    for _ in 0..500 {
+        if progress.stages().contains(&LoginProgress::CheckingXbox) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(progress.stages().contains(&LoginProgress::CheckingXbox));
+    run.tasks.cancel(&run.id).unwrap();
+    let (r, state) = run.finish().await;
+    assert_eq!(r, Err("task.cancelled"));
+    assert_eq!(state, TaskState::Cancelled);
+    let rows = accounts::list(&e.db).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, other);
+    assert!(rows[0].is_active);
+    assert_eq!(e.stored(), None);
+    assert!(
+        !progress
+            .stages()
+            .contains(&LoginProgress::CheckingMinecraft)
+    );
 }
 
 #[tokio::test]

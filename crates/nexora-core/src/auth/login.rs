@@ -149,9 +149,6 @@ pub async fn run_login(
         }
     };
 
-    // ここから先は保存を伴うため、途中で打ち切らない
-    if handle.token().is_cancelled() {
-        return Err(CoreError::Cancelled);
-    }
-    auth.complete_login(tokens, &report).await
+    // 通信の間は打ち切れる。保存を始めたら complete_login が最後まで書く
+    auth.complete_login(tokens, &report, handle.token()).await
 }
