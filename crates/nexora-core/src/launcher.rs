@@ -322,5 +322,5 @@ fn current_session(db: &Db) -> Result<LaunchSession, CoreError> {
 /// フェーズ 3 で Microsoft 認証のアカウントにつなぐまで、リリースビルドでは起動できない。
 #[cfg(not(debug_assertions))]
 fn current_session(_db: &Db) -> Result<LaunchSession, CoreError> {
-    Err(CoreError::NoAccount)
+    Err(CoreError::AuthNoAccount)
 }

@@ -40,7 +40,31 @@
     "already_running": "This instance is already running",
     "command_too_long": "The launch command is too long",
     "spawn_failed": "Couldn't start the game",
-    "no_account": "No account is available to play"
+    "path_not_encodable": "The path contains characters that can't be passed to the game"
+  },
+  "auth": {
+    "no_account": "No account is signed in",
+    "login_required": "Please sign in again",
+    "offline": "You can't sign in because there is no internet connection",
+    "timeout": "Sign-in timed out. Please try again",
+    "callback_invalid": "The sign-in response was not valid. Please try again",
+    "denied": "Sign-in was not allowed",
+    "xbox": "Xbox error ({{xerr}})",
+    "xbox_2148916227": "This Xbox account is banned. Check the status with Xbox support",
+    "xbox_2148916229": "A guardian has restricted online access. Ask the family organizer to review the Xbox permissions",
+    "xbox_2148916233": "This account has no Xbox profile. Sign in on the Xbox website and create a profile",
+    "xbox_2148916234": "The Xbox terms have not been accepted. Sign in to Xbox and accept the required terms",
+    "xbox_2148916235": "Xbox services are not available in your region",
+    "xbox_2148916236": "Age verification is required. Complete Microsoft's age verification process",
+    "xbox_2148916237": "The account's playtime limit has been reached. Review the restriction settings",
+    "xbox_2148916238": "A child account must belong to a family managed by an adult. Ask a parent or guardian to complete the family setup and permissions",
+    "app_not_approved": "This app has not yet been approved to use the Minecraft API",
+    "not_owned": "This account does not own Minecraft: Java Edition",
+    "ownership_unknown": "Minecraft ownership could not be confirmed. Please try again later",
+    "no_profile": "This account has no Minecraft profile",
+    "no_client_id": "This build has no Microsoft client ID, so sign-in is unavailable",
+    "account_not_found": "The account was not found",
+    "account_in_use": "This account can't be removed while a game is running"
   },
   "instance": {
     "not_found": "Instance not found"

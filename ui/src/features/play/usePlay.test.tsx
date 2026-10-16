@@ -65,11 +65,11 @@ describe("usePlay", () => {
   });
 
   it("shares a failure with another hook instance and clears it on a later success", async () => {
-    vi.mocked(launchInstance).mockRejectedValueOnce(new IpcError({ code: "launch.no_account", params: {}, detail: "d" }));
+    vi.mocked(launchInstance).mockRejectedValueOnce(new IpcError({ code: "auth.no_account", params: {}, detail: "d" }));
     const { home, palette } = setup();
     await act(async () => palette.result.current.press());
-    await waitFor(() => expect(home.result.current.error?.code).toBe("launch.no_account"));
-    expect(palette.result.current.error?.code).toBe("launch.no_account");
+    await waitFor(() => expect(home.result.current.error?.code).toBe("auth.no_account"));
+    expect(palette.result.current.error?.code).toBe("auth.no_account");
 
     vi.mocked(launchInstance).mockResolvedValueOnce("t2");
     await act(async () => home.result.current.press());

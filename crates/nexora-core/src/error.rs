@@ -48,7 +48,35 @@ pub enum CoreError {
     #[error("failed to start the game: {message}")]
     SpawnFailed { message: String },
     #[error("no account is available to launch the game")]
-    NoAccount,
+    AuthNoAccount,
+    #[error("sign-in is required for account {account_id}")]
+    LoginRequired { account_id: String },
+    #[error("sign-in failed because the network is unavailable")]
+    AuthOffline { offline_available: bool },
+    #[error("sign-in timed out")]
+    AuthTimeout,
+    #[error("the sign-in callback was invalid")]
+    AuthCallbackInvalid,
+    #[error("sign-in was denied")]
+    AuthDenied,
+    #[error("Xbox returned error {xerr}")]
+    AuthXbox { xerr: u64 },
+    #[error("the app is not approved for the Minecraft API")]
+    AppNotApproved,
+    #[error("the account does not own Minecraft: Java Edition")]
+    NotOwned,
+    #[error("Minecraft ownership could not be determined")]
+    OwnershipUnknown,
+    #[error("the account has no Minecraft profile")]
+    NoProfile,
+    #[error("no Microsoft client ID is embedded in this build")]
+    NoClientId,
+    #[error("account {account_id} was not found")]
+    AccountNotFound { account_id: String },
+    #[error("account {account_id} is in use by a running game")]
+    AccountInUse { account_id: String },
+    #[error("a path contains characters that cannot be passed to the game")]
+    PathNotEncodable,
     #[error("instance {instance_id} was not found")]
     InstanceNotFound { instance_id: String },
     #[error("unexpected error: {message}")]
@@ -77,7 +105,21 @@ impl CoreError {
             CoreError::AlreadyRunning { .. } => "launch.already_running",
             CoreError::CommandTooLong { .. } => "launch.command_too_long",
             CoreError::SpawnFailed { .. } => "launch.spawn_failed",
-            CoreError::NoAccount => "launch.no_account",
+            CoreError::AuthNoAccount => "auth.no_account",
+            CoreError::LoginRequired { .. } => "auth.login_required",
+            CoreError::AuthOffline { .. } => "auth.offline",
+            CoreError::AuthTimeout => "auth.timeout",
+            CoreError::AuthCallbackInvalid => "auth.callback_invalid",
+            CoreError::AuthDenied => "auth.denied",
+            CoreError::AuthXbox { .. } => "auth.xbox",
+            CoreError::AppNotApproved => "auth.app_not_approved",
+            CoreError::NotOwned => "auth.not_owned",
+            CoreError::OwnershipUnknown => "auth.ownership_unknown",
+            CoreError::NoProfile => "auth.no_profile",
+            CoreError::NoClientId => "auth.no_client_id",
+            CoreError::AccountNotFound { .. } => "auth.account_not_found",
+            CoreError::AccountInUse { .. } => "auth.account_in_use",
+            CoreError::PathNotEncodable => "launch.path_not_encodable",
             CoreError::InstanceNotFound { .. } => "instance.not_found",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -126,6 +168,18 @@ impl CoreError {
             }
             CoreError::CommandTooLong { length } => {
                 params.insert("length".into(), ParamValue::Num(*length as f64));
+            }
+            CoreError::LoginRequired { account_id } => {
+                params.insert("accountId".into(), ParamValue::Str(account_id.clone()));
+            }
+            CoreError::AuthOffline { offline_available } => {
+                params.insert(
+                    "offlineAvailable".into(),
+                    ParamValue::Bool(*offline_available),
+                );
+            }
+            CoreError::AuthXbox { xerr } => {
+                params.insert("xerr".into(), ParamValue::Num(*xerr as f64));
             }
             _ => {}
         }
@@ -286,7 +340,6 @@ mod tests {
                 },
                 "launch.spawn_failed",
             ),
-            (CoreError::NoAccount, "launch.no_account"),
             (
                 CoreError::InstanceNotFound {
                     instance_id: "i".into(),
@@ -332,6 +385,77 @@ mod tests {
         assert_eq!(
             payload.params.get("platform"),
             Some(&ParamValue::Str("mac-os-arm64".into()))
+        );
+    }
+
+    #[test]
+    fn phase3_codes_and_params() {
+        let cases: Vec<(CoreError, &str)> = vec![
+            (CoreError::AuthNoAccount, "auth.no_account"),
+            (
+                CoreError::LoginRequired {
+                    account_id: "a".into(),
+                },
+                "auth.login_required",
+            ),
+            (
+                CoreError::AuthOffline {
+                    offline_available: true,
+                },
+                "auth.offline",
+            ),
+            (CoreError::AuthTimeout, "auth.timeout"),
+            (CoreError::AuthCallbackInvalid, "auth.callback_invalid"),
+            (CoreError::AuthDenied, "auth.denied"),
+            (CoreError::AuthXbox { xerr: 1 }, "auth.xbox"),
+            (CoreError::AppNotApproved, "auth.app_not_approved"),
+            (CoreError::NotOwned, "auth.not_owned"),
+            (CoreError::OwnershipUnknown, "auth.ownership_unknown"),
+            (CoreError::NoProfile, "auth.no_profile"),
+            (CoreError::NoClientId, "auth.no_client_id"),
+            (
+                CoreError::AccountNotFound {
+                    account_id: "a".into(),
+                },
+                "auth.account_not_found",
+            ),
+            (
+                CoreError::AccountInUse {
+                    account_id: "a".into(),
+                },
+                "auth.account_in_use",
+            ),
+            (CoreError::PathNotEncodable, "launch.path_not_encodable"),
+        ];
+        for (err, code) in cases {
+            assert_eq!(err.code(), code);
+        }
+        let p = CoreError::LoginRequired {
+            account_id: "abc".into(),
+        }
+        .to_payload();
+        assert_eq!(
+            p.params.get("accountId"),
+            Some(&ParamValue::Str("abc".into()))
+        );
+        let p = CoreError::AuthOffline {
+            offline_available: true,
+        }
+        .to_payload();
+        assert_eq!(
+            p.params.get("offlineAvailable"),
+            Some(&ParamValue::Bool(true))
+        );
+        let p = CoreError::AuthXbox { xerr: 2148916233 }.to_payload();
+        assert_eq!(p.params.get("xerr"), Some(&ParamValue::Num(2148916233.0)));
+        assert!(CoreError::AuthTimeout.to_payload().params.is_empty());
+        assert!(
+            CoreError::AccountNotFound {
+                account_id: "a".into()
+            }
+            .to_payload()
+            .params
+            .is_empty()
         );
     }
 }
