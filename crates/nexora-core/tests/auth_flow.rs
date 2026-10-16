@@ -427,3 +427,349 @@ async fn xsts_other_failures() {
         CoreError::Unexpected { .. }
     ));
 }
+
+// ---- Minecraft Services ----
+
+use nexora_core::auth::accounts::EntitlementState;
+use nexora_core::auth::minecraft::{
+    McToken, cached_skin, entitlement, identity_token, login_with_xbox, profile,
+};
+use nexora_core::auth::xbox::XstsToken;
+use nexora_core::paths::AppPaths;
+use wiremock::matchers::query_param_contains;
+
+fn xsts_token() -> XstsToken {
+    XstsToken {
+        token: secret("XSTS"),
+        uhs: "UHS".into(),
+        xuid: None,
+        expires_at_ms: 0,
+    }
+}
+
+fn mc_token() -> McToken {
+    McToken {
+        access: secret("MCTOKEN"),
+        expires_at_ms: 0,
+    }
+}
+
+#[test]
+fn identity_token_has_the_xbl3_format() {
+    assert_eq!(
+        identity_token(&xsts_token()).expose_secret(),
+        "XBL3.0 x=UHS;XSTS"
+    );
+}
+
+#[tokio::test]
+async fn login_with_xbox_sends_the_identity_token() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mc/login"))
+        .and(body_string_contains(
+            r#""identityToken":"XBL3.0 x=UHS;XSTS""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"username":"u","access_token":"MC","token_type":"Bearer","expires_in":86400}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let t = login_with_xbox(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &xsts_token(),
+        NOW,
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.access.expose_secret(), "MC");
+    assert_eq!(t.expires_at_ms, NOW + 86_400_000);
+}
+
+#[tokio::test]
+async fn login_with_xbox_clamps_a_hostile_expires_in() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mc/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"access_token":"MC","expires_in":9223372036854775807}"#),
+        )
+        .mount(&server)
+        .await;
+    let t = login_with_xbox(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &xsts_token(),
+        NOW,
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.expires_at_ms, i64::MAX);
+}
+
+async fn login_403(body: &str) -> CoreError {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mc/login"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(body.to_string()))
+        .mount(&server)
+        .await;
+    login_with_xbox(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &xsts_token(),
+        NOW,
+    )
+    .await
+    .unwrap_err()
+}
+
+#[tokio::test]
+async fn invalid_app_registration_is_app_not_approved() {
+    let err = login_403(
+        r#"{"path":"/x","errorType":"Forbidden","errorMessage":"Invalid app registration, see https://aka.ms/AppRegInfo"}"#,
+    )
+    .await;
+    assert!(matches!(err, CoreError::AppNotApproved), "{err:?}");
+}
+
+#[tokio::test]
+async fn other_403_is_http_status() {
+    let err = login_403("SECRET-BODY forbidden").await;
+    match &err {
+        CoreError::HttpStatus { status: 403, url } => assert!(url.ends_with("/mc/login")),
+        other => panic!("{other:?}"),
+    }
+    assert!(!format!("{err:?}").contains("SECRET-BODY"));
+}
+
+#[tokio::test]
+async fn login_server_error_is_offline() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mc/login"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let err = login_with_xbox(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &xsts_token(),
+        NOW,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, CoreError::Offline { .. }), "{err:?}");
+}
+
+async fn mount_items(server: &MockServer, route: &str, names: &[&str]) {
+    let items: Vec<String> = names
+        .iter()
+        .map(|n| format!(r#"{{"name":"{n}"}}"#))
+        .collect();
+    Mock::given(method("GET"))
+        .and(path(route.to_string()))
+        .and(header("Authorization", "Bearer MCTOKEN"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!(r#"{{"items":[{}]}}"#, items.join(","))),
+        )
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn entitlement_is_verified_by_either_endpoint() {
+    let server = MockServer::start().await;
+    mount_items(&server, "/mc/store", &[]).await;
+    mount_items(&server, "/mc/license", &["game_minecraft"]).await;
+    let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    assert_eq!(state, EntitlementState::Verified);
+}
+
+#[tokio::test]
+async fn bedrock_only_is_not_owned() {
+    let server = MockServer::start().await;
+    mount_items(&server, "/mc/store", &["product_minecraft_bedrock"]).await;
+    mount_items(&server, "/mc/license", &["game_minecraft_bedrock"]).await;
+    let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    assert_eq!(state, EntitlementState::NotOwned);
+}
+
+#[tokio::test]
+async fn license_request_has_a_request_id() {
+    let server = MockServer::start().await;
+    mount_items(&server, "/mc/store", &[]).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/license"))
+        .and(query_param_contains("requestId", "-"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"items":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+    entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    let requests = server.received_requests().await.unwrap();
+    let license = requests
+        .iter()
+        .find(|r| r.url.path() == "/mc/license")
+        .unwrap();
+    let id = license
+        .url
+        .query_pairs()
+        .find(|(k, _)| k == "requestId")
+        .unwrap()
+        .1
+        .to_string();
+    let parsed = uuid::Uuid::parse_str(&id).unwrap();
+    assert_eq!(parsed.get_version_num(), 4);
+}
+
+#[tokio::test]
+async fn entitlement_server_error_is_unknown() {
+    let server = MockServer::start().await;
+    mount_items(&server, "/mc/store", &[]).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/license"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    assert_eq!(state, EntitlementState::Unknown);
+}
+
+#[tokio::test]
+async fn entitlement_failure_does_not_hide_a_java_item() {
+    let server = MockServer::start().await;
+    mount_items(&server, "/mc/store", &["product_minecraft"]).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/license"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+    let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    assert_eq!(state, EntitlementState::Verified);
+}
+
+async fn mount_profile(server: &MockServer, status: u16, body: &str) {
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .and(header("Authorization", "Bearer MCTOKEN"))
+        .respond_with(ResponseTemplate::new(status).set_body_string(body.to_string()))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn profile_404_is_no_profile() {
+    let server = MockServer::start().await;
+    mount_profile(&server, 404, r#"{"error":"NOT_FOUND"}"#).await;
+    let err = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CoreError::NoProfile), "{err:?}");
+}
+
+#[tokio::test]
+async fn profile_reads_the_active_skin() {
+    let server = MockServer::start().await;
+    mount_profile(
+        &server,
+        200,
+        r#"{"id":"069a79f444e94726a5befca90e38aaf5","name":"Notch","skins":[
+            {"id":"1","state":"INACTIVE","url":"https://textures.minecraft.net/texture/old"},
+            {"id":"2","state":"ACTIVE","url":"https://textures.minecraft.net/texture/new"}]}"#,
+    )
+    .await;
+    let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap();
+    assert_eq!(
+        p.id.simple().to_string(),
+        "069a79f444e94726a5befca90e38aaf5"
+    );
+    assert_eq!(p.name, "Notch");
+    assert_eq!(
+        p.skin_url.as_deref(),
+        Some("https://textures.minecraft.net/texture/new")
+    );
+}
+
+#[tokio::test]
+async fn profile_without_an_active_skin_has_none() {
+    let server = MockServer::start().await;
+    mount_profile(
+        &server,
+        200,
+        r#"{"id":"069a79f444e94726a5befca90e38aaf5","name":"N","skins":[
+            {"state":"INACTIVE","url":"https://textures.minecraft.net/texture/old"}]}"#,
+    )
+    .await;
+    let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap();
+    assert_eq!(p.skin_url, None);
+}
+
+#[tokio::test]
+async fn profile_ignores_skin_urls_off_textures_host() {
+    for url in [
+        "http://textures.minecraft.net/texture/a",
+        "https://evil.example/texture/a",
+        "https://textures.minecraft.net.evil.example/a",
+        "not a url",
+    ] {
+        let server = MockServer::start().await;
+        mount_profile(
+            &server,
+            200,
+            &format!(
+                r#"{{"id":"069a79f444e94726a5befca90e38aaf5","name":"N","skins":[{{"state":"ACTIVE","url":"{url}"}}]}}"#
+            ),
+        )
+        .await;
+        let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+            .await
+            .unwrap();
+        assert_eq!(p.skin_url, None, "{url}");
+    }
+}
+
+#[tokio::test]
+async fn skin_is_cached_by_url_hash() {
+    let server = MockServer::start().await;
+    let png: &[u8] = b"\x89PNG\r\n\x1a\nrest";
+    Mock::given(method("GET"))
+        .and(path("/texture/a"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(png.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let temp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_root(temp.path());
+    let url = format!("{}/texture/a", server.uri());
+    let first = cached_skin(&paths, &common::http(), &url).await.unwrap();
+    let second = cached_skin(&paths, &common::http(), &url).await.unwrap();
+    assert_eq!(first, second);
+    assert!(first.starts_with(paths.skins_dir()));
+    assert_eq!(std::fs::read(&first).unwrap(), png);
+}
+
+#[tokio::test]
+async fn a_non_png_skin_is_rejected_and_not_cached() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/texture/a"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"<html>".to_vec()))
+        .mount(&server)
+        .await;
+    let temp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_root(temp.path());
+    let url = format!("{}/texture/a", server.uri());
+    assert!(cached_skin(&paths, &common::http(), &url).await.is_err());
+    assert!(
+        !paths.skins_dir().exists() || std::fs::read_dir(paths.skins_dir()).unwrap().count() == 0
+    );
+}

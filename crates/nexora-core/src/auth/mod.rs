@@ -4,6 +4,7 @@ pub mod accounts;
 pub mod http;
 pub mod loopback;
 pub mod microsoft;
+pub mod minecraft;
 pub mod oauth;
 pub mod store;
 pub mod xbox;

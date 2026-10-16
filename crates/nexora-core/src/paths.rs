@@ -104,6 +104,11 @@ impl AppPaths {
         self.cache_dir().join("launch")
     }
 
+    /// スキンの画像のキャッシュ。
+    pub fn skins_dir(&self) -> PathBuf {
+        self.cache_dir().join("skins")
+    }
+
     /// インスタンスの起動に使う @argfile。
     pub fn argfile(&self, instance_id: &str) -> PathBuf {
         self.launch_cache_dir().join(format!("{instance_id}.args"))
@@ -217,6 +222,7 @@ mod tests {
             root.join("cache").join("launch").join("abc.args")
         );
         assert_eq!(paths.game_logs_dir(), root.join("logs").join("game"));
+        assert_eq!(paths.skins_dir(), root.join("cache").join("skins"));
     }
 
     #[test]
