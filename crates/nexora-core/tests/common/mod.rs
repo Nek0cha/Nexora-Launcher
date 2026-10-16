@@ -339,3 +339,19 @@ pub fn shell(script: &str) -> (std::path::PathBuf, Vec<String>) {
         ("sh".into(), vec!["-c".into(), script.into()])
     }
 }
+
+/// 認証のエンドポイントを wiremock の URL に向ける。
+pub fn auth_urls(server: &MockServer) -> nexora_core::auth::AuthUrls {
+    let u = server.uri();
+    nexora_core::auth::AuthUrls {
+        authorize: format!("{u}/authorize"),
+        token: format!("{u}/token"),
+        device_code: format!("{u}/devicecode"),
+        xbox_user: format!("{u}/xbox/user"),
+        xsts: format!("{u}/xsts"),
+        mc_login: format!("{u}/mc/login"),
+        mc_store: format!("{u}/mc/store"),
+        mc_license: format!("{u}/mc/license"),
+        mc_profile: format!("{u}/mc/profile"),
+    }
+}
