@@ -432,10 +432,9 @@ async fn xsts_other_failures() {
 
 use nexora_core::auth::accounts::EntitlementState;
 use nexora_core::auth::minecraft::{
-    McToken, cached_skin, entitlement, identity_token, login_with_xbox, profile,
+    McToken, entitlement, identity_token, login_with_xbox, profile,
 };
 use nexora_core::auth::xbox::XstsToken;
-use nexora_core::paths::AppPaths;
 use wiremock::matchers::query_param_contains;
 
 fn xsts_token() -> XstsToken {
@@ -738,38 +737,15 @@ async fn profile_ignores_skin_urls_off_textures_host() {
 }
 
 #[tokio::test]
-async fn skin_is_cached_by_url_hash() {
+async fn a_reply_without_items_is_unknown_not_not_owned() {
     let server = MockServer::start().await;
-    let png: &[u8] = b"\x89PNG\r\n\x1a\nrest";
-    Mock::given(method("GET"))
-        .and(path("/texture/a"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(png.to_vec()))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let temp = tempfile::tempdir().unwrap();
-    let paths = AppPaths::from_root(temp.path());
-    let url = format!("{}/texture/a", server.uri());
-    let first = cached_skin(&paths, &common::http(), &url).await.unwrap();
-    let second = cached_skin(&paths, &common::http(), &url).await.unwrap();
-    assert_eq!(first, second);
-    assert!(first.starts_with(paths.skins_dir()));
-    assert_eq!(std::fs::read(&first).unwrap(), png);
-}
-
-#[tokio::test]
-async fn a_non_png_skin_is_rejected_and_not_cached() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/texture/a"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"<html>".to_vec()))
-        .mount(&server)
-        .await;
-    let temp = tempfile::tempdir().unwrap();
-    let paths = AppPaths::from_root(temp.path());
-    let url = format!("{}/texture/a", server.uri());
-    assert!(cached_skin(&paths, &common::http(), &url).await.is_err());
-    assert!(
-        !paths.skins_dir().exists() || std::fs::read_dir(paths.skins_dir()).unwrap().count() == 0
-    );
+    for route in ["/mc/store", "/mc/license"] {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .mount(&server)
+            .await;
+    }
+    let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
+    assert_eq!(state, EntitlementState::Unknown);
 }

@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use super::AuthUrls;
 use super::accounts::EntitlementState;
-use super::http::{AuthHttp, http_status, json_post, send};
+use super::http::{
+    AuthHttp, http_status, json_post, send, status_is_transient, transient, transient_status,
+};
 use super::xbox::XstsToken;
 use crate::error::CoreError;
 use crate::meta::write_atomic;
@@ -20,6 +22,8 @@ use crate::paths::AppPaths;
 /// Java 版の項目の名前（spec 4.4）。
 const JAVA_ITEMS: [&str; 2] = ["product_minecraft", "game_minecraft"];
 const SKIN_HOST: &str = "textures.minecraft.net";
+/// スキンの画像の上限。
+const MAX_SKIN_BYTES: usize = 1024 * 1024;
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// Minecraft のアクセストークン。
@@ -68,7 +72,6 @@ pub async fn login_with_xbox(
 
 #[derive(Deserialize)]
 struct Items {
-    #[serde(default)]
     items: Vec<Item>,
 }
 
@@ -145,9 +148,13 @@ struct SkinBody {
     url: Option<String>,
 }
 
-/// `textures.minecraft.net` の https だけを受け付ける。
+/// `textures.minecraft.net` の https（ポートの指定なし）だけを受け付ける。
+fn trusted_url(u: &reqwest::Url) -> bool {
+    u.scheme() == "https" && u.host_str() == Some(SKIN_HOST) && u.port().is_none()
+}
+
 fn trusted_skin_url(url: &str) -> bool {
-    reqwest::Url::parse(url).is_ok_and(|u| u.scheme() == "https" && u.host_str() == Some(SKIN_HOST))
+    reqwest::Url::parse(url).is_ok_and(|u| trusted_url(&u))
 }
 
 /// プロフィールを読む。プロフィールがなければ NoProfile。
@@ -179,14 +186,67 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
 }
 
 /// スキンの画像を取得して `cache/skins/<URL の SHA-256>.png` に保存する。あればそれを返す。
-pub async fn cached_skin(paths: &AppPaths, http: &Http, url: &str) -> Result<PathBuf, CoreError> {
+/// 許可された URL 以外は、通信せずに拒否する。取得はリダイレクトを追わない専用の
+/// クライアントで行うので、`http` は使わない（呼び出し側の形を保つために残している）。
+pub async fn cached_skin(paths: &AppPaths, _http: &Http, url: &str) -> Result<PathBuf, CoreError> {
+    fetch_skin(paths, url, trusted_url).await
+}
+
+fn too_large() -> CoreError {
+    CoreError::Unexpected {
+        message: "skin image is too large".into(),
+    }
+}
+
+fn untrusted_skin() -> CoreError {
+    CoreError::Unexpected {
+        message: "untrusted skin URL".into(),
+    }
+}
+
+/// `allow` が許す URL だけを取得する。
+async fn fetch_skin(
+    paths: &AppPaths,
+    url: &str,
+    allow: impl Fn(&reqwest::Url) -> bool,
+) -> Result<PathBuf, CoreError> {
+    let parsed = reqwest::Url::parse(url)
+        .ok()
+        .filter(|u| allow(u))
+        .ok_or_else(untrusted_skin)?;
     let file = paths
         .skins_dir()
         .join(format!("{}.png", hex(&Sha256::digest(url.as_bytes()))));
     if file.is_file() {
         return Ok(file);
     }
-    let bytes = http.get_bytes(url).await?;
+    // リダイレクトを追わない。許可されたホストの外へは一切要求しない。
+    let mut response = AuthHttp::new()?
+        .client()
+        .get(parsed)
+        .send()
+        .await
+        .map_err(|e| transient(&e))?;
+    let status = response.status().as_u16();
+    if status_is_transient(status) {
+        return Err(transient_status(status));
+    }
+    if !(200..300).contains(&status) {
+        return Err(http_status(status, "skin"));
+    }
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_SKIN_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| transient(&e))? {
+        if bytes.len() + chunk.len() > MAX_SKIN_BYTES {
+            return Err(too_large());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
     if !bytes.starts_with(PNG_MAGIC) {
         return Err(CoreError::Unexpected {
             message: "skin is not a PNG image".into(),
@@ -202,6 +262,125 @@ mod tests {
 
     fn names(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nrest";
+
+    fn port_of(server: &MockServer) -> u16 {
+        reqwest::Url::parse(&server.uri()).unwrap().port().unwrap()
+    }
+
+    async fn serve_png(server: &MockServer, route: &str, expect: u64) {
+        Mock::given(method("GET"))
+            .and(path(route.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(PNG.to_vec()))
+            .expect(expect)
+            .mount(server)
+            .await;
+    }
+
+    #[test]
+    fn only_https_textures_host_without_a_port_is_trusted() {
+        assert!(trusted_skin_url("https://textures.minecraft.net/texture/a"));
+        assert!(trusted_skin_url(
+            "https://textures.minecraft.net:443/texture/a"
+        ));
+        assert!(!trusted_skin_url(
+            "https://textures.minecraft.net:8443/texture/a"
+        ));
+        assert!(!trusted_skin_url("http://textures.minecraft.net/texture/a"));
+        assert!(!trusted_skin_url("https://evil.example/texture/a"));
+    }
+
+    #[tokio::test]
+    async fn skin_is_cached_by_url_hash() {
+        let server = MockServer::start().await;
+        serve_png(&server, "/texture/a", 1).await;
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        let url = format!("{}/texture/a", server.uri());
+        let allow = |u: &reqwest::Url| u.port() == Some(port_of(&server));
+        let first = fetch_skin(&paths, &url, allow).await.unwrap();
+        let second = fetch_skin(&paths, &url, allow).await.unwrap();
+        assert_eq!(first, second);
+        assert!(first.starts_with(paths.skins_dir()));
+        assert_eq!(std::fs::read(&first).unwrap(), PNG);
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_url_is_refused_without_a_request() {
+        let server = MockServer::start().await;
+        serve_png(&server, "/texture/a", 0).await;
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        let url = format!("{}/texture/a", server.uri());
+        // 本物の許可判定では、wiremock の http URL は通らない
+        let err = cached_skin(&paths, &Http::new().unwrap(), &url)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Unexpected { .. }), "{err:?}");
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_redirect_off_the_allowed_host_is_refused() {
+        let other = MockServer::start().await;
+        serve_png(&other, "/texture/b", 0).await;
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/texture/a"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/texture/b", other.uri())),
+            )
+            .mount(&server)
+            .await;
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        let url = format!("{}/texture/a", server.uri());
+        let allowed = port_of(&server);
+        let result = fetch_skin(&paths, &url, |u| u.port() == Some(allowed)).await;
+        assert!(result.is_err());
+        assert!(!paths.skins_dir().exists());
+    }
+
+    #[tokio::test]
+    async fn an_oversized_skin_is_rejected() {
+        let server = MockServer::start().await;
+        let mut big = PNG.to_vec();
+        big.resize(MAX_SKIN_BYTES + 1, 0);
+        Mock::given(method("GET"))
+            .and(path("/texture/a"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(big))
+            .mount(&server)
+            .await;
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        let url = format!("{}/texture/a", server.uri());
+        let port = port_of(&server);
+        let result = fetch_skin(&paths, &url, |u| u.port() == Some(port)).await;
+        assert!(result.is_err());
+        assert!(!paths.skins_dir().exists());
+    }
+
+    #[tokio::test]
+    async fn a_non_png_skin_is_rejected_and_not_cached() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/texture/a"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"<html>".to_vec()))
+            .mount(&server)
+            .await;
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        let url = format!("{}/texture/a", server.uri());
+        let port = port_of(&server);
+        let result = fetch_skin(&paths, &url, |u| u.port() == Some(port)).await;
+        assert!(result.is_err());
+        assert!(!paths.skins_dir().exists());
     }
 
     #[test]
