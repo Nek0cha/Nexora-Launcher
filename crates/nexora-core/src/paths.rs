@@ -104,6 +104,11 @@ impl AppPaths {
         self.cache_dir().join("launch")
     }
 
+    /// インスタンスの起動に使う @argfile。
+    pub fn argfile(&self, instance_id: &str) -> PathBuf {
+        self.launch_cache_dir().join(format!("{instance_id}.args"))
+    }
+
     /// ゲームの出力の書き出し先。
     pub fn game_logs_dir(&self) -> PathBuf {
         self.logs_dir().join("game")
@@ -207,6 +212,10 @@ mod tests {
         assert_eq!(paths.meta_cache_dir(), root.join("cache").join("meta"));
         assert_eq!(paths.natives_dir(), root.join("cache").join("natives"));
         assert_eq!(paths.launch_cache_dir(), root.join("cache").join("launch"));
+        assert_eq!(
+            paths.argfile("abc"),
+            root.join("cache").join("launch").join("abc.args")
+        );
         assert_eq!(paths.game_logs_dir(), root.join("logs").join("game"));
     }
 

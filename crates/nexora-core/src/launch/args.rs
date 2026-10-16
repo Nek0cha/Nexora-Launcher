@@ -111,8 +111,25 @@ fn push_values(out: &mut Vec<String>, values: &[ArgValue], env: &RuleEnv) {
     }
 }
 
-/// JVM 引数、main class、ゲームの引数を返す。
-pub fn build_args(inputs: &ArgInputs) -> Vec<String> {
+/// 起動引数。argfile に書くのは `jvm` だけで、`game`（アクセストークンを含む）はコマンドラインで渡す。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchArgs {
+    /// JVM 引数と、最後に main class。
+    pub jvm: Vec<String>,
+    /// ゲームの引数。
+    pub game: Vec<String>,
+}
+
+impl LaunchArgs {
+    fn joined(self) -> Vec<String> {
+        let mut all = self.jvm;
+        all.extend(self.game);
+        all
+    }
+}
+
+/// JVM 引数と main class、ゲームの引数を返す。
+pub fn build_args(inputs: &ArgInputs) -> LaunchArgs {
     let v = inputs.version;
     let mut raw = vec![format!("-Xmx{}M", inputs.memory_mb)];
     if let Some(arg) = inputs.logging_argument {
@@ -136,19 +153,23 @@ pub fn build_args(inputs: &ArgInputs) -> Vec<String> {
         }
     }
     raw.push(v.main_class.clone());
+    let mut game = Vec::new();
     match (&v.arguments, &v.minecraft_arguments) {
-        (Some(args), _) => push_values(&mut raw, &args.game, inputs.env),
+        (Some(args), _) => push_values(&mut game, &args.game, inputs.env),
         // 空白で分けてから置き換えるため、空白を含むパスも 1 つの引数のまま渡る
-        (None, Some(legacy)) => raw.extend(legacy.split_whitespace().map(str::to_string)),
+        (None, Some(legacy)) => game.extend(legacy.split_whitespace().map(str::to_string)),
         (None, None) => {}
     }
     let vars = variables(inputs);
-    raw.iter().map(|a| substitute(a, &vars)).collect()
+    LaunchArgs {
+        jvm: raw.iter().map(|a| substitute(a, &vars)).collect(),
+        game: game.iter().map(|a| substitute(a, &vars)).collect(),
+    }
 }
 
 /// Windows の CreateProcess に渡るコマンドラインの長さの見積もり（引用符と空白を含む）。
 pub fn command_length(program: &Path, args: &[String]) -> usize {
-    path_str(program).len() + 3 + args.iter().map(|a| a.len() + 3).sum::<usize>()
+    path_str(program).len() + 3 + command_length_of(args)
 }
 
 /// Java の @argfile の書式。各引数を二重引用符で囲み、\ と " をエスケープする。
@@ -165,31 +186,44 @@ pub fn argfile_contents(args: &[String]) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandLine {
     Direct(Vec<String>),
-    /// contents を argfile に書いてから args で起動する。
+    /// contents（JVM 引数と main class）を argfile に書いてから args で起動する。
+    /// args は `@<argfile>` に続けてゲームの引数。
     ArgFile {
         args: Vec<String>,
         contents: String,
     },
 }
 
+/// コマンドラインを上限に収める。収まらなければ JVM 引数を argfile に移す（Java 9 以降）。
+/// ゲームの引数（アクセストークンを含む）は argfile に書かない。
 pub fn fit_command(
     program: &Path,
-    args: Vec<String>,
+    args: LaunchArgs,
     java_major: u32,
     limit: usize,
     argfile: &Path,
 ) -> Result<CommandLine, CoreError> {
-    let length = command_length(program, &args);
+    let length = command_length(program, &args.jvm) + command_length_of(&args.game);
     if length <= limit {
-        return Ok(CommandLine::Direct(args));
+        return Ok(CommandLine::Direct(args.joined()));
     }
-    if java_major >= 9 {
-        return Ok(CommandLine::ArgFile {
-            contents: argfile_contents(&args),
-            args: vec![format!("@{}", path_str(argfile))],
-        });
+    if java_major < 9 {
+        return Err(CoreError::CommandTooLong { length });
     }
-    Err(CoreError::CommandTooLong { length })
+    let mut line = vec![format!("@{}", path_str(argfile))];
+    line.extend(args.game);
+    let length = command_length(program, &line);
+    if length > limit {
+        return Err(CoreError::CommandTooLong { length });
+    }
+    Ok(CommandLine::ArgFile {
+        contents: argfile_contents(&args.jvm),
+        args: line,
+    })
+}
+
+fn command_length_of(args: &[String]) -> usize {
+    args.iter().map(|a| a.len() + 3).sum()
 }
 
 #[cfg(test)]
@@ -197,6 +231,7 @@ mod tests {
     use super::*;
     use crate::launch::session::offline_session;
     use crate::meta::mojang::rules::OsName;
+    use secrecy::SecretString;
     use std::path::PathBuf;
 
     fn fixture(name: &str) -> VersionJson {
@@ -208,8 +243,13 @@ mod tests {
     }
 
     fn args_for(name: &str, os: OsName) -> Vec<String> {
+        let LaunchArgs { mut jvm, game } = launch_args_for(name, os, &offline_session("Player"));
+        jvm.extend(game);
+        jvm
+    }
+
+    fn launch_args_for(name: &str, os: OsName, session: &LaunchSession) -> LaunchArgs {
         let version = fixture(name);
-        let session = offline_session("Player");
         let env = RuleEnv {
             os,
             os_version: "10.0".into(),
@@ -218,7 +258,7 @@ mod tests {
         let classpath = vec![PathBuf::from("/lib/a.jar"), PathBuf::from("/v/client.jar")];
         build_args(&ArgInputs {
             version: &version,
-            session: &session,
+            session,
             env: &env,
             game_dir: Path::new("/game"),
             assets_root: Path::new("/assets"),
@@ -285,26 +325,58 @@ mod tests {
         assert_eq!(substitute("${unterminated", &vars), "${unterminated");
     }
 
+    fn launch(jvm: &[&str], game: &[&str]) -> LaunchArgs {
+        LaunchArgs {
+            jvm: jvm.iter().map(|s| s.to_string()).collect(),
+            game: game.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// argfile にすれば収まり、直接では収まらない上限。
+    fn argfile_only_limit(args: &LaunchArgs) -> usize {
+        let mut with_argfile = vec!["@a.args".to_string()];
+        with_argfile.extend(args.game.iter().cloned());
+        command_length(Path::new("java"), &with_argfile)
+    }
+
+    #[test]
+    fn main_class_ends_the_jvm_part() {
+        let args = launch_args_for("1.21.5", OsName::Windows, &offline_session("Player"));
+        assert_eq!(
+            args.jvm.last().map(String::as_str),
+            Some("net.minecraft.client.main.Main")
+        );
+        assert_eq!(args.game.first().map(String::as_str), Some("--username"));
+        let legacy = launch_args_for("1.8.9", OsName::Windows, &offline_session("Player"));
+        assert_eq!(
+            legacy.jvm.last().map(String::as_str),
+            Some("net.minecraft.client.main.Main")
+        );
+        assert!(legacy.game.iter().all(|a| !a.contains("${")));
+    }
+
     #[test]
     fn short_commands_are_direct() {
-        let args = vec!["-Xmx2048M".to_string()];
         let line = fit_command(
             Path::new("java"),
-            args.clone(),
+            launch(&["-Xmx2048M", "Main"], &["--demo"]),
             8,
             WINDOWS_COMMAND_LIMIT,
             Path::new("/a.args"),
         )
         .unwrap();
-        assert_eq!(line, CommandLine::Direct(args));
+        assert_eq!(
+            line,
+            CommandLine::Direct(vec!["-Xmx2048M".into(), "Main".into(), "--demo".into()])
+        );
     }
 
     #[test]
     fn long_commands_use_an_argfile_on_java_9_and_later() {
-        let args = vec!["x".repeat(40_000)];
+        let cp = "x".repeat(40_000);
         let line = fit_command(
             Path::new("java"),
-            args,
+            launch(&["-cp", &cp, "Main"], &["--username", "Player"]),
             17,
             WINDOWS_COMMAND_LIMIT,
             Path::new("/c/a.args"),
@@ -312,8 +384,16 @@ mod tests {
         .unwrap();
         match line {
             CommandLine::ArgFile { args, contents } => {
-                assert_eq!(args, vec![format!("@{}", Path::new("/c/a.args").display())]);
+                assert_eq!(
+                    args,
+                    vec![
+                        format!("@{}", Path::new("/c/a.args").display()),
+                        "--username".to_string(),
+                        "Player".to_string()
+                    ]
+                );
                 assert!(contents.starts_with('"'));
+                assert!(contents.contains(&cp));
             }
             other => panic!("expected an argfile, got {other:?}"),
         }
@@ -321,13 +401,58 @@ mod tests {
 
     #[test]
     fn long_commands_fail_on_java_8() {
-        let args = vec!["x".repeat(40_000)];
+        let cp = "x".repeat(40_000);
         let err = fit_command(
             Path::new("java"),
-            args,
+            launch(&["-cp", &cp, "Main"], &[]),
             8,
             WINDOWS_COMMAND_LIMIT,
             Path::new("/a.args"),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "launch.command_too_long");
+    }
+
+    #[test]
+    fn argfile_never_contains_the_access_token() {
+        let mut session = offline_session("Player");
+        session.access_token = SecretString::from("secret-token-value".to_string());
+        let args = launch_args_for("1.21.5", OsName::Windows, &session);
+        let limit = argfile_only_limit(&args);
+        let out = fit_command(Path::new("java"), args, 21, limit, Path::new("a.args")).unwrap();
+        let CommandLine::ArgFile { args, contents } = out else {
+            panic!("expected argfile")
+        };
+        assert!(!contents.contains("secret-token-value"));
+        assert_eq!(args[0], "@a.args");
+        assert!(args.iter().any(|a| a == "secret-token-value"));
+    }
+
+    #[test]
+    fn argfile_ends_with_the_main_class() {
+        let args = launch_args_for("1.21.5", OsName::Windows, &offline_session("Player"));
+        let game = args.game.clone();
+        let limit = argfile_only_limit(&args);
+        let out = fit_command(Path::new("java"), args, 21, limit, Path::new("a.args")).unwrap();
+        let CommandLine::ArgFile { args, contents } = out else {
+            panic!("expected argfile")
+        };
+        assert_eq!(
+            contents.lines().last(),
+            Some("\"net.minecraft.client.main.Main\"")
+        );
+        assert_eq!(&args[1..], game.as_slice());
+    }
+
+    #[test]
+    fn too_long_even_with_argfile_is_an_error() {
+        let token = "t".repeat(40_000);
+        let err = fit_command(
+            Path::new("java"),
+            launch(&["-cp", "a.jar", "Main"], &["--accessToken", &token]),
+            21,
+            WINDOWS_COMMAND_LIMIT,
+            Path::new("a.args"),
         )
         .unwrap_err();
         assert_eq!(err.code(), "launch.command_too_long");

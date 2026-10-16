@@ -73,6 +73,21 @@ async fn records_output_exit_and_play_time() {
 }
 
 #[tokio::test]
+async fn argfile_is_removed_when_the_game_exits() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let argfile = f.paths.argfile(&inst.id);
+    std::fs::create_dir_all(argfile.parent().unwrap()).unwrap();
+    std::fs::write(&argfile, b"\"-cp\"\n").unwrap();
+    f.processes
+        .spawn(spec(&f, &inst.id, "exit 0", None))
+        .await
+        .unwrap();
+    f.game.wait_exit(&inst.id).await;
+    assert!(!argfile.exists());
+}
+
+#[tokio::test]
 async fn reports_nonzero_exit_codes() {
     let f = fixture();
     let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
@@ -145,8 +160,12 @@ async fn reattach_finishes_dead_sessions_using_latest_log_time() {
     std::fs::create_dir_all(&logs).unwrap();
     std::fs::write(logs.join("latest.log"), b"done").unwrap();
     insert_session(&f.db, &inst.id, u32::MAX - 1, 12_345, 1_000);
+    let argfile = f.paths.argfile(&inst.id);
+    std::fs::create_dir_all(argfile.parent().unwrap()).unwrap();
+    std::fs::write(&argfile, b"\"-cp\"\n").unwrap();
     f.processes.reattach().unwrap();
     assert!(!f.processes.is_running(&inst.id).unwrap());
+    assert!(!argfile.exists());
     assert!(instance::get(&f.db, &inst.id).unwrap().play_time_ms > 0);
     assert_eq!(
         f.game.exits.lock().unwrap().as_slice(),

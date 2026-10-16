@@ -267,8 +267,14 @@ impl GameProcesses {
         }
     }
 
-    /// プレイ時間を足し、記録を消して終了を知らせる。pid が違う行（新しい起動）は消さない。
+    /// プレイ時間を足し、記録と argfile を消して終了を知らせる。pid が違う行（新しい起動）は消さない。
     fn finish(&self, instance_id: &str, pid: u32, play_ms: i64, exit_code: Option<i32>) {
+        let argfile = self.paths.argfile(instance_id);
+        match std::fs::remove_file(&argfile) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => tracing::warn!(instance_id, %err, "failed to remove the argfile"),
+        }
         if let Err(err) = instance::add_play_time(&self.db, instance_id, play_ms) {
             tracing::warn!(instance_id, code = err.code(), "failed to add play time");
         }

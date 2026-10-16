@@ -14,6 +14,7 @@ use crate::instance::lock::InstanceLocks;
 use crate::instance::{self, Instance, InstanceState};
 use crate::java::verify::{JavaProbe, SystemProbe};
 use crate::java::{find_registered, finish_runtime, prepare_runtime, requirement};
+use crate::launch::argfile;
 use crate::launch::args::{ArgInputs, CommandLine, WINDOWS_COMMAND_LIMIT, build_args, fit_command};
 use crate::launch::natives::extract_natives;
 use crate::launch::process::{GameNotifier, GameProcesses, RunningSession, SpawnSpec};
@@ -269,7 +270,7 @@ impl Launcher {
             memory_mb: MEMORY_MB,
             launcher_version: env!("CARGO_PKG_VERSION"),
         });
-        let argfile = env.paths.launch_cache_dir().join(format!("{id}.args"));
+        let argfile = env.paths.argfile(id);
         let limit = if cfg!(windows) {
             WINDOWS_COMMAND_LIMIT
         } else {
@@ -278,7 +279,7 @@ impl Launcher {
         let args = match fit_command(&java, args, major, limit, &argfile)? {
             CommandLine::Direct(args) => args,
             CommandLine::ArgFile { args, contents } => {
-                write_atomic(&argfile, contents.as_bytes())?;
+                write_atomic(&argfile, &argfile::encode(&contents)?)?;
                 args
             }
         };
