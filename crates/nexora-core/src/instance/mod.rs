@@ -1,6 +1,7 @@
 //! インスタンスの作成と取得。
 
 pub mod dir_name;
+pub mod lock;
 
 use std::path::PathBuf;
 
