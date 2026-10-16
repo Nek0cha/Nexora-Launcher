@@ -278,8 +278,8 @@ impl Launcher {
         };
         let args = match fit_command(&java, args, major, limit, &argfile)? {
             CommandLine::Direct(args) => args,
-            CommandLine::ArgFile { args, contents } => {
-                write_atomic(&argfile, &argfile::encode(&contents)?)?;
+            CommandLine::ArgFile { args, jvm } => {
+                write_atomic(&argfile, &argfile::encode(&jvm)?)?;
                 args
             }
         };

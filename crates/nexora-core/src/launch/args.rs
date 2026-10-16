@@ -172,25 +172,14 @@ pub fn command_length(program: &Path, args: &[String]) -> usize {
     path_str(program).len() + 3 + command_length_of(args)
 }
 
-/// Java の @argfile の書式。各引数を二重引用符で囲み、\ と " をエスケープする。
-pub fn argfile_contents(args: &[String]) -> String {
-    let mut out = String::new();
-    for arg in args {
-        out.push('"');
-        out.push_str(&arg.replace('\\', "\\\\").replace('"', "\\\""));
-        out.push_str("\"\n");
-    }
-    out
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandLine {
     Direct(Vec<String>),
-    /// contents（JVM 引数と main class）を argfile に書いてから args で起動する。
+    /// jvm（JVM 引数と main class）を argfile に書いてから（`argfile::encode`）args で起動する。
     /// args は `@<argfile>` に続けてゲームの引数。
     ArgFile {
         args: Vec<String>,
-        contents: String,
+        jvm: Vec<String>,
     },
 }
 
@@ -217,7 +206,7 @@ pub fn fit_command(
         return Err(CoreError::CommandTooLong { length });
     }
     Ok(CommandLine::ArgFile {
-        contents: argfile_contents(&args.jvm),
+        jvm: args.jvm,
         args: line,
     })
 }
@@ -383,7 +372,7 @@ mod tests {
         )
         .unwrap();
         match line {
-            CommandLine::ArgFile { args, contents } => {
+            CommandLine::ArgFile { args, jvm } => {
                 assert_eq!(
                     args,
                     vec![
@@ -392,8 +381,7 @@ mod tests {
                         "Player".to_string()
                     ]
                 );
-                assert!(contents.starts_with('"'));
-                assert!(contents.contains(&cp));
+                assert_eq!(jvm, vec!["-cp".to_string(), cp, "Main".to_string()]);
             }
             other => panic!("expected an argfile, got {other:?}"),
         }
@@ -420,9 +408,10 @@ mod tests {
         let args = launch_args_for("1.21.5", OsName::Windows, &session);
         let limit = argfile_only_limit(&args);
         let out = fit_command(Path::new("java"), args, 21, limit, Path::new("a.args")).unwrap();
-        let CommandLine::ArgFile { args, contents } = out else {
+        let CommandLine::ArgFile { args, jvm } = out else {
             panic!("expected argfile")
         };
+        let contents = String::from_utf8(crate::launch::argfile::encode(&jvm).unwrap()).unwrap();
         assert!(!contents.contains("secret-token-value"));
         assert_eq!(args[0], "@a.args");
         assert!(args.iter().any(|a| a == "secret-token-value"));
@@ -434,12 +423,12 @@ mod tests {
         let game = args.game.clone();
         let limit = argfile_only_limit(&args);
         let out = fit_command(Path::new("java"), args, 21, limit, Path::new("a.args")).unwrap();
-        let CommandLine::ArgFile { args, contents } = out else {
+        let CommandLine::ArgFile { args, jvm } = out else {
             panic!("expected argfile")
         };
         assert_eq!(
-            contents.lines().last(),
-            Some("\"net.minecraft.client.main.Main\"")
+            jvm.last().map(String::as_str),
+            Some("net.minecraft.client.main.Main")
         );
         assert_eq!(&args[1..], game.as_slice());
     }
@@ -456,11 +445,5 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code(), "launch.command_too_long");
-    }
-
-    #[test]
-    fn argfile_quotes_and_escapes() {
-        let contents = argfile_contents(&[r#"C:\a b\c"#.to_string(), r#"say "hi""#.to_string()]);
-        assert_eq!(contents, "\"C:\\\\a b\\\\c\"\n\"say \\\"hi\\\"\"\n");
     }
 }
