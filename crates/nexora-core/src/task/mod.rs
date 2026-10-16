@@ -427,12 +427,14 @@ mod tests {
     async fn failing_task_keeps_error_payload() {
         let (tasks, _) = manager();
         let id = tasks.spawn("test", None, |_| async {
-            Err(CoreError::DemoFailed { percent: 3 })
+            Err(CoreError::Offline {
+                message: "x".into(),
+            })
         });
         settle().await;
         let snap = tasks.get(&id).unwrap();
         assert_eq!(snap.state, TaskState::Failed);
-        assert_eq!(snap.error.unwrap().code, "demo.failed");
+        assert_eq!(snap.error.unwrap().code, "net.offline");
     }
 
     #[tokio::test(start_paused = true)]

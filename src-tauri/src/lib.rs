@@ -40,7 +40,18 @@ fn start_services(app: &tauri::AppHandle) -> Result<Services, ErrorPayload> {
 
     let db = Db::open(&paths.db_file())?;
     let tasks = TaskManager::new(Arc::new(events::TauriNotifier::new(app.clone())));
-    Ok(Services { paths, db, tasks })
+    let launcher = nexora_core::launcher::Launcher::new(
+        paths.clone(),
+        db.clone(),
+        tasks.clone(),
+        Arc::new(events::TauriGameNotifier::new(app.clone())),
+    )?;
+    Ok(Services {
+        paths,
+        db,
+        tasks,
+        launcher,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -67,7 +78,15 @@ pub fn run() {
                             tracing::warn!(code = %err.code(), "failed to load settings at startup");
                         }
                     }
-                    state.set(Startup::Ready(services));
+                    // コマンドを受け付ける前に、実行中のゲームを一度だけ引き継ぐ。
+                    // tokio の実行環境の中で動かすため block_on で待つ。
+                    let launcher = services.launcher.clone();
+                    tauri::async_runtime::block_on(async move {
+                        if let Err(err) = launcher.reattach() {
+                            tracing::warn!(code = err.code(), "failed to reattach running games");
+                        }
+                    });
+                    state.set(Startup::Ready(Box::new(services)));
                 }
                 Err(err) => {
                     eprintln!("startup failed: {}", err.code);
@@ -90,7 +109,13 @@ pub fn run() {
             commands::list_tasks,
             commands::get_task,
             commands::cancel_task,
-            commands::start_demo_task,
+            commands::list_versions,
+            commands::list_instances,
+            commands::create_instance,
+            commands::launch_instance,
+            commands::list_running,
+            commands::get_dev_offline_username,
+            commands::set_dev_offline_username,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexora");

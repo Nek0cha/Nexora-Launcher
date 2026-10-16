@@ -25,8 +25,6 @@ pub enum CoreError {
     TaskNotFound { task_id: String },
     #[error("the operation was cancelled")]
     Cancelled,
-    #[error("demo task failed at {percent}%")]
-    DemoFailed { percent: u8 },
     #[error("network unavailable: {message}")]
     Offline { message: String },
     #[error("HTTP {status} from {url}")]
@@ -68,7 +66,6 @@ impl CoreError {
             CoreError::InvalidSetting { .. } => "settings.invalid_value",
             CoreError::TaskNotFound { .. } => "task.not_found",
             CoreError::Cancelled => "task.cancelled",
-            CoreError::DemoFailed { .. } => "demo.failed",
             CoreError::Offline { .. } => "net.offline",
             CoreError::HttpStatus { .. } => "net.http_status",
             CoreError::HashMismatch { .. } => "net.hash_mismatch",
@@ -97,9 +94,6 @@ impl CoreError {
             }
             CoreError::TaskNotFound { task_id } => {
                 params.insert("taskId".into(), ParamValue::Str(task_id.clone()));
-            }
-            CoreError::DemoFailed { percent } => {
-                params.insert("percent".into(), ParamValue::Num(f64::from(*percent)));
             }
             CoreError::HttpStatus { status, .. } => {
                 params.insert("status".into(), ParamValue::Num(f64::from(*status)));
@@ -200,19 +194,22 @@ mod tests {
             "settings.invalid_value"
         );
         assert_eq!(CoreError::Cancelled.code(), "task.cancelled");
-        assert_eq!(CoreError::DemoFailed { percent: 40 }.code(), "demo.failed");
     }
 
     #[test]
     fn payload_shape_is_stable() {
-        let payload = CoreError::DemoFailed { percent: 40 }.to_payload();
+        let payload = CoreError::HttpStatus {
+            status: 503,
+            url: "https://example.invalid/x".into(),
+        }
+        .to_payload();
         insta::assert_json_snapshot!(payload, @r#"
         {
-          "code": "demo.failed",
+          "code": "net.http_status",
           "params": {
-            "percent": 40.0
+            "status": 503.0
           },
-          "detail": "demo task failed at 40%"
+          "detail": "HTTP 503 from https://example.invalid/x"
         }
         "#);
     }
