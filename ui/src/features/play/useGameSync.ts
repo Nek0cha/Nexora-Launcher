@@ -13,8 +13,9 @@ export const LAST_EXIT_KEY = ["lastExit"] as const;
 
 export type LastExit = { instanceId: string; exitCode: number | null; at: number };
 
-export function useRunning(): RunningSession[] {
-  return useQuery({ queryKey: RUNNING_KEY, queryFn: listRunning }).data ?? [];
+/** 起動中のセッション。最初の応答が届くまでは undefined（遊んでいるか不明）。 */
+export function useRunning(): RunningSession[] | undefined {
+  return useQuery({ queryKey: RUNNING_KEY, queryFn: listRunning }).data;
 }
 
 export function useLastExits(): Record<string, LastExit> {

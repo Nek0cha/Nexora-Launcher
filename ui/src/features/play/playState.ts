@@ -14,6 +14,8 @@ export type Phase = "install" | "launch";
 export type PlayState =
   | { kind: "ready" }
   | { kind: "needsInstall" }
+  /** 起動中のセッションの一覧がまだ届いていない。押しても何もしない。 */
+  | { kind: "checking" }
   | { kind: "preparing"; phase: Phase; percent: number; taskId: string }
   | { kind: "cancelling"; phase: Phase; percent: number; taskId: string }
   | { kind: "playing"; launchedAt: number }
@@ -24,6 +26,8 @@ export type PlayInputs = {
   instance: Instance;
   task: TaskSnapshot | undefined;
   running: RunningSession | undefined;
+  /** 起動中の一覧を受け取り済みか。未受信の間は、遊んでいるかどうか分からない。 */
+  runningLoaded: boolean;
   lastExit: LastExit | undefined;
 };
 
@@ -54,7 +58,7 @@ export function crashPayload(exitCode: number): ErrorPayload {
   return { code: "game.crashed", params: { exitCode }, detail: null };
 }
 
-export function playStateFrom({ instance, task, running, lastExit }: PlayInputs): PlayState {
+export function playStateFrom({ instance, task, running, runningLoaded, lastExit }: PlayInputs): PlayState {
   if (running) return { kind: "playing", launchedAt: running.launchedAt };
   if (task) {
     const phase: Phase = task.kind === INSTALL_KIND ? "install" : "launch";
@@ -65,6 +69,7 @@ export function playStateFrom({ instance, task, running, lastExit }: PlayInputs)
       return { kind: "cancelling", phase, percent: percentOf(task), taskId: task.id };
     }
   }
+  if (!runningLoaded) return { kind: "checking" };
   const exitAt = lastExit?.at ?? Number.NEGATIVE_INFINITY;
   if (task?.state === "failed" && task.updatedAt >= exitAt) return { kind: "failed", error: task.error };
   if (lastExit && lastExit.exitCode !== null && lastExit.exitCode !== 0

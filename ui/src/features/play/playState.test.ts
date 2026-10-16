@@ -16,10 +16,17 @@ function task(state: TaskSnapshot["state"], extra: Partial<TaskSnapshot> = {}): 
 }
 
 function inputs(extra: Partial<PlayInputs> = {}): PlayInputs {
-  return { instance, task: undefined, running: undefined, lastExit: undefined, ...extra };
+  return { instance, task: undefined, running: undefined, runningLoaded: true, lastExit: undefined, ...extra };
 }
 
 describe("playStateFrom", () => {
+  it("is checking until the running list has loaded", () => {
+    expect(playStateFrom(inputs({ runningLoaded: false }))).toEqual({ kind: "checking" });
+    // 実行中のタスクと起動中のセッションは、一覧の受信前でも優先して見せる
+    expect(playStateFrom(inputs({ runningLoaded: false, task: task("running") })).kind).toBe("preparing");
+    const running = { instanceId: "i1", pid: 1, launchedAt: 500 };
+    expect(playStateFrom(inputs({ runningLoaded: false, running })).kind).toBe("playing");
+  });
   it("is ready for an installed instance", () => {
     expect(playStateFrom(inputs())).toEqual({ kind: "ready" });
   });

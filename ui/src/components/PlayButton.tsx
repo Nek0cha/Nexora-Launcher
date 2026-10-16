@@ -75,9 +75,10 @@ export function PlayButton({ instance }: { instance: Instance }) {
   const { t } = useTranslation();
   const tasks = useTasks();
   const snapshot = latestInstanceTask(tasks, instance.id);
-  const running = useRunning().find((r) => r.instanceId === instance.id);
+  const sessions = useRunning();
+  const running = sessions?.find((r) => r.instanceId === instance.id);
   const lastExit = useLastExits()[instance.id];
-  const state = playStateFrom({ instance, task: snapshot, running, lastExit });
+  const state = playStateFrom({ instance, task: snapshot, running, runningLoaded: sessions !== undefined, lastExit });
   const now = useNow(state.kind === "playing" ? Number.POSITIVE_INFINITY : 0);
   const { press, starting, error: startError } = usePlay(instance.id);
   const cancel = useMutation({ mutationFn: (taskId: string) => cancelTask(taskId) });
@@ -100,7 +101,7 @@ export function PlayButton({ instance }: { instance: Instance }) {
   const active = view.kind === "preparing" || view.kind === "cancelling";
   const percent = active ? view.percent : 0;
   // 押しても何も起きない状態。isDisabled にするとフォーカスが外れるため、フォーカスは残して押下だけを無視する
-  const inert = view.kind === "cancelling" || view.kind === "playing";
+  const inert = view.kind === "cancelling" || view.kind === "playing" || view.kind === "checking";
 
   // 開始の失敗は、押し直せる状態のときだけ出す（別の場所から開始されて動き出したら古い失敗になる）
   const shownStartError = view.kind === "ready" || view.kind === "needsInstall" || view.kind === "failed" || view.kind === "crashed"

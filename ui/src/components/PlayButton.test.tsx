@@ -114,6 +114,23 @@ describe("PlayButton", () => {
     await act(async () => { pending.resolve(null); await pending.promise; });
   });
 
+  it("does not start a game until the running list has loaded", async () => {
+    mount();
+    // 一覧の応答を保留にして、受信前の状態を作る
+    cleanup();
+    client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    vi.mocked(listRunning).mockReturnValue(new Promise(() => {}));
+    render(
+      <QueryClientProvider client={client}>
+        <PlayButton instance={instance} />
+      </QueryClientProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Play" });
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await press("Play");
+    expect(launchInstance).not.toHaveBeenCalled();
+  });
+
   it("offers installation for an instance that is not ready", () => {
     mount({ instance: { ...instance, state: "broken" } });
     expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
