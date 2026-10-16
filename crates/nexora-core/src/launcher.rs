@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 use ts_rs::TS;
+use uuid::Uuid;
 
+use crate::auth::login::{LOGIN_KIND, LoginMethod, LoginNotifier, UrlOpener, run_login};
+use crate::auth::service::AuthService;
 use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
@@ -18,7 +21,6 @@ use crate::launch::argfile;
 use crate::launch::args::{ArgInputs, CommandLine, WINDOWS_COMMAND_LIMIT, build_args, fit_command};
 use crate::launch::natives::extract_natives;
 use crate::launch::process::{GameNotifier, GameProcesses, RunningSession, SpawnSpec};
-use crate::launch::session::LaunchSession;
 use crate::meta::mojang::manifest::{
     VersionEntry, load_pinned_asset_index, load_pinned_version, release_versions,
 };
@@ -48,6 +50,7 @@ pub struct Launcher {
     tasks: TaskManager,
     processes: GameProcesses,
     locks: InstanceLocks,
+    auth: AuthService,
     /// reattach を一度だけ行うための印。二度目以降は監視を重ねないよう何もしない。
     reattached: Arc<AtomicBool>,
 }
@@ -64,6 +67,7 @@ impl Launcher {
         db: Db,
         tasks: TaskManager,
         notifier: Arc<dyn GameNotifier>,
+        auth: AuthService,
     ) -> Result<Self, CoreError> {
         Ok(Self::with(
             paths,
@@ -73,9 +77,11 @@ impl Launcher {
             Http::new()?,
             Urls::default(),
             Arc::new(SystemProbe),
+            auth,
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn with(
         paths: AppPaths,
         db: Db,
@@ -84,6 +90,7 @@ impl Launcher {
         http: Http,
         urls: Urls,
         probe: Arc<dyn JavaProbe>,
+        auth: AuthService,
     ) -> Self {
         let processes = GameProcesses::new(db.clone(), paths.clone(), notifier);
         Self {
@@ -91,12 +98,42 @@ impl Launcher {
             tasks,
             processes,
             locks: InstanceLocks::default(),
+            auth,
             reattached: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn db(&self) -> &Db {
         &self.env.db
+    }
+
+    pub fn auth(&self) -> &AuthService {
+        &self.auth
+    }
+
+    /// ログインのタスクを始める。ログインのタスクが動いていれば、新しく作らずにその ID を返す。
+    pub fn begin_login(
+        &self,
+        method: LoginMethod,
+        opener: Arc<dyn UrlOpener>,
+        notifier: Arc<dyn LoginNotifier>,
+    ) -> String {
+        let auth = self.auth.clone();
+        self.tasks
+            .spawn_unique(LOGIN_KIND, None, move |handle| async move {
+                run_login(&auth, method, opener.as_ref(), notifier.as_ref(), &handle)
+                    .await
+                    .map(|_| ())
+            })
+    }
+
+    /// アカウントを削除する。そのアカウントでゲームが実行中なら `AccountInUse` で断る。
+    pub async fn remove_account(&self, id: Uuid) -> Result<(), CoreError> {
+        let account_id = id.simple().to_string();
+        if self.processes.is_account_running(&account_id)? {
+            return Err(CoreError::AccountInUse { account_id });
+        }
+        self.auth.remove(id).await
     }
 
     pub async fn list_versions(&self) -> Result<Vec<VersionEntry>, CoreError> {
@@ -119,7 +156,8 @@ impl Launcher {
 
     /// state が ready なら起動のタスク、それ以外ならインストールのタスクの ID を返す。
     /// 同じインスタンスにインストールか起動のタスクが動いていれば、新しく作らずにその ID を返す。
-    pub fn launch_instance(&self, instance_id: &str) -> Result<String, CoreError> {
+    /// `offline` が真なら、通信せずに保存してあるアカウントの情報で起動する（spec 4.7）。
+    pub fn launch_instance(&self, instance_id: &str, offline: bool) -> Result<String, CoreError> {
         let inst = instance::get(&self.env.db, instance_id)?;
         if self.processes.is_running(instance_id)? {
             return Err(already_running(instance_id));
@@ -128,7 +166,7 @@ impl Launcher {
             return Ok(active);
         }
         Ok(match inst.state {
-            InstanceState::Ready => self.start_launch(instance_id),
+            InstanceState::Ready => self.start_launch(instance_id, offline),
             InstanceState::Installing | InstanceState::Broken => self.start_install(instance_id),
         })
     }
@@ -176,20 +214,27 @@ impl Launcher {
             })
     }
 
-    fn start_launch(&self, instance_id: &str) -> String {
+    fn start_launch(&self, instance_id: &str, offline: bool) -> String {
         let this = self.clone();
         let id = instance_id.to_string();
         self.tasks
             .spawn_unique(LAUNCH_KIND, Some(id.clone()), move |handle| async move {
                 let _guard = this.locks.lock(&id).await;
-                this.launch(&id, &handle).await
+                this.launch(&id, offline, &handle).await
             })
     }
 
-    async fn launch(&self, id: &str, handle: &TaskHandle) -> Result<(), CoreError> {
+    async fn launch(&self, id: &str, offline: bool, handle: &TaskHandle) -> Result<(), CoreError> {
         if self.processes.is_running(id)? {
             return Err(already_running(id));
         }
+        // ダウンロードより前にセッションを用意する（ログインし直しなどを先に知らせるため）
+        let session = if offline {
+            self.auth.offline_session()?
+        } else {
+            // 途中で打ち切ると、新しい refresh token を保存する前に捨てるおそれがあるため、最後まで待つ
+            self.auth.session_for_launch().await?
+        };
         let env = &self.env;
         let token = handle.token();
         let inst = instance::get(&env.db, id)?;
@@ -255,7 +300,6 @@ impl Launcher {
                 message: e.to_string(),
             })??;
 
-        let session = current_session(&env.db)?;
         let game_dir = instance::game_dir(&env.paths, &inst);
         let args = build_args(&ArgInputs {
             version: &version,
@@ -296,7 +340,8 @@ impl Launcher {
                     .game_logs_dir()
                     .join(id)
                     .join(format!("{launched_at}.log")),
-                account_id: session.uuid.to_string(),
+                // accounts.id と同じ、ハイフンなしの形
+                account_id: session.uuid.simple().to_string(),
                 launched_at,
                 secret: Some(session.access_token.clone()),
             })
@@ -312,16 +357,4 @@ impl Launcher {
         }
         Ok(())
     }
-}
-
-#[cfg(debug_assertions)]
-fn current_session(db: &Db) -> Result<LaunchSession, CoreError> {
-    let name = crate::launch::session::load_dev_username(db)?;
-    Ok(crate::launch::session::offline_session(&name))
-}
-
-/// フェーズ 3 で Microsoft 認証のアカウントにつなぐまで、リリースビルドでは起動できない。
-#[cfg(not(debug_assertions))]
-fn current_session(_db: &Db) -> Result<LaunchSession, CoreError> {
-    Err(CoreError::AuthNoAccount)
 }

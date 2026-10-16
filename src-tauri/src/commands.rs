@@ -146,7 +146,7 @@ pub async fn launch_instance(state: State<'_, AppState>, instance_id: String) ->
     let services = state.services()?;
     services
         .launcher
-        .launch_instance(&instance_id)
+        .launch_instance(&instance_id, false)
         .map_err(ErrorPayload::from)
 }
 

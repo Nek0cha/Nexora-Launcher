@@ -170,7 +170,7 @@ impl FakeMojang {
         );
         let version = format!(
             r#"{{"id":"1.99-test","type":"release","mainClass":"net.minecraft.client.main.Main",
-"arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}"],"jvm":["-cp","${{classpath}}"]}},
+"arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}","--uuid","${{auth_uuid}}","--accessToken","${{auth_access_token}}","--xuid","${{auth_xuid}}","--userType","${{user_type}}"],"jvm":["-cp","${{classpath}}"]}},
 "assetIndex":{{"id":"test","sha1":"{is}","size":{il},"totalSize":0,"url":"{u}/index.json"}},
 "downloads":{{"client":{{"sha1":"{cs}","size":{cl},"url":"{u}/client.jar"}}}},
 "libraries":[{{"name":"com.example:lib:1.0","downloads":{{"artifact":{{"path":"com/example/lib/1.0/lib-1.0.jar","sha1":"{ls}","size":{ll},"url":"{lib_url}"}}}}}}],

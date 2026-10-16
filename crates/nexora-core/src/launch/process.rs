@@ -167,6 +167,17 @@ impl GameProcesses {
         })
     }
 
+    /// account_id（ハイフンなしの UUID）で実行中のゲームがあるか。
+    pub fn is_account_running(&self, account_id: &str) -> Result<bool, CoreError> {
+        self.db.with_conn(|conn| {
+            Ok(conn.query_row(
+                "SELECT count(*) FROM running_sessions WHERE account_id = ?1",
+                [account_id],
+                |r| r.get::<_, i64>(0),
+            )? > 0)
+        })
+    }
+
     /// 起動して記録する。出力の読み取りと終了の処理は、裏で続ける。
     pub async fn spawn(&self, spec: SpawnSpec) -> Result<RunningSession, CoreError> {
         if let Some(parent) = spec.log_path.parent() {
