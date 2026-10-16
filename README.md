@@ -1,8 +1,30 @@
 # Nexora Launcher
 
-A modern, lightweight Minecraft Java Edition launcher.
+A modern, lightweight, open-source launcher for Minecraft: Java Edition, built with Rust and Tauri 2.
 
-現在は開発の初期段階です（フェーズ 2：Vanilla のインストールと起動）。
+## About
+
+Nexora Launcher installs and launches official Minecraft: Java Edition versions. Windows is the first target, and macOS and Linux are planned.
+
+The project is in early development.
+
+- Done: installing and launching vanilla game versions, including the Java runtime
+- Next: signing in with a Microsoft account and managing several accounts
+- Planned: skin changes, mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
+
+### Accounts and privacy
+
+- Players sign in with their own Microsoft account in the system browser. The launcher uses the authorization code flow with PKCE, and does not use a client secret.
+- There is no backend server. All authentication happens on the player's device.
+- The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
+- Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
+- Release builds require an account that owns Minecraft: Java Edition.
+
+Nexora Launcher is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft.
+
+## 概要（日本語）
+
+Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 3：Microsoft 認証とアカウント管理）。
 
 ## 開発環境
 
@@ -57,4 +79,4 @@ pnpm --filter ui typecheck
 
 ## ライセンス
 
-未定です（Apache-2.0 を予定しています）。
+Apache License 2.0 です。詳しくは `LICENSE` を参照してください。
