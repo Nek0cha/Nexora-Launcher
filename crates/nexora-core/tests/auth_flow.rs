@@ -1428,3 +1428,399 @@ async fn service_errors_do_not_contain_tokens() {
         }
     }
 }
+
+// ---- ログインのタスク ----
+
+use nexora_core::auth::login::{
+    LOGIN_KIND, LoginMethod, LoginNotifier, LoginProgressEvent, UrlOpener, run_login,
+};
+use nexora_core::task::{TaskChange, TaskManager, TaskNotifier};
+
+const AUTH_CODE: &str = "AUTH-CODE-SECRET";
+
+struct NoTasks;
+
+impl TaskNotifier for NoTasks {
+    fn notify(&self, _: &str, _: u64, _: TaskChange) {}
+}
+
+/// 受け取った進捗を記録する。
+#[derive(Default)]
+struct Progress(StdMutex<Vec<LoginProgressEvent>>);
+
+impl LoginNotifier for Progress {
+    fn progress(&self, event: &LoginProgressEvent) {
+        self.0.lock().unwrap().push(event.clone());
+    }
+}
+
+impl Progress {
+    fn stages(&self) -> Vec<LoginProgress> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.progress.clone())
+            .collect()
+    }
+
+    fn browser_url(&self) -> Option<String> {
+        self.stages().into_iter().find_map(|p| match p {
+            LoginProgress::WaitingForBrowser { url } => Some(url),
+            _ => None,
+        })
+    }
+}
+
+/// 認可 URL の state と redirect_uri のポート。
+fn callback_target(url: &str) -> (String, u16) {
+    let parsed = reqwest::Url::parse(url).unwrap();
+    let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+    let redirect = reqwest::Url::parse(&q["redirect_uri"]).unwrap();
+    assert_eq!(redirect.host_str(), Some("localhost"));
+    (q["state"].clone(), redirect.port().unwrap())
+}
+
+/// ブラウザの代わりに、ループバックへ `/?code=...&state=...` を送る（別のスレッドで）。
+fn send_callback(url: &str) {
+    use std::io::{Read, Write};
+    let (state, port) = callback_target(url);
+    std::thread::spawn(move || {
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        write!(
+            s,
+            "GET /?code={AUTH_CODE}&state={state} HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"
+        )
+        .unwrap();
+        let mut out = String::new();
+        let _ = s.read_to_string(&mut out);
+    });
+}
+
+/// 開いた URL を記録し、ブラウザの代わりにコールバックを送る。
+#[derive(Default)]
+struct FakeBrowser(StdMutex<Vec<String>>);
+
+impl UrlOpener for FakeBrowser {
+    fn open(&self, url: &str) -> Result<(), String> {
+        self.0.lock().unwrap().push(url.to_string());
+        send_callback(url);
+        Ok(())
+    }
+}
+
+/// 開けないブラウザ。呼ばれた回数だけ数える。
+#[derive(Default)]
+struct BrokenOpener(StdMutex<usize>);
+
+impl UrlOpener for BrokenOpener {
+    fn open(&self, _: &str) -> Result<(), String> {
+        *self.0.lock().unwrap() += 1;
+        Err("no browser".into())
+    }
+}
+
+/// 認可コードの交換に答える。
+async fn mount_code_exchange(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("grant_type=authorization_code"))
+        .and(body_string_contains(format!("code={AUTH_CODE}")))
+        .and(body_string_contains("code_verifier="))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"access_token":"{MS_ACCESS}","refresh_token":"{REFRESH_2}","expires_in":3600}}"#
+        )))
+        .mount(server)
+        .await;
+}
+
+/// デバイスコードの要求とポーリングに答える。
+async fn mount_device(server: &MockServer, verification_uri: &str) {
+    Mock::given(method("POST"))
+        .and(path("/devicecode"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"device_code":"DC","user_code":"ABCD-EFGH","verification_uri":"{verification_uri}","expires_in":900,"interval":0}}"#
+        )))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("device_code=DC"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"access_token":"{MS_ACCESS}","refresh_token":"{REFRESH_2}","expires_in":3600}}"#
+        )))
+        .mount(server)
+        .await;
+}
+
+type LoginResult = tokio::sync::oneshot::Receiver<Result<Uuid, CoreError>>;
+
+/// TaskManager の中で run_login を動かす。タスクの ID と結果の受け口を返す。
+fn start_login(
+    tasks: &TaskManager,
+    auth: AuthService,
+    method: LoginMethod,
+    opener: Arc<dyn UrlOpener>,
+    notifier: Arc<Progress>,
+) -> (String, LoginResult) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let id = tasks.spawn_unique(LOGIN_KIND, None, move |handle| async move {
+        let r = run_login(&auth, method, opener.as_ref(), notifier.as_ref(), &handle).await;
+        let cancelled = matches!(r, Err(CoreError::Cancelled));
+        let _ = tx.send(r);
+        if cancelled {
+            Err(CoreError::Cancelled)
+        } else {
+            Ok(())
+        }
+    });
+    (id, rx)
+}
+
+async fn finish(rx: LoginResult) -> Result<Uuid, CoreError> {
+    tokio::time::timeout(std::time::Duration::from_secs(20), rx)
+        .await
+        .expect("ログインが終わらない")
+        .unwrap()
+}
+
+async fn login_with(
+    auth: &AuthService,
+    method: LoginMethod,
+    opener: Arc<dyn UrlOpener>,
+) -> (Result<Uuid, CoreError>, Arc<Progress>, String) {
+    let tasks = TaskManager::new(Arc::new(NoTasks));
+    let progress = Arc::new(Progress::default());
+    let (id, rx) = start_login(&tasks, auth.clone(), method, opener, progress.clone());
+    (finish(rx).await, progress, id)
+}
+
+async fn wait_for_url(progress: &Progress) -> String {
+    for _ in 0..500 {
+        if let Some(url) = progress.browser_url() {
+            return url;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("WaitingForBrowser が来ない");
+}
+
+fn assert_no_secrets(progress: &Progress) {
+    let events = serde_json::to_string(&*progress.0.lock().unwrap()).unwrap();
+    for s in ALL_SECRETS.iter().chain([&AUTH_CODE]) {
+        assert!(!events.contains(s), "{events} contains {s}");
+    }
+}
+
+#[tokio::test]
+async fn login_browser_adds_the_account() {
+    let e = env().await;
+    mount_code_exchange(&e.server).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let browser = Arc::new(FakeBrowser::default());
+    let (r, progress, task_id) = login_with(&e.auth, LoginMethod::Browser, browser.clone()).await;
+    assert_eq!(r.unwrap(), profile_id());
+    let stages = progress.stages();
+    assert_eq!(stages.len(), 3, "{stages:?}");
+    let LoginProgress::WaitingForBrowser { url } = &stages[0] else {
+        panic!("{stages:?}");
+    };
+    assert_eq!(
+        &stages[1..],
+        &[
+            LoginProgress::CheckingXbox,
+            LoginProgress::CheckingMinecraft
+        ]
+    );
+    assert!(url.starts_with(&format!("{}/authorize?", e.server.uri())));
+    assert_eq!(*browser.0.lock().unwrap(), vec![url.clone()]);
+    assert!(
+        progress
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|ev| ev.task_id == task_id)
+    );
+    assert!(e.row().is_active);
+    assert_eq!(e.auth.list().unwrap().accounts[0].id, PROFILE_ID);
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_2));
+    assert_no_secrets(&progress);
+}
+
+#[tokio::test]
+async fn login_browser_without_client_id_is_no_client_id() {
+    let e = env().await;
+    let auth = AuthService::new(
+        e.db.clone(),
+        AppPaths::from_root(e.temp.path()),
+        AuthHttp::new().unwrap(),
+        auth_urls(&e.server),
+        None,
+        None,
+    );
+    let browser = Arc::new(FakeBrowser::default());
+    for method in [LoginMethod::Browser, LoginMethod::DeviceCode] {
+        let (r, progress, _) = login_with(&auth, method, browser.clone()).await;
+        assert!(matches!(r, Err(CoreError::NoClientId)), "{r:?}");
+        assert!(progress.stages().is_empty());
+    }
+    assert!(browser.0.lock().unwrap().is_empty());
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn login_opener_failure_still_waits_and_reports_the_url() {
+    let e = env().await;
+    mount_code_exchange(&e.server).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let tasks = TaskManager::new(Arc::new(NoTasks));
+    let progress = Arc::new(Progress::default());
+    let opener = Arc::new(BrokenOpener::default());
+    let (_, rx) = start_login(
+        &tasks,
+        e.auth.clone(),
+        LoginMethod::Browser,
+        opener.clone(),
+        progress.clone(),
+    );
+    let url = wait_for_url(&progress).await;
+    // 開けなくても待ち続ける。UI から開き直した、とみなしてコールバックを送る
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    send_callback(&url);
+    assert_eq!(finish(rx).await.unwrap(), profile_id());
+    assert_eq!(*opener.0.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn login_cancel_during_browser_wait_is_cancelled() {
+    let e = env().await;
+    let tasks = TaskManager::new(Arc::new(NoTasks));
+    let progress = Arc::new(Progress::default());
+    let (task_id, rx) = start_login(
+        &tasks,
+        e.auth.clone(),
+        LoginMethod::Browser,
+        Arc::new(BrokenOpener::default()),
+        progress.clone(),
+    );
+    let url = wait_for_url(&progress).await;
+    let (_, port) = callback_target(&url);
+    tasks.cancel(&task_id).unwrap();
+    let r = finish(rx).await;
+    assert!(matches!(r, Err(CoreError::Cancelled)), "{r:?}");
+    // ポートが解放されている
+    std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    assert!(accounts::list(&e.db).unwrap().is_empty());
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn login_device_code_reports_the_user_code() {
+    let e = env().await;
+    mount_device(&e.server, "https://www.microsoft.com/link").await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let browser = Arc::new(FakeBrowser::default());
+    let (r, progress, _) = login_with(&e.auth, LoginMethod::DeviceCode, browser.clone()).await;
+    assert_eq!(r.unwrap(), profile_id());
+    assert_eq!(
+        progress.stages(),
+        vec![
+            LoginProgress::DeviceCode {
+                user_code: "ABCD-EFGH".into(),
+                verification_uri: "https://www.microsoft.com/link".into(),
+            },
+            LoginProgress::CheckingXbox,
+            LoginProgress::CheckingMinecraft,
+        ]
+    );
+    // デバイスコードでは何も開かない
+    assert!(browser.0.lock().unwrap().is_empty());
+    assert!(e.row().is_active);
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_2));
+    let events = serde_json::to_string(&*progress.0.lock().unwrap()).unwrap();
+    assert!(
+        events.contains(r#""stage":"deviceCode","userCode":"ABCD-EFGH","verificationUri":"#),
+        "{events}"
+    );
+    assert!(events.contains(r#""taskId":"#), "{events}");
+    assert!(!events.contains("\"DC\""), "{events}");
+    assert_no_secrets(&progress);
+}
+
+#[tokio::test]
+async fn login_device_code_verification_uri_is_passed_as_text() {
+    let e = env().await;
+    mount_device(&e.server, "https://evil.example/link?x=1").await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let browser = Arc::new(FakeBrowser::default());
+    let (r, progress, _) = login_with(&e.auth, LoginMethod::DeviceCode, browser.clone()).await;
+    r.unwrap();
+    assert_eq!(
+        progress.stages()[0],
+        LoginProgress::DeviceCode {
+            user_code: "ABCD-EFGH".into(),
+            verification_uri: "https://evil.example/link?x=1".into(),
+        }
+    );
+    assert!(browser.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn login_relogin_of_the_same_account_clears_needs_login() {
+    let e = env().await;
+    let id = e.seed(EntitlementState::Verified, T0);
+    accounts::set_needs_login(&e.db, id, true).unwrap();
+    assert!(e.auth.list().unwrap().accounts[0].needs_login);
+    mount_code_exchange(&e.server).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let (r, _, _) = login_with(
+        &e.auth,
+        LoginMethod::Browser,
+        Arc::new(FakeBrowser::default()),
+    )
+    .await;
+    assert_eq!(r.unwrap(), id);
+    assert!(!e.row().needs_login);
+    assert!(!e.auth.list().unwrap().accounts[0].needs_login);
+    assert_eq!(accounts::list(&e.db).unwrap().len(), 1);
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_2));
+}
+
+#[tokio::test]
+async fn login_relogin_as_a_different_account_adds_and_activates_it() {
+    let e = env().await;
+    let other = Uuid::from_u128(2);
+    accounts::save_profile(
+        &e.db,
+        &ProfileRecord {
+            id: other,
+            username: "Alex".into(),
+            xuid: None,
+            skin_url: None,
+        },
+        EntitlementState::Verified,
+        T0,
+    )
+    .unwrap();
+    accounts::set_active(&e.db, other).unwrap();
+    accounts::set_needs_login(&e.db, other, true).unwrap();
+    mount_code_exchange(&e.server).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let (r, _, _) = login_with(
+        &e.auth,
+        LoginMethod::Browser,
+        Arc::new(FakeBrowser::default()),
+    )
+    .await;
+    assert_eq!(r.unwrap(), profile_id());
+    let rows = accounts::list(&e.db).unwrap();
+    assert_eq!(rows.len(), 2);
+    let new = rows.iter().find(|r| r.id == profile_id()).unwrap();
+    let old = rows.iter().find(|r| r.id == other).unwrap();
+    assert!(new.is_active && !new.needs_login);
+    // 元のアカウントは残り、使用中ではなくなる
+    assert!(!old.is_active);
+    assert_eq!(old.username, "Alex");
+    assert!(old.needs_login);
+}

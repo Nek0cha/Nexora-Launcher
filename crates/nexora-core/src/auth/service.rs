@@ -160,7 +160,20 @@ impl AuthService {
         self
     }
 
-    fn now(&self) -> i64 {
+    /// Microsoft のクライアント ID。未設定なら None。
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub(super) fn http(&self) -> &AuthHttp {
+        &self.http
+    }
+
+    pub(super) fn urls(&self) -> &AuthUrls {
+        &self.urls
+    }
+
+    pub(super) fn now(&self) -> i64 {
         (self.clock)()
     }
 

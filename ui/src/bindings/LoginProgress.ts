@@ -3,4 +3,4 @@
 /**
  * ログインの進み具合。UI のダイアログの表示に使う。
  */
-export type LoginProgress = { "stage": "waitingForBrowser", url: string, } | { "stage": "deviceCode", user_code: string, verification_uri: string, } | { "stage": "checkingXbox" } | { "stage": "checkingMinecraft" };
+export type LoginProgress = { "stage": "waitingForBrowser", url: string, } | { "stage": "deviceCode", userCode: string, verificationUri: string, } | { "stage": "checkingXbox" } | { "stage": "checkingMinecraft" };
