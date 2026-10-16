@@ -62,6 +62,67 @@ use nexora_core::java::runtime::java_relative_path;
 /// テスト用の Java の中身。unix ではそのまま実行できるシェルスクリプトにする。
 pub const FAKE_JAVA: &[u8] = b"#!/bin/sh\necho \"fake game $*\"\nexit 0\n";
 
+/// FakeMojang が配るライブラリの中身。
+pub const LIBRARY: &[u8] = b"library-jar";
+
+/// 本文の途中で接続を切る HTTP サーバー（127.0.0.1 だけで待ち受ける）。
+/// 最初の cut_times 回は、Content-Length は本来の長さのまま本文を半分だけ送って切る。
+/// それ以降は本文をすべて送る。wiremock（hyper）は長さの合わない本文を送らないため、自前で書く。
+pub struct CuttingServer {
+    pub url: String,
+    hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl CuttingServer {
+    pub async fn start(body: &'static [u8], cut_times: usize) -> Self {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let n = counter.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    // リクエストのヘッダーの終わりまで読む
+                    let mut request = Vec::new();
+                    let mut buf = [0u8; 1024];
+                    while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                        match socket.read(&mut buf).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(k) => request.extend_from_slice(&buf[..k]),
+                        }
+                    }
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let sent = if n < cut_times {
+                        &body[..body.len() / 2]
+                    } else {
+                        body
+                    };
+                    let _ = socket.write_all(head.as_bytes()).await;
+                    let _ = socket.write_all(sent).await;
+                    let _ = socket.flush().await;
+                    let _ = socket.shutdown().await;
+                });
+            }
+        });
+        Self {
+            url: format!("http://{addr}/lib.jar"),
+            hits,
+        }
+    }
+
+    pub fn hits(&self) -> usize {
+        self.hits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 /// Mojang の配信の偽物。version 1.99-test（Java は jre-test / 17）を配る。
 pub struct FakeMojang {
     pub server: MockServer,
@@ -75,10 +136,20 @@ impl FakeMojang {
 
     /// serve_library が false なら、ライブラリだけ 404 にする（あとで serve_library を呼ぶ）。
     pub async fn start_with(serve_library: bool) -> Self {
+        Self::build(serve_library, None).await
+    }
+
+    /// ライブラリ（中身は LIBRARY）だけを、別のサーバーの url から取得させる。
+    pub async fn with_library_at(url: &str) -> Self {
+        Self::build(false, Some(url.to_string())).await
+    }
+
+    async fn build(serve_library: bool, library_url: Option<String>) -> Self {
         let server = MockServer::start().await;
         let u = server.uri();
         let client = b"client-jar".to_vec();
-        let library = b"library-jar".to_vec();
+        let library = LIBRARY.to_vec();
+        let lib_url = library_url.unwrap_or_else(|| format!("{u}/lib.jar"));
         let asset = b"asset-object".to_vec();
         let asset_hash = sha1_hex(&asset);
         let index = format!(
@@ -90,7 +161,7 @@ impl FakeMojang {
 "arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}"],"jvm":["-cp","${{classpath}}"]}},
 "assetIndex":{{"id":"test","sha1":"{is}","size":{il},"totalSize":0,"url":"{u}/index.json"}},
 "downloads":{{"client":{{"sha1":"{cs}","size":{cl},"url":"{u}/client.jar"}}}},
-"libraries":[{{"name":"com.example:lib:1.0","downloads":{{"artifact":{{"path":"com/example/lib/1.0/lib-1.0.jar","sha1":"{ls}","size":{ll},"url":"{u}/lib.jar"}}}}}}],
+"libraries":[{{"name":"com.example:lib:1.0","downloads":{{"artifact":{{"path":"com/example/lib/1.0/lib-1.0.jar","sha1":"{ls}","size":{ll},"url":"{lib_url}"}}}}}}],
 "javaVersion":{{"component":"jre-test","majorVersion":17}}}}"#,
             is = sha1_hex(index.as_bytes()),
             il = index.len(),

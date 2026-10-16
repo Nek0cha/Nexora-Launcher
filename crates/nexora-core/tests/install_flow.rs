@@ -10,7 +10,7 @@ use nexora_core::java::find_registered;
 use nexora_core::paths::AppPaths;
 use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
 
-use common::{FakeMojang, FixedProbe, http};
+use common::{CuttingServer, FakeMojang, FixedProbe, LIBRARY, http, part_files};
 
 struct Silent;
 impl TaskNotifier for Silent {
@@ -147,5 +147,42 @@ async fn cancelled_install_stays_installing() {
     assert_eq!(
         instance::get(&h.env.db, &inst.id).unwrap().state,
         InstanceState::Installing
+    );
+}
+
+#[tokio::test]
+async fn connection_lost_mid_download_marks_broken_and_resumes() {
+    // 最初の試行と 3 回の再試行のすべてで、ライブラリの本文の途中で接続が切れる
+    let attempts = 1 + nexora_core::net::MAX_RETRIES as usize;
+    let cutting = CuttingServer::start(LIBRARY, attempts).await;
+    let fake = FakeMojang::with_library_at(&cutting.url).await;
+    let h = harness(&fake);
+    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let first = run_install(&h, &inst.id).await;
+    assert_eq!(first.state, TaskState::Failed);
+    assert_eq!(first.error.unwrap().code, "net.offline");
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Broken
+    );
+    assert_eq!(cutting.hits(), attempts);
+    let lib = h
+        .env
+        .paths
+        .shared_dir()
+        .join("libraries/com/example/lib/1.0/lib-1.0.jar");
+    assert!(!lib.exists());
+    assert!(part_files(h.env.paths.shared_dir().as_path()).is_empty());
+
+    // 接続が戻ったら、もう一度プレイを押すと続きから取得して完了する
+    let second = run_install(&h, &inst.id).await;
+    assert_eq!(second.state, TaskState::Succeeded, "{:?}", second.error);
+    assert_eq!(fake.hits("/client.jar").await, 1);
+    assert_eq!(cutting.hits(), attempts + 1);
+    assert!(lib.is_file());
+    assert!(part_files(h.env.paths.shared_dir().as_path()).is_empty());
+    assert_eq!(
+        instance::get(&h.env.db, &inst.id).unwrap().state,
+        InstanceState::Ready
     );
 }
