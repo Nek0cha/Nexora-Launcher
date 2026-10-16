@@ -31,6 +31,8 @@ export function Select<T extends string>(props: {
   value: T;
   options: Option<T>[];
   onChange: (value: T) => void;
+  /** トリガーに足すクラス。同じ列の入力欄と幅を揃えるときに使う */
+  triggerClassName?: string;
 }) {
   return (
     <AriaSelect
@@ -41,7 +43,7 @@ export function Select<T extends string>(props: {
       className="flex items-center justify-between gap-4"
     >
       <Label className="text-text">{props.label}</Label>
-      <Button className={triggerClass}>
+      <Button className={props.triggerClassName ? `${triggerClass} ${props.triggerClassName}` : triggerClass}>
         {/* 項目の中身（チェックの場所）ごと写さず、文字だけを表示する */}
         <SelectValue className="truncate">{({ selectedText }) => selectedText}</SelectValue>
         <IconCaret aria-hidden className="size-4 shrink-0 text-text-muted" />

@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import IconSearch from "~icons/ph/magnifying-glass";
 import { filterCommands, modifierLabel, nextTheme, type PaletteCommand } from "../features/palette/commands";
+import { useHomeInstance } from "../features/instances/useInstances";
+import { useRunning } from "../features/play/useGameSync";
+import { usePlay } from "../features/play/usePlay";
 import { useUpdateSetting } from "../features/settings/useSettings";
+import { modalClass, overlayClass } from "./modal";
 
 const PAGES = [
   { path: "/", key: "home" },
@@ -14,27 +18,19 @@ const PAGES = [
   { path: "/settings", key: "settings" },
 ] as const;
 
-// 背景の暗幕は不透明度だけを変える
-const overlayClass = [
-  "fixed inset-0 z-50 flex items-start justify-center bg-surface-0/60 p-4 pt-[15vh]",
-  "transition-opacity duration-(--duration-base) ease-out-quint",
-  "data-entering:opacity-0 data-exiting:opacity-0 data-exiting:duration-(--duration-fast)",
-].join(" ");
-
-const modalClass = [
-  "w-full max-w-lg rounded-lg border border-line bg-surface-2 shadow-float",
-  "transition-[opacity,translate] duration-(--duration-base) ease-out-quint",
-  "data-entering:opacity-0 motion-safe:data-entering:translate-y-2",
-  "data-exiting:opacity-0 motion-safe:data-exiting:translate-y-2 data-exiting:duration-(--duration-fast)",
-  "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
-].join(" ");
-
 export function CommandPalette() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const update = useUpdateSetting();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const instance = useHomeInstance();
+  // ID が空のときは項目を出さないため、press は呼ばれない
+  const play = usePlay(instance?.id ?? "");
+  const sessions = useRunning();
+  // 遊んでいるか分からない間と、すでに遊んでいる間は起動の項目を出さない（ホームのプレイボタンが押せない状態と同じ）
+  const launchable = instance !== undefined && sessions !== undefined
+    && !sessions.some((r) => r.instanceId === instance.id);
 
   const close = () => {
     setOpen(false);
@@ -54,6 +50,10 @@ export function CommandPalette() {
 
   const commands = useMemo<PaletteCommand[]>(
     () => [
+      // いちばん使う操作のため先頭に置く
+      ...(launchable && instance
+        ? [{ id: "launch-last", label: t("palette.launchLast", { name: instance.name }), run: play.press }]
+        : []),
       ...PAGES.map((p) => ({
         id: `go-${p.key}`,
         label: t("palette.goTo", { page: t(`nav.${p.key}`) }),
@@ -69,7 +69,7 @@ export function CommandPalette() {
         },
       },
     ],
-    [t, navigate, update],
+    [t, navigate, update, launchable, instance?.name, play.press],
   );
 
   const visible = filterCommands(commands, query);
