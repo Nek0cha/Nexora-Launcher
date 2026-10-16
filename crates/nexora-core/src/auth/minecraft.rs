@@ -16,7 +16,7 @@ use super::http::{
 use super::xbox::XstsToken;
 use crate::error::CoreError;
 use crate::meta::write_atomic;
-use crate::net::{Http, hash::hex};
+use crate::net::hash::hex;
 use crate::paths::AppPaths;
 
 /// Java 版の項目の名前（spec 4.4）。
@@ -27,7 +27,7 @@ const MAX_SKIN_BYTES: usize = 1024 * 1024;
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// Minecraft のアクセストークン。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct McToken {
     pub access: SecretString,
     pub expires_at_ms: i64,
@@ -187,8 +187,8 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
 
 /// スキンの画像を取得して `cache/skins/<URL の SHA-256>.png` に保存する。あればそれを返す。
 /// 許可された URL 以外は、通信せずに拒否する。取得はリダイレクトを追わない専用の
-/// クライアントで行うので、`http` は使わない（呼び出し側の形を保つために残している）。
-pub async fn cached_skin(paths: &AppPaths, _http: &Http, url: &str) -> Result<PathBuf, CoreError> {
+/// クライアントで行う。
+pub async fn cached_skin(paths: &AppPaths, url: &str) -> Result<PathBuf, CoreError> {
     fetch_skin(paths, url, trusted_url).await
 }
 
@@ -318,9 +318,7 @@ mod tests {
         let paths = AppPaths::from_root(temp.path());
         let url = format!("{}/texture/a", server.uri());
         // 本物の許可判定では、wiremock の http URL は通らない
-        let err = cached_skin(&paths, &Http::new().unwrap(), &url)
-            .await
-            .unwrap_err();
+        let err = cached_skin(&paths, &url).await.unwrap_err();
         assert!(matches!(err, CoreError::Unexpected { .. }), "{err:?}");
         assert!(server.received_requests().await.unwrap().is_empty());
     }

@@ -2,10 +2,12 @@
 
 pub mod accounts;
 pub mod http;
+pub mod login;
 pub mod loopback;
 pub mod microsoft;
 pub mod minecraft;
 pub mod oauth;
+pub mod service;
 pub mod store;
 pub mod xbox;
 

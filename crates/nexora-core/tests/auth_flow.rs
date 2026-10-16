@@ -749,3 +749,682 @@ async fn a_reply_without_items_is_unknown_not_not_owned() {
     let state = entitlement(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token()).await;
     assert_eq!(state, EntitlementState::Unknown);
 }
+
+// ---- AuthService ----
+
+use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+use common::{
+    ALL_SECRETS, MC_TOKEN, MS_ACCESS, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, REFRESH_2,
+    REFRESH_3, XUID, hits_on, mount_chain, mount_entitlements, mount_mc_login, mount_mc_profile,
+    mount_refresh, mount_token_failure, mount_xbox,
+};
+use nexora_core::auth::OFFLINE_GRACE_MS;
+use nexora_core::auth::accounts::{self, ProfileRecord};
+use nexora_core::auth::login::LoginProgress;
+use nexora_core::auth::microsoft::MsTokens;
+use nexora_core::auth::service::{AuthService, offline_allowed};
+use nexora_core::auth::store::{MemoryStore, SecretStore};
+use nexora_core::db::Db;
+use nexora_core::launch::session::UserType;
+use nexora_core::paths::AppPaths;
+use uuid::Uuid;
+
+const T0: i64 = 1_800_000_000_000;
+
+struct Env {
+    server: MockServer,
+    db: Db,
+    store: Arc<MemoryStore>,
+    clock: Arc<AtomicI64>,
+    temp: tempfile::TempDir,
+    auth: AuthService,
+}
+
+fn profile_id() -> Uuid {
+    Uuid::parse_str(PROFILE_ID).unwrap()
+}
+
+fn service(
+    server: &MockServer,
+    db: &Db,
+    root: &std::path::Path,
+    store: Option<Arc<dyn SecretStore>>,
+    clock: &Arc<AtomicI64>,
+) -> AuthService {
+    let clock = clock.clone();
+    AuthService::new(
+        db.clone(),
+        AppPaths::from_root(root),
+        AuthHttp::new().unwrap(),
+        auth_urls(server),
+        store,
+        Some("cid".into()),
+    )
+    .with_clock(Arc::new(move || clock.load(Ordering::SeqCst)))
+}
+
+async fn env_with(store: bool) -> Env {
+    let server = MockServer::start().await;
+    let db = Db::open_in_memory().unwrap();
+    let mem = Arc::new(MemoryStore::default());
+    let clock = Arc::new(AtomicI64::new(T0));
+    let temp = tempfile::tempdir().unwrap();
+    let dyn_store = store.then(|| mem.clone() as Arc<dyn SecretStore>);
+    let auth = service(&server, &db, temp.path(), dyn_store, &clock);
+    Env {
+        server,
+        db,
+        store: mem,
+        clock,
+        temp,
+        auth,
+    }
+}
+
+async fn env() -> Env {
+    env_with(true).await
+}
+
+impl Env {
+    /// 使用中のアカウントを 1 件入れ、store に REFRESH_1 を置く。
+    fn seed(&self, entitlement: EntitlementState, at: i64) -> Uuid {
+        let id = profile_id();
+        accounts::save_profile(
+            &self.db,
+            &ProfileRecord {
+                id,
+                username: PROFILE_NAME.into(),
+                xuid: Some(XUID.into()),
+                skin_url: None,
+            },
+            entitlement,
+            at,
+        )
+        .unwrap();
+        accounts::set_active(&self.db, id).unwrap();
+        self.store
+            .set(&id.simple().to_string(), &secret(REFRESH_1))
+            .unwrap();
+        id
+    }
+
+    fn stored(&self) -> Option<String> {
+        self.store.value(PROFILE_ID)
+    }
+
+    fn row(&self) -> accounts::AccountRow {
+        accounts::get(&self.db, profile_id()).unwrap()
+    }
+
+    fn advance(&self, ms: i64) {
+        self.clock.fetch_add(ms, Ordering::SeqCst);
+    }
+
+    fn now(&self) -> i64 {
+        self.clock.load(Ordering::SeqCst)
+    }
+
+    async fn login(&self) -> Result<Uuid, CoreError> {
+        let tokens = MsTokens {
+            access: secret(MS_ACCESS),
+            refresh: Some(secret(REFRESH_1)),
+            expires_at_ms: T0 + 3_600_000,
+        };
+        self.auth.complete_login(tokens, &|_| {}).await
+    }
+
+    async fn requests(&self) -> usize {
+        self.server.received_requests().await.unwrap().len()
+    }
+}
+
+fn row_for_unit() -> accounts::AccountRow {
+    accounts::AccountRow {
+        id: profile_id(),
+        username: "A".into(),
+        xuid: None,
+        skin_url: None,
+        is_active: true,
+        added_at: 0,
+        profile_fetched_at: Some(0),
+        entitlement: EntitlementState::Verified,
+        entitlement_checked_at: Some(0),
+        verified_at: Some(0),
+        needs_login: false,
+    }
+}
+
+#[test]
+fn service_offline_allowed_within_30_days_of_verification() {
+    let mut row = row_for_unit();
+    row.verified_at = Some(0);
+    assert!(offline_allowed(&row, OFFLINE_GRACE_MS));
+    assert!(!offline_allowed(&row, OFFLINE_GRACE_MS + 1));
+}
+
+#[test]
+fn service_offline_not_allowed_when_not_owned_or_never_verified() {
+    let mut row = row_for_unit();
+    row.entitlement = EntitlementState::NotOwned;
+    assert!(!offline_allowed(&row, 1));
+    let mut row = row_for_unit();
+    row.entitlement = EntitlementState::Unknown;
+    row.verified_at = None;
+    assert!(!offline_allowed(&row, 1));
+}
+
+#[test]
+fn service_offline_allowed_when_latest_check_is_unknown_but_recently_verified() {
+    let mut row = row_for_unit();
+    row.entitlement = EntitlementState::Unknown;
+    row.verified_at = Some(0);
+    assert!(offline_allowed(&row, 1));
+}
+
+#[test]
+fn service_offline_not_allowed_when_login_is_needed() {
+    let mut row = row_for_unit();
+    row.needs_login = true;
+    assert!(!offline_allowed(&row, 1));
+}
+
+#[tokio::test]
+async fn service_complete_login_saves_the_account_and_refresh_token() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let seen = StdMutex::new(Vec::new());
+    let tokens = MsTokens {
+        access: secret(MS_ACCESS),
+        refresh: Some(secret(REFRESH_1)),
+        expires_at_ms: T0 + 3_600_000,
+    };
+    let id = e
+        .auth
+        .complete_login(tokens, &|p| seen.lock().unwrap().push(p))
+        .await
+        .unwrap();
+    assert_eq!(id, profile_id());
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![
+            LoginProgress::CheckingXbox,
+            LoginProgress::CheckingMinecraft
+        ]
+    );
+    let rows = accounts::list(&e.db).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_active);
+    assert_eq!(rows[0].entitlement, EntitlementState::Verified);
+    assert_eq!(rows[0].verified_at, Some(T0));
+    assert_eq!(rows[0].xuid.as_deref(), Some(XUID));
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+    let list = e.auth.list().unwrap();
+    assert_eq!(list.accounts.len(), 1);
+    let a = &list.accounts[0];
+    assert_eq!(a.id, PROFILE_ID);
+    assert_eq!(a.username, PROFILE_NAME);
+    assert!(a.is_active && a.login_saved && !a.needs_login && !a.has_skin);
+}
+
+#[tokio::test]
+async fn service_complete_login_not_owned_saves_nothing() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::NotOwned).await;
+    let err = e.login().await.unwrap_err();
+    assert_eq!(err.code(), "auth.not_owned");
+    assert!(accounts::list(&e.db).unwrap().is_empty());
+    assert_eq!(e.stored(), None);
+    assert!(matches!(
+        e.auth.session_for_launch().await.unwrap_err(),
+        CoreError::AuthNoAccount
+    ));
+}
+
+#[tokio::test]
+async fn service_complete_login_unknown_ownership_is_saved_as_unknown() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Unknown).await;
+    e.login().await.unwrap();
+    let row = e.row();
+    assert_eq!(row.entitlement, EntitlementState::Unknown);
+    assert_eq!(row.verified_at, None);
+    assert!(row.is_active);
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+}
+
+#[tokio::test]
+async fn service_complete_login_offline_is_auth_offline() {
+    let e = env().await;
+    Mock::given(method("POST"))
+        .and(path("/xbox/user"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&e.server)
+        .await;
+    let err = e.login().await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            CoreError::AuthOffline {
+                offline_available: false
+            }
+        ),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn service_session_reuses_a_fresh_minecraft_token() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    e.login().await.unwrap();
+    let before = e.requests().await;
+    let s1 = e.auth.session_for_launch().await.unwrap();
+    // 期限まで余裕（5 分）がちょうど残っている間は、取り直さない
+    e.advance(86_400_000 - 300_000);
+    let s2 = e.auth.session_for_launch().await.unwrap();
+    assert_eq!(e.requests().await, before);
+    for s in [&s1, &s2] {
+        assert_eq!(s.uuid, profile_id());
+        assert_eq!(s.username, PROFILE_NAME);
+        assert_eq!(s.access_token.expose_secret(), MC_TOKEN);
+        assert_eq!(s.xuid.as_deref(), Some(XUID));
+        assert_eq!(s.user_type, UserType::Msa);
+    }
+}
+
+#[tokio::test]
+async fn service_session_refreshes_within_the_margin() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 240, Ownership::Owned).await;
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 1);
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 2);
+}
+
+#[tokio::test]
+async fn service_session_refreshes_once_the_margin_is_reached() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    e.auth.session_for_launch().await.unwrap();
+    e.advance(86_400_000 - 300_000 + 1);
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 2);
+}
+
+#[tokio::test]
+async fn service_concurrent_sessions_refresh_once() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"access_token":"{MS_ACCESS}","expires_in":3600}}"#
+        )))
+        .expect(1)
+        .mount(&e.server)
+        .await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let (a, b) = tokio::join!(e.auth.session_for_launch(), e.auth.session_for_launch());
+    assert_eq!(a.unwrap().access_token.expose_secret(), MC_TOKEN);
+    assert_eq!(b.unwrap().access_token.expose_secret(), MC_TOKEN);
+    e.server.verify().await;
+}
+
+#[tokio::test]
+async fn service_rotated_refresh_token_replaces_the_old_one() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, Some(REFRESH_1), Some(REFRESH_2)).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_2));
+    assert!(e.auth.list().unwrap().accounts[0].login_saved);
+}
+
+#[tokio::test]
+async fn service_failed_store_write_keeps_the_old_token_and_marks_unsaved() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, Some(REFRESH_1), Some(REFRESH_2)).await;
+    mount_refresh(&e.server, Some(REFRESH_2), Some(REFRESH_3)).await;
+    // 余裕の 5 分より短い期限にして、毎回取り直させる
+    mount_chain(&e.server, 240, Ownership::Owned).await;
+    e.store.fail_writes(true);
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+    assert!(!e.auth.list().unwrap().accounts[0].login_saved);
+    // 2 回目は、メモリの REFRESH_2 で refresh する
+    e.auth.session_for_launch().await.unwrap();
+    let bodies: Vec<String> = e
+        .server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/token")
+        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+        .collect();
+    assert_eq!(bodies.len(), 2);
+    assert!(bodies[1].contains(&format!("refresh_token={REFRESH_2}")));
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+    // 保存できるようになれば、回転しなくても、メモリの refresh token を保存し直す
+    mount_refresh(&e.server, Some(REFRESH_3), None).await;
+    e.store.fail_writes(false);
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_3));
+    assert!(e.auth.list().unwrap().accounts[0].login_saved);
+}
+
+#[tokio::test]
+async fn service_invalid_grant_sets_needs_login_and_keeps_the_token() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_token_failure(&e.server, 400, r#"{"error":"invalid_grant"}"#).await;
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    let p = err.to_payload();
+    assert_eq!(p.code, "auth.login_required");
+    assert_eq!(
+        p.params.get("accountId"),
+        Some(&nexora_core::error::ParamValue::Str(PROFILE_ID.into()))
+    );
+    assert!(e.row().needs_login);
+    assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+    assert!(e.auth.list().unwrap().accounts[0].needs_login);
+}
+
+#[tokio::test]
+async fn service_server_errors_are_offline_and_do_not_set_needs_login() {
+    for (verified_at, expected) in [(T0, true), (T0 - OFFLINE_GRACE_MS - 1, false)] {
+        let e = env().await;
+        e.seed(EntitlementState::Verified, verified_at);
+        mount_token_failure(&e.server, 503, "").await;
+        let err = e.auth.session_for_launch().await.unwrap_err();
+        let row = e.row();
+        assert_eq!(offline_allowed(&row, e.now()), expected);
+        match err {
+            CoreError::AuthOffline { offline_available } => {
+                assert_eq!(offline_available, expected)
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(!row.needs_login);
+        assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+    }
+}
+
+#[tokio::test]
+async fn service_missing_refresh_token_is_login_required() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    e.store.delete(PROFILE_ID).unwrap();
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert!(
+        matches!(&err, CoreError::LoginRequired { account_id } if account_id == PROFILE_ID),
+        "{err:?}"
+    );
+    assert!(e.row().needs_login);
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn service_minecraft_401_retries_once() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_xbox(&e.server).await;
+    mount_mc_login(&e.server, 86_400).await;
+    mount_entitlements(&e.server, Ownership::Owned).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&e.server)
+        .await;
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert_eq!(err.code(), "auth.login_required");
+    assert_eq!(hits_on(&e.server, "/token").await, 2);
+    assert_eq!(hits_on(&e.server, "/mc/profile").await, 2);
+    assert!(e.row().needs_login);
+}
+
+#[tokio::test]
+async fn service_minecraft_401_then_success_launches() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_xbox(&e.server).await;
+    mount_mc_login(&e.server, 86_400).await;
+    mount_entitlements(&e.server, Ownership::Owned).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(401))
+        .up_to_n_times(1)
+        .mount(&e.server)
+        .await;
+    mount_mc_profile(&e.server).await;
+    e.auth.session_for_launch().await.unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 2);
+    assert!(!e.row().needs_login);
+}
+
+#[tokio::test]
+async fn service_no_store_means_session_only() {
+    let e = env_with(false).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    e.login().await.unwrap();
+    assert!(!e.auth.list().unwrap().accounts[0].login_saved);
+    e.auth.session_for_launch().await.unwrap();
+    // 再起動の代わりに、新しい AuthService を作る
+    let restarted = service(&e.server, &e.db, e.temp.path(), None, &e.clock);
+    let err = restarted.session_for_launch().await.unwrap_err();
+    assert_eq!(err.code(), "auth.login_required");
+    assert!(e.row().needs_login);
+    assert!(restarted.list().unwrap().accounts[0].needs_login);
+}
+
+#[tokio::test]
+async fn service_launch_blocks_not_owned_and_never_verified_unknown() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 86_400, Ownership::NotOwned).await;
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert_eq!(err.code(), "auth.not_owned");
+    assert_eq!(e.row().entitlement, EntitlementState::NotOwned);
+
+    let e = env().await;
+    e.seed(EntitlementState::Unknown, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 86_400, Ownership::Unknown).await;
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert_eq!(err.code(), "auth.ownership_unknown");
+}
+
+#[tokio::test]
+async fn service_launch_allows_unknown_when_verified_before() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0 - 1000);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 86_400, Ownership::Unknown).await;
+    e.auth.session_for_launch().await.unwrap();
+    let row = e.row();
+    assert_eq!(row.entitlement, EntitlementState::Unknown);
+    assert_eq!(row.verified_at, Some(T0 - 1000));
+}
+
+#[tokio::test]
+async fn service_remove_deletes_row_token_and_cache() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    e.auth.remove(id).await.unwrap();
+    assert!(accounts::list(&e.db).unwrap().is_empty());
+    assert_eq!(e.stored(), None);
+    assert!(e.auth.list().unwrap().accounts.is_empty());
+    // 行を戻しても、メモリの Minecraft のトークンは使わない（store も空なのでログインが必要）
+    accounts::save_profile(
+        &e.db,
+        &ProfileRecord {
+            id,
+            username: PROFILE_NAME.into(),
+            xuid: None,
+            skin_url: None,
+        },
+        EntitlementState::Verified,
+        T0,
+    )
+    .unwrap();
+    accounts::set_active(&e.db, id).unwrap();
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert_eq!(err.code(), "auth.login_required");
+    let missing = e.auth.remove(Uuid::from_u128(7)).await.unwrap_err();
+    assert_eq!(missing.code(), "auth.account_not_found");
+}
+
+#[tokio::test]
+async fn service_no_active_account_is_auth_no_account() {
+    let e = env().await;
+    assert!(matches!(
+        e.auth.session_for_launch().await.unwrap_err(),
+        CoreError::AuthNoAccount
+    ));
+    assert!(matches!(
+        e.auth.offline_session().unwrap_err(),
+        CoreError::AuthNoAccount
+    ));
+}
+
+#[tokio::test]
+async fn service_offline_session_uses_cached_identity() {
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    let s = e.auth.offline_session().unwrap();
+    assert_eq!(s.uuid, profile_id());
+    assert_eq!(s.username, PROFILE_NAME);
+    assert_eq!(s.xuid.as_deref(), Some(XUID));
+    assert_eq!(s.access_token.expose_secret(), "0");
+    assert_eq!(s.user_type, UserType::Msa);
+    assert_eq!(e.requests().await, 0);
+    e.advance(OFFLINE_GRACE_MS + 1);
+    assert!(matches!(
+        e.auth.offline_session().unwrap_err(),
+        CoreError::AuthOffline {
+            offline_available: false
+        }
+    ));
+}
+
+#[tokio::test]
+async fn service_set_active_switches_accounts() {
+    let e = env().await;
+    let a = e.seed(EntitlementState::Verified, T0);
+    let b = Uuid::from_u128(2);
+    accounts::save_profile(
+        &e.db,
+        &ProfileRecord {
+            id: b,
+            username: "Alex".into(),
+            xuid: None,
+            skin_url: Some("https://textures.minecraft.net/texture/x".into()),
+        },
+        EntitlementState::Verified,
+        T0 + 1,
+    )
+    .unwrap();
+    e.auth.set_active(b).unwrap();
+    let list = e.auth.list().unwrap();
+    let active: Vec<_> = list.accounts.iter().filter(|x| x.is_active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, b.simple().to_string());
+    assert!(active[0].has_skin);
+    assert!(e.auth.skin_path(a).await.unwrap().is_none());
+    let missing = e.auth.set_active(Uuid::from_u128(9)).unwrap_err();
+    assert_eq!(missing.code(), "auth.account_not_found");
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn service_dev_offline_account_takes_priority() {
+    use nexora_core::launch::session::set_dev_offline_active;
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    set_dev_offline_active(&e.db, true, T0).unwrap();
+    let s = e.auth.session_for_launch().await.unwrap();
+    assert_eq!(s.user_type, UserType::Offline);
+    assert_eq!(s.username, "Player");
+    let o = e.auth.offline_session().unwrap();
+    assert_eq!(o.user_type, UserType::Offline);
+    assert_eq!(e.requests().await, 0);
+    let list = e.auth.list().unwrap();
+    let dev = list.dev_offline.unwrap();
+    assert!(dev.active);
+    assert_eq!(dev.username, "Player");
+    assert!(!list.accounts[0].is_active);
+    e.auth.warm_up().await;
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn service_warm_up_marks_needs_login_without_failing() {
+    let e = env().await;
+    e.auth.warm_up().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_token_failure(&e.server, 400, r#"{"error":"invalid_grant"}"#).await;
+    e.auth.warm_up().await;
+    assert!(e.row().needs_login);
+}
+
+#[tokio::test]
+async fn service_errors_do_not_contain_tokens() {
+    let mut errors = Vec::new();
+
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_token_failure(&e.server, 400, r#"{"error":"invalid_grant"}"#).await;
+    errors.push(e.auth.session_for_launch().await.unwrap_err());
+
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_token_failure(&e.server, 503, "").await;
+    errors.push(e.auth.session_for_launch().await.unwrap_err());
+
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, Some(REFRESH_2)).await;
+    mount_xbox(&e.server).await;
+    mount_mc_login(&e.server, 86_400).await;
+    mount_entitlements(&e.server, Ownership::Owned).await;
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(401).set_body_string(MC_TOKEN))
+        .mount(&e.server)
+        .await;
+    errors.push(e.auth.session_for_launch().await.unwrap_err());
+
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::NotOwned).await;
+    errors.push(e.login().await.unwrap_err());
+
+    let e = env().await;
+    e.seed(EntitlementState::Unknown, T0);
+    mount_refresh(&e.server, None, Some(REFRESH_2)).await;
+    mount_chain(&e.server, 86_400, Ownership::Unknown).await;
+    errors.push(e.auth.session_for_launch().await.unwrap_err());
+
+    assert_eq!(errors.len(), 5);
+    for err in &errors {
+        let json = serde_json::to_string(&err.to_payload()).unwrap();
+        let debug = format!("{err:?}");
+        for s in ALL_SECRETS {
+            assert!(!json.contains(s), "{json} contains {s}");
+            assert!(!debug.contains(s), "{debug} contains {s}");
+        }
+    }
+}
