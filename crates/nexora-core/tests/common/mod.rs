@@ -171,3 +171,71 @@ impl JavaProbe for FixedProbe {
         })
     }
 }
+
+use std::sync::Mutex;
+
+use nexora_core::launch::log4j::LogRecord;
+use nexora_core::launch::process::{GameNotifier, RunningSession};
+
+/// ゲームのイベントを記録する notifier。
+#[derive(Default)]
+pub struct RecordingGame {
+    pub started: Mutex<Vec<RunningSession>>,
+    pub logs: Mutex<Vec<(String, LogRecord)>>,
+    pub exits: Mutex<Vec<(String, Option<i32>)>>,
+}
+
+impl GameNotifier for RecordingGame {
+    fn started(&self, session: &RunningSession) {
+        self.started.lock().unwrap().push(session.clone());
+    }
+    fn log(&self, instance_id: &str, record: &LogRecord) {
+        self.logs
+            .lock()
+            .unwrap()
+            .push((instance_id.to_string(), record.clone()));
+    }
+    fn exited(&self, instance_id: &str, exit_code: Option<i32>) {
+        self.exits
+            .lock()
+            .unwrap()
+            .push((instance_id.to_string(), exit_code));
+    }
+}
+
+impl RecordingGame {
+    /// instance_id の終了が届くまで待つ。
+    pub async fn wait_exit(&self, instance_id: &str) -> Option<i32> {
+        for _ in 0..1500 {
+            if let Some((_, code)) = self
+                .exits
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(id, _)| id == instance_id)
+            {
+                return *code;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("{instance_id} did not exit");
+    }
+
+    pub fn messages(&self) -> Vec<String> {
+        self.logs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, r)| r.message.clone())
+            .collect()
+    }
+}
+
+/// OS のシェルで script を実行する (program, args)。
+pub fn shell(script: &str) -> (std::path::PathBuf, Vec<String>) {
+    if cfg!(windows) {
+        ("cmd".into(), vec!["/C".into(), script.into()])
+    } else {
+        ("sh".into(), vec!["-c".into(), script.into()])
+    }
+}
