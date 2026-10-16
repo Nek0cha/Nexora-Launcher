@@ -3,9 +3,12 @@
 /// フォルダ名の最大の文字数。パスを短く保つため（Java 8 のコマンドラインの上限と MAX_PATH）。
 pub const MAX_CHARS: usize = 64;
 
+/// Windows の予約名。上付き数字（¹²³）の COM と LPT、コンソールの CONIN$ と CONOUT$ も含む。
+/// 比較は ASCII の大文字と小文字を区別しない（上付き数字はそのまま一致させる）。
 const RESERVED: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "COM¹", "COM²",
+    "COM³", "LPT¹", "LPT²", "LPT³", "CONIN$", "CONOUT$",
 ];
 
 fn is_forbidden(c: char) -> bool {
@@ -78,6 +81,23 @@ mod tests {
         assert_eq!(sanitize("nul"), "nul_");
         assert_eq!(sanitize("com1.txt"), "com1_.txt");
         assert_eq!(sanitize("console"), "console");
+    }
+
+    #[test]
+    fn escapes_console_and_superscript_reserved_names() {
+        assert_eq!(sanitize("CONIN$"), "CONIN$_");
+        assert_eq!(sanitize("conout$"), "conout$_");
+        assert_eq!(sanitize("Conin$.log"), "Conin$_.log");
+        for name in ["COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"] {
+            assert_eq!(sanitize(name), format!("{name}_"));
+            assert_eq!(
+                sanitize(&format!("{}.txt", name.to_lowercase())),
+                format!("{}_.txt", name.to_lowercase())
+            );
+        }
+        // 予約名ではないもの
+        assert_eq!(sanitize("CONIN"), "CONIN");
+        assert_eq!(sanitize("COM⁴"), "COM⁴");
     }
 
     #[test]
