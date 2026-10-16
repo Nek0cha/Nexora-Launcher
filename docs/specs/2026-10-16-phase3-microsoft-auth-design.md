@@ -183,7 +183,7 @@ Microsoft のアクセストークン → Xbox Live ユーザートークン →
 
 ### 4.6 起動の前のセッションの用意
 
-- 起動のタスクの最初の段として「アカウントを確認中」を加え、そこでセッションを用意する。Minecraft のトークンが有効なら、そのまま使う。期限まで 5 分を切っていれば、refresh token から連鎖をやり直す。
+- 起動のタスクの最初の段で、セッションを用意する（プレイボタンの表示は、これまでどおり「起動中」とする）。Minecraft のトークンが有効なら、そのまま使う。期限まで 5 分を切っていれば、refresh token から連鎖をやり直す。
 - 同じアカウントの更新は、アカウントごとのロックで 1 件ずつ行う。
 - ランチャーを起動したとき、使用中のアカウントのセッションを、裏で 1 回だけ用意しておく。これでサイドバーの状態（6.2 節）が実際に近くなり、最初の起動も速くなる。失敗しても、通知は出さない（`needs_login` の判定だけを行う）。
 
@@ -222,7 +222,9 @@ spec 0 の 6.6 節に従う。
 
 - argfile には、JVM の引数、classpath、メインクラスまでを書く。ゲームの引数（`--accessToken` を含む）は、argfile の後ろにコマンドラインで渡す。Java のランチャーは、メインクラスより後ろの引数をゲームの引数として渡す。これにより、トークンがディスクに書かれない。
 - それでもコマンドラインが上限を超える場合は、`launch.command_too_long` とする。
-- argfile の文字コードを、Java が argfile を読むときの文字コードに合わせる。Windows で、どの文字コードで読まれるか（Java 17 と 21 のそれぞれ）を実装の前に確認し、データフォルダのパスに日本語を含む場合に起動できることをテストと実機で確かめる。
+- argfile の文字コードを、Java が argfile を読むときの文字コードに合わせる。2026-10-16 に、日本語の Windows（ANSI コードページ 932）と Mojang 配布の Java 25 で確認した結果、Java は argfile を ANSI コードページで読む。UTF-8 で書くと、日本語を含むパスの jar を開けなかった。CP932 で書くと開けた。
+  - このため、Windows では argfile を ANSI コードページ（`GetACP`）で書く。変換には `WideCharToMultiByte` を使い、ANSI コードページで表せない文字（`WC_NO_BEST_FIT_CHARS` と、既定の文字に置き換えられたかどうかで判定する）が含まれる場合は、`launch.path_not_encodable` とする。
+  - Java 17 と 21 でも同じであることは、9.2 節の実機の確認で確かめる。
 - argfile は、ゲームが終了したとき（再起動後に終了を検出した場合を含む）に削除する。
 - ゲームの出力からトークンを伏せる既存の処理（`process.rs`）は、そのまま使う。
 
@@ -272,10 +274,10 @@ spec 0 の 6.6 節に従う。
 
 | 種類 | 名前 |
 |---|---|
-| command | `list_accounts`、`set_active_account`、`remove_account`、`begin_login`（ブラウザかデバイスコードかを指定し、ログインのタスクの ID を返す）、`cancel_login`、`get_skin_face`、`launch_instance`（引数に `offline: bool` を加える） |
-| イベント | `accounts-changed`、`login-progress`（ブラウザで待機中、デバイスコードの表示、Xbox の確認中、など） |
+| command | `list_accounts`、`set_active_account`、`remove_account`、`begin_login`（ブラウザかデバイスコードかを指定し、ログインのタスクの ID を返す）、`set_dev_offline_active`、`get_skin`（スキンの画像全体を返し、顔の切り出しは UI が行う）、`launch_instance`（引数に `offline: bool` を加える） |
+| イベント | `accounts://changed`、`login://progress`（ブラウザで待機中、デバイスコードの表示、Xbox の確認中、など） |
 
-- ログインはタスクとして動かし、タスクトレイにも表示する。kind は `login` とする。
+- ログインはタスクとして動かし、タスクトレイにも表示する。kind は `login` とする。キャンセルは既存の `cancel_task` を使う。
 - トークンは、command の戻り値にもイベントにも含めない。
 
 ## 7. エラー
@@ -286,8 +288,8 @@ spec 0 の 11.1 節の形式に従う。文言は日本語と英語を用意す�
 |---|---|---|
 | `auth.no_account` | 使用中のアカウントがない | ログインのダイアログを出す |
 | `auth.login_required` | 失効、または refresh token がない | ログインのダイアログを出す |
-| `auth.offline` | Microsoft、Xbox、Minecraft に接続できない | 接続できない旨のダイアログ（6.3 節） |
-| `auth.cancelled` | ユーザーがログインをキャンセルした | 何も表示しない |
+| `auth.offline`（引数：offlineAvailable） | Microsoft、Xbox、Minecraft に接続できない | 接続できない旨のダイアログ（6.3 節）。offlineAvailable が真のときだけ「オフラインで遊ぶ」を出す |
+| `task.cancelled`（既存） | ユーザーがログインをキャンセルした。ログインはタスクとして動くため、既存のタスクのキャンセルと同じコードを使う | 何も表示しない |
 | `auth.timeout` | ブラウザから 10 分戻ってこない、デバイスコードの期限切れ | もう一度試すよう案内する |
 | `auth.callback_invalid` | `state` の不一致など、不正なコールバック | もう一度試すよう案内する |
 | `auth.denied` | ユーザーが同意を拒否した | 何をしたら進めるかを案内する |
