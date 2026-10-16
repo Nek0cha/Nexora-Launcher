@@ -2,7 +2,7 @@
 
 A modern, lightweight Minecraft Java Edition launcher.
 
-現在は開発の初期段階です（フェーズ 1：土台）。
+現在は開発の初期段階です（フェーズ 2：Vanilla のインストールと起動が使えるようになりました）。
 
 ## 開発環境
 
@@ -20,6 +20,16 @@ pnpm dev
 ```
 
 開発ビルドは、識別子 `net.ny4n.nexora.dev` と、データフォルダ `Nexora-dev`（Windows では `%APPDATA%\Nexora-dev`）を使います。製品版のデータには触れません。
+
+### 開発用のデータフォルダ
+
+開発ビルドでは、環境変数 `NEXORA_DATA_DIR` でデータフォルダを指定できる（リリースビルドでは無視する）。
+
+    NEXORA_DATA_DIR="C:\Users\me\日本語のフォルダ\nexora" pnpm dev
+
+### 開発用のオフラインアカウント
+
+フェーズ 3（Microsoft 認証）までは、開発ビルドだけオフラインアカウントで起動できる。名前はアカウント画面で変更できる（既定は `Player`）。リリースビルドでは起動できない。
 
 ## テスト
 
