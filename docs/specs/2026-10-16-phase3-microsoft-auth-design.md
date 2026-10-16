@@ -1,7 +1,7 @@
 # フェーズ 3：Microsoft 認証とアカウント管理の設計
 
 - 作成日：2026-10-16
-- 状態：レビュー待ち
+- 状態：承認済み（2026-10-16）
 - 前提：`docs/specs/2026-10-15-nexora-architecture-design.md`（spec 0）、`docs/specs/2026-10-15-phase2-vanilla-launch-design.md`（spec 2）
 - 根拠：`docs/research/03-microsoft-auth.md`（調査 3）
 
