@@ -15,14 +15,21 @@ pub fn parse_json<T: DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T, Co
     })
 }
 
-/// `.part` に書いてからリネームする。
+/// `.part` に書いてからリネームする。`.part` の名前は呼ぶたびに一意なので、
+/// 同じ path に同時に書いても互いの書きかけを壊さない（最後のリネームが残る）。
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|s| io_err(parent, s))?;
     }
     let part = part_path(path);
-    std::fs::write(&part, bytes).map_err(|s| io_err(&part, s))?;
-    std::fs::rename(&part, path).map_err(|s| io_err(path, s))
+    let result = std::fs::write(&part, bytes)
+        .map_err(|s| io_err(&part, s))
+        .and_then(|()| std::fs::rename(&part, path).map_err(|s| io_err(path, s)));
+    if result.is_err() {
+        // 自分の `.part` だけを消す
+        let _ = std::fs::remove_file(&part);
+    }
+    result
 }
 
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, CoreError> {

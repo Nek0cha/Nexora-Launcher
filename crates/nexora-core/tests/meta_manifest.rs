@@ -205,7 +205,7 @@ async fn pin_version_rejects_hash_mismatch_without_leaving_files() {
     assert_eq!(err.code(), "net.hash_mismatch");
     let path = version_json_path(&paths, "1.99-test");
     assert!(!path.exists());
-    assert!(!nexora_core::net::part_path(&path).exists());
+    assert!(common::part_files(path.parent().unwrap()).is_empty());
 }
 
 #[tokio::test]

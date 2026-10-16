@@ -2,11 +2,13 @@
 
 pub mod download;
 pub mod hash;
+mod lock;
 
 use std::path::Path;
 use std::time::Duration;
 
 pub use download::{Depth, DownloadItem, fetch_all, needs_download, part_path};
+pub(crate) use lock::lock_path;
 
 use crate::error::CoreError;
 

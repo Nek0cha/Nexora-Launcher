@@ -39,6 +39,23 @@ pub fn item(
     }
 }
 
+/// dir の下（再帰）に残っている `.part` のファイル。
+pub fn part_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(part_files(&path));
+        } else if path.extension().is_some_and(|e| e == "part") {
+            out.push(path);
+        }
+    }
+    out
+}
+
 use nexora_core::java::platform::platform_key;
 use nexora_core::java::runtime::java_relative_path;
 

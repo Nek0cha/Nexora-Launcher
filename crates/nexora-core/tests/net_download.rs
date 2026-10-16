@@ -2,12 +2,12 @@ mod common;
 
 use std::sync::{Arc, Mutex};
 
-use nexora_core::net::{Depth, fetch_all, part_path};
+use nexora_core::net::{Depth, fetch_all};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use common::{http, item, serve};
+use common::{http, item, part_files, serve};
 
 #[tokio::test]
 async fn concurrency_is_limited_to_sixteen() {
@@ -174,7 +174,7 @@ async fn hash_mismatch_gives_up_after_three_retries_and_cleans_up() {
     assert_eq!(err.code(), "net.hash_mismatch");
     assert_eq!(server.received_requests().await.unwrap().len(), 4);
     assert!(!temp.path().join("bad").exists());
-    assert!(!part_path(&temp.path().join("bad")).exists());
+    assert!(part_files(temp.path()).is_empty());
 }
 
 #[tokio::test]
@@ -263,7 +263,7 @@ async fn cancelled_download_leaves_no_partial_file() {
         .unwrap_err();
     assert_eq!(err.code(), "task.cancelled");
     assert!(!dest.exists());
-    assert!(!part_path(&dest).exists());
+    assert!(part_files(temp.path()).is_empty());
 }
 
 #[tokio::test]
@@ -318,4 +318,66 @@ async fn executable_items_get_the_execute_bit() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o111, 0o111);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_fetches_of_the_same_files_do_not_collide() {
+    let server = MockServer::start().await;
+    let temp = tempfile::tempdir().unwrap();
+    // 書き込みが重なるように、大きめの本文を少し遅らせて返す
+    let bodies: Vec<Vec<u8>> = (0..6u8)
+        .map(|i| {
+            (0..512 * 1024)
+                .map(|j| (j as u8).wrapping_mul(i + 1))
+                .collect()
+        })
+        .collect();
+    for (i, body) in bodies.iter().enumerate() {
+        Mock::given(method("GET"))
+            .and(path(format!("/f{i}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body.clone())
+                    .set_delay(std::time::Duration::from_millis(50)),
+            )
+            .mount(&server)
+            .await;
+    }
+    let items = |range: std::ops::Range<usize>| {
+        range
+            .map(|i| {
+                item(
+                    &server,
+                    &format!("/f{i}"),
+                    temp.path().join(format!("shared/f{i}")),
+                    &bodies[i],
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let client = http();
+    let token = CancellationToken::new();
+    // 0..4 と 2..6 が重なる。加えて、まったく同じ組み合わせも同時に取得する
+    let (a, b, c) = tokio::join!(
+        fetch_all(&client, items(0..4), Depth::Full, 8, &token, |_, _| {}),
+        fetch_all(&client, items(2..6), Depth::Full, 8, &token, |_, _| {}),
+        fetch_all(&client, items(0..6), Depth::Full, 8, &token, |_, _| {}),
+    );
+    a.unwrap();
+    b.unwrap();
+    c.unwrap();
+    for (i, body) in bodies.iter().enumerate() {
+        let path = temp.path().join(format!("shared/f{i}"));
+        assert_eq!(
+            nexora_core::net::hash::sha1_file(&path).unwrap(),
+            nexora_core::net::hash::sha1_hex(body),
+            "f{i}"
+        );
+    }
+    assert_eq!(part_files(temp.path()), Vec::<std::path::PathBuf>::new());
+    // ロックを待った側は確かめ直して取得を省くので、各ファイルの取得は 1 回だけ
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        bodies.len()
+    );
 }
