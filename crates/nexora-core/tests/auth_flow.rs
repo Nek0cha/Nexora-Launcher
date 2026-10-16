@@ -4,6 +4,7 @@ mod common;
 
 use nexora_core::auth::http::AuthHttp;
 use nexora_core::auth::microsoft::{exchange_code, poll_device_code, refresh, request_device_code};
+use nexora_core::auth::xbox::{UserToken, user_token, xsts};
 use nexora_core::error::CoreError;
 use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
@@ -259,4 +260,170 @@ async fn device_code_cancel() {
         .await
         .unwrap_err();
     assert!(matches!(err, CoreError::Cancelled));
+}
+
+// ---- Xbox / XSTS ----
+
+use wiremock::matchers::{body_json, header};
+
+/// 2030-01-01T00:00:00Z のミリ秒。
+const Y2030_MS: i64 = 1_893_456_000_000;
+
+#[tokio::test]
+async fn user_token_sends_the_rps_ticket() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/xbox/user"))
+        .and(header("accept", "application/json"))
+        .and(header("x-xbl-contract-version", "1"))
+        .and(body_json(serde_json::json!({
+            "Properties": {
+                "AuthMethod": "RPS",
+                "SiteName": "user.auth.xboxlive.com",
+                "RpsTicket": "d=ms-access"
+            },
+            "RelyingParty": "http://auth.xboxlive.com",
+            "TokenType": "JWT"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"Token":"utok","NotAfter":"2030-01-01T00:00:00.1234567Z","DisplayClaims":{"xui":[{"uhs":"h"}]}}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let t = user_token(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &secret("ms-access"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.token.expose_secret(), "utok");
+    assert_eq!(t.expires_at_ms, Y2030_MS);
+}
+
+#[tokio::test]
+async fn user_token_unparseable_not_after_falls_back_to_one_hour() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/xbox/user"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(r#"{"Token":"utok","NotAfter":"garbage"}"#),
+        )
+        .mount(&server)
+        .await;
+    let before = nexora_core::install::now_ms();
+    let t = user_token(&AuthHttp::new().unwrap(), &auth_urls(&server), &secret("m"))
+        .await
+        .unwrap();
+    let hour = 3_600_000;
+    assert!(t.expires_at_ms >= before + hour && t.expires_at_ms <= before + hour + 60_000);
+}
+
+fn user(token: &str) -> UserToken {
+    UserToken {
+        token: secret(token),
+        expires_at_ms: 0,
+    }
+}
+
+#[tokio::test]
+async fn xsts_reads_uhs_and_xid() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/xsts"))
+        .and(header("x-xbl-contract-version", "1"))
+        .and(body_json(serde_json::json!({
+            "Properties": { "SandboxId": "RETAIL", "UserTokens": ["utok"] },
+            "RelyingParty": "rp://api.minecraftservices.com/",
+            "TokenType": "JWT"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"Token":"xtok","NotAfter":"2030-01-01T09:00:00+09:00","DisplayClaims":{"xui":[{"uhs":"hash","xid":"2535"}]}}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let x = xsts(
+        &AuthHttp::new().unwrap(),
+        &auth_urls(&server),
+        &user("utok"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(x.token.expose_secret(), "xtok");
+    assert_eq!(x.uhs, "hash");
+    assert_eq!(x.xuid.as_deref(), Some("2535"));
+    assert_eq!(x.expires_at_ms, Y2030_MS);
+}
+
+#[tokio::test]
+async fn xsts_without_xid_is_none() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/xsts"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"Token":"xtok","NotAfter":"2030-01-01T00:00:00Z","DisplayClaims":{"xui":[{"uhs":"hash"}]}}"#,
+        ))
+        .mount(&server)
+        .await;
+    let x = xsts(&AuthHttp::new().unwrap(), &auth_urls(&server), &user("u"))
+        .await
+        .unwrap();
+    assert_eq!(x.xuid, None);
+}
+
+async fn xsts_err(status: u16, body: &str) -> CoreError {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/xsts"))
+        .respond_with(ResponseTemplate::new(status).set_body_string(body.to_string()))
+        .mount(&server)
+        .await;
+    xsts(&AuthHttp::new().unwrap(), &auth_urls(&server), &user("u"))
+        .await
+        .unwrap_err()
+}
+
+#[tokio::test]
+async fn xsts_xerr_is_auth_xbox() {
+    let e = xsts_err(
+        401,
+        r#"{"Identity":"0","XErr":2148916233,"Message":"SECRET"}"#,
+    )
+    .await;
+    assert!(matches!(e, CoreError::AuthXbox { xerr: 2148916233 }));
+    let p = e.to_payload();
+    assert_eq!(p.code, "auth.xbox");
+    assert_eq!(
+        p.params.get("xerr"),
+        Some(&nexora_core::error::ParamValue::Num(2148916233.0))
+    );
+    assert!(!format!("{p:?}").contains("SECRET"));
+}
+
+#[tokio::test]
+async fn xsts_unknown_xerr_keeps_the_number() {
+    let e = xsts_err(401, r#"{"XErr":4242424242}"#).await;
+    assert!(matches!(e, CoreError::AuthXbox { xerr: 4242424242 }));
+}
+
+#[tokio::test]
+async fn xsts_other_failures() {
+    assert!(matches!(
+        xsts_err(503, "x").await,
+        CoreError::Offline { .. }
+    ));
+    match xsts_err(400, "SECRET").await {
+        CoreError::HttpStatus { status: 400, url } => assert!(!url.contains("SECRET")),
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        xsts_err(
+            200,
+            r#"{"Token":"t","NotAfter":"2030-01-01T00:00:00Z","DisplayClaims":{"xui":[]}}"#
+        )
+        .await,
+        CoreError::Unexpected { .. }
+    ));
 }

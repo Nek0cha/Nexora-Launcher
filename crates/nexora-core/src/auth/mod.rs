@@ -6,6 +6,7 @@ pub mod loopback;
 pub mod microsoft;
 pub mod oauth;
 pub mod store;
+pub mod xbox;
 
 use std::time::Duration;
 
