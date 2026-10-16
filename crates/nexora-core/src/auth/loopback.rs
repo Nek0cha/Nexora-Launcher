@@ -23,7 +23,7 @@ pub const COMPLETION_PAGE: &str = "<!doctype html>\n\
 <p lang=\"en\">Sign-in complete. You can close this tab and return to Nexora.</p>\n\
 </body></html>\n";
 
-/// 拒否や失敗で待ち受けを終えるときにブラウザへ返すページ。
+/// コールバックを拒否したとき、またはエラー応答で待ち受けを終えるときにブラウザへ返すページ。
 const FAILURE_PAGE: &str = "<!doctype html>\n\
 <html lang=\"ja\"><head><meta charset=\"utf-8\"><title>Nexora</title></head>\n\
 <body style=\"font-family:sans-serif;margin:3em\">\n\
@@ -244,9 +244,15 @@ async fn handle(mut s: TcpStream, expected_state: &str) -> Step {
             respond(&mut s, "400 Bad Request", FAILURE_PAGE).await;
             Step::Done(Err(CoreError::AuthDenied))
         }
-        Ok(CallbackOutcome::Error) | Err(CallbackReject::Invalid) => {
+        Ok(CallbackOutcome::Error) => {
             respond(&mut s, "400 Bad Request", FAILURE_PAGE).await;
             Step::Done(Err(CoreError::AuthCallbackInvalid))
+        }
+        // state の欠落や不一致は、ほかのプロセスやページからの要求でも起こせる。
+        // それでログインを打ち切らせないよう、拒否したうえで待ち続ける。
+        Err(CallbackReject::Invalid) => {
+            respond(&mut s, "400 Bad Request", FAILURE_PAGE).await;
+            Step::Continue
         }
         Err(CallbackReject::NotFound) => {
             respond(&mut s, "404 Not Found", NOT_FOUND).await;
@@ -357,12 +363,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn state_mismatch_fails_with_callback_invalid() {
+    async fn invalid_callbacks_are_rejected_and_keep_waiting() {
         let (port, _c, h) = start("st", LONG).await;
-        let resp = send(port, &get("/?code=c1&state=zz")).await;
-        assert!(resp.starts_with("HTTP/1.1 400 "), "{resp}");
-        let err = h.await.unwrap().unwrap_err();
-        assert_eq!(err.code(), "auth.callback_invalid");
+        for target in ["/?code=evil&state=zz", "/", "/?code=evil"] {
+            let resp = send(port, &get(target)).await;
+            assert!(resp.starts_with("HTTP/1.1 400 "), "{target}: {resp}");
+        }
+        assert!(!h.is_finished());
+        let resp = send(port, &get("/?code=c1&state=st")).await;
+        assert!(resp.starts_with("HTTP/1.1 200 "), "{resp}");
+        assert_eq!(h.await.unwrap().unwrap().expose_secret(), "c1");
     }
 
     #[tokio::test]
