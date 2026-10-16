@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { errorKey } from "./errorText";
 
 describe("errorKey", () => {
-  const known = new Set(["errors:demo.failed", "errors:generic"]);
+  const known = new Set(["errors:net.http_status", "errors:generic"]);
   const exists = (k: string) => known.has(k);
 
   it("uses the code when a translation exists", () => {
-    expect(errorKey("demo.failed", exists)).toBe("errors:demo.failed");
+    expect(errorKey("net.http_status", exists)).toBe("errors:net.http_status");
   });
 
   it("falls back to the generic message for unknown codes", () => {

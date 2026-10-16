@@ -1,27 +1,50 @@
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
+import type { Instance } from "../../bindings/Instance";
+import type { RunningSession } from "../../bindings/RunningSession";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
 import type { TaskState } from "../../bindings/TaskState";
 import { sortedTasks, type TaskTable } from "../tasks/taskTable";
+import type { LastExit } from "./useGameSync";
 
-export const DEMO_KIND = "demo";
-export const DONE_DISPLAY_MS = 3000;
+export const INSTALL_KIND = "install";
+export const LAUNCH_KIND = "launch";
+
+export type Phase = "install" | "launch";
 
 export type PlayState =
   | { kind: "ready" }
-  | { kind: "preparing"; percent: number; taskId: string }
-  | { kind: "cancelling"; percent: number; taskId: string }
-  | { kind: "done"; startedAt: number }
+  | { kind: "needsInstall" }
+  /** 起動中のセッションの一覧がまだ届いていない。押しても何もしない。 */
+  | { kind: "checking" }
+  | { kind: "preparing"; phase: Phase; percent: number; taskId: string }
+  | { kind: "cancelling"; phase: Phase; percent: number; taskId: string }
+  | { kind: "playing"; launchedAt: number }
+  | { kind: "crashed"; exitCode: number }
   | { kind: "failed"; error: ErrorPayload | null };
+
+export type PlayInputs = {
+  instance: Instance;
+  task: TaskSnapshot | undefined;
+  running: RunningSession | undefined;
+  /** 起動中の一覧を受け取り済みか。未受信の間は、遊んでいるかどうか分からない。 */
+  runningLoaded: boolean;
+  lastExit: LastExit | undefined;
+};
 
 export type Announcement =
   | { key: "play.announce.started" }
   | { key: "play.announce.progress"; percent: number }
   | { key: "play.announce.done" }
+  | { key: "play.announce.playing" }
   | { key: "play.announce.failed" }
+  | { key: "play.announce.crashed" }
   | { key: "play.announce.cancelled" };
 
-export function latestDemo(table: TaskTable): TaskSnapshot | undefined {
-  return sortedTasks(table).find((t) => t.kind === DEMO_KIND);
+/** インスタンスの最新のインストールまたは起動のタスク。 */
+export function latestInstanceTask(table: TaskTable, instanceId: string): TaskSnapshot | undefined {
+  return sortedTasks(table).find(
+    (t) => t.instanceId === instanceId && (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND),
+  );
 }
 
 function percentOf(snapshot: TaskSnapshot): number {
@@ -30,44 +53,50 @@ function percentOf(snapshot: TaskSnapshot): number {
   return Math.min(100, Math.floor((current * 100) / total));
 }
 
-export function playStateFrom(snapshot: TaskSnapshot | undefined, nowMs: number): PlayState {
-  if (!snapshot) return { kind: "ready" };
-  switch (snapshot.state) {
-    case "queued":
-    case "running":
-      return { kind: "preparing", percent: percentOf(snapshot), taskId: snapshot.id };
-    case "cancelling":
-      return { kind: "cancelling", percent: percentOf(snapshot), taskId: snapshot.id };
-    case "succeeded":
-      return nowMs - snapshot.updatedAt < DONE_DISPLAY_MS
-        ? { kind: "done", startedAt: snapshot.updatedAt }
-        : { kind: "ready" };
-    case "failed":
-      return { kind: "failed", error: snapshot.error };
-    case "cancelled":
-      return { kind: "ready" };
-  }
+/** 異常終了を UI のエラーとして表す。文言は errors:game.crashed。 */
+export function crashPayload(exitCode: number): ErrorPayload {
+  return { code: "game.crashed", params: { exitCode }, detail: null };
 }
 
-/**
- * 状態の変化から読み上げる文を決める。`latest` は next を作ったタスクの状態で、
- * どちらも「準備完了」になる、キャンセルの完了と、表示時間を過ぎてから届いた完了を見分けるために使う。
- */
-export function announcement(prev: PlayState, next: PlayState, latest?: TaskState): Announcement | null {
-  const wasActive = prev.kind === "preparing" || prev.kind === "cancelling";
-  if (next.kind === "preparing" && !wasActive) return { key: "play.announce.started" };
-  if (next.kind === "ready" && wasActive) {
-    if (latest === "succeeded") return { key: "play.announce.done" };
-    if (latest === "cancelled" || prev.kind === "cancelling") return { key: "play.announce.cancelled" };
-    return null;
+export function playStateFrom({ instance, task, running, runningLoaded, lastExit }: PlayInputs): PlayState {
+  if (running) return { kind: "playing", launchedAt: running.launchedAt };
+  if (task) {
+    const phase: Phase = task.kind === INSTALL_KIND ? "install" : "launch";
+    if (task.state === "queued" || task.state === "running") {
+      return { kind: "preparing", phase, percent: percentOf(task), taskId: task.id };
+    }
+    if (task.state === "cancelling") {
+      return { kind: "cancelling", phase, percent: percentOf(task), taskId: task.id };
+    }
   }
+  if (!runningLoaded) return { kind: "checking" };
+  const exitAt = lastExit?.at ?? Number.NEGATIVE_INFINITY;
+  if (task?.state === "failed" && task.updatedAt >= exitAt) return { kind: "failed", error: task.error };
+  if (lastExit && lastExit.exitCode !== null && lastExit.exitCode !== 0
+    && exitAt > (task?.updatedAt ?? Number.NEGATIVE_INFINITY)) {
+    return { kind: "crashed", exitCode: lastExit.exitCode };
+  }
+  if (instance.state !== "ready") return { kind: "needsInstall" };
+  return { kind: "ready" };
+}
+
+const isActive = (s: PlayState) => s.kind === "preparing" || s.kind === "cancelling";
+
+/** 状態の変化から読み上げる文を決める。latest は next を作ったタスクの状態。 */
+export function announcement(prev: PlayState, next: PlayState, latest?: TaskState): Announcement | null {
+  if (next.kind === "preparing" && !isActive(prev)) return { key: "play.announce.started" };
   if (next.kind === "preparing" && prev.kind === "preparing") {
     const before = Math.floor(prev.percent / 25);
     const after = Math.floor(next.percent / 25);
     if (after > before && after < 4) return { key: "play.announce.progress", percent: after * 25 };
     return null;
   }
-  if (next.kind === "done" && prev.kind !== "done") return { key: "play.announce.done" };
+  if (next.kind === "playing" && prev.kind !== "playing") return { key: "play.announce.playing" };
   if (next.kind === "failed" && prev.kind !== "failed") return { key: "play.announce.failed" };
+  if (next.kind === "crashed" && prev.kind !== "crashed") return { key: "play.announce.crashed" };
+  if ((next.kind === "ready" || next.kind === "needsInstall") && isActive(prev)) {
+    if (latest === "succeeded") return { key: "play.announce.done" };
+    if (latest === "cancelled" || prev.kind === "cancelling") return { key: "play.announce.cancelled" };
+  }
   return null;
 }

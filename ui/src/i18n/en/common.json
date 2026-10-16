@@ -8,12 +8,9 @@
     "settings": "Settings"
   },
   "empty": {
-    "instances": "No instances yet. Creating and importing instances will arrive in a future version.",
+    "instances": "No instances yet. Pick a version to create one.",
     "browse": "Browsing mods and resource packs will arrive in a future version.",
     "accounts": "Signing in with a Microsoft account will arrive in a future version."
-  },
-  "home": {
-    "placeholderInstance": "Instance name goes here"
   },
   "play": {
     "play": "Play",
@@ -28,15 +25,30 @@
       "progress": "{{percent}}% complete",
       "done": "Ready",
       "failed": "Preparation failed",
-      "cancelled": "Cancelled"
-    }
+      "cancelled": "Cancelled",
+      "playing": "The game is running",
+      "crashed": "The game crashed"
+    },
+    "install": "Install",
+    "launchingPercent": "Launching {{percent}}%"
+  },
+  "create": {
+    "open": "Create instance",
+    "title": "Create instance",
+    "name": "Name",
+    "version": "Version",
+    "submit": "Create",
+    "cancel": "Cancel",
+    "loadingVersions": "Loading versions",
+    "retry": "Retry"
   },
   "tasks": {
     "title": "Tasks",
     "running": "{{count}} running",
     "cancel": "Cancel",
     "kind": {
-      "demo": "Demo task"
+      "install": "Install",
+      "launch": "Launch"
     },
     "state": {
       "queued": "Queued",
@@ -51,8 +63,14 @@
     "placeholder": "Search commands",
     "goTo": "Open {{page}}",
     "toggleTheme": "Toggle theme",
-    "startDemo": "Start demo task",
-    "noResults": "No matching commands"
+    "noResults": "No matching commands",
+    "launchLast": "Launch {{name}}"
+  },
+  "accounts": {
+    "devTitle": "Development offline account",
+    "devHint": "Only in development builds. Release builds sign in with a Microsoft account.",
+    "save": "Save",
+    "saved": "Saved"
   },
   "startup": {
     "title": "Nexora could not start",

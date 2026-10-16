@@ -1,8 +1,11 @@
 //! UI から呼ぶ command。引数を受け取り、core を呼び、結果を返すだけにする。
 
 use nexora_core::app_info::{AppInfo, StartupStatus};
-use nexora_core::demo;
 use nexora_core::error::{CoreError, ErrorPayload};
+use nexora_core::instance::Instance;
+use nexora_core::launch::process::RunningSession;
+use nexora_core::launcher::CreatedInstance;
+use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::task::TaskSnapshot;
 use tauri::{AppHandle, Manager, State};
@@ -108,9 +111,77 @@ pub fn cancel_task(state: State<'_, AppState>, task_id: String) -> CmdResult<()>
         .map_err(ErrorPayload::from)
 }
 
-/// tokio の上で動く必要があるため async にする。
 #[tauri::command]
-pub async fn start_demo_task(state: State<'_, AppState>, fail_at: Option<u8>) -> CmdResult<String> {
+pub async fn list_versions(state: State<'_, AppState>) -> CmdResult<Vec<VersionEntry>> {
     let services = state.services()?;
-    Ok(demo::start_demo(&services.tasks, fail_at))
+    services
+        .launcher
+        .list_versions()
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn list_instances(state: State<'_, AppState>) -> CmdResult<Vec<Instance>> {
+    let services = state.services()?;
+    blocking(move || services.launcher.list_instances()).await
+}
+
+/// タスクを tokio の上で始めるため async にする。DB の処理は短い。
+#[tauri::command]
+pub async fn create_instance(
+    state: State<'_, AppState>,
+    name: String,
+    mc_version: String,
+) -> CmdResult<CreatedInstance> {
+    let services = state.services()?;
+    services
+        .launcher
+        .create_instance(&name, &mc_version)
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn launch_instance(state: State<'_, AppState>, instance_id: String) -> CmdResult<String> {
+    let services = state.services()?;
+    services
+        .launcher
+        .launch_instance(&instance_id)
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn list_running(state: State<'_, AppState>) -> CmdResult<Vec<RunningSession>> {
+    let services = state.services()?;
+    blocking(move || services.launcher.list_running()).await
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn get_dev_offline_username(state: State<'_, AppState>) -> CmdResult<String> {
+    let services = state.services()?;
+    blocking(move || nexora_core::launch::session::load_dev_username(&services.db)).await
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn set_dev_offline_username(
+    state: State<'_, AppState>,
+    name: String,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    blocking(move || nexora_core::launch::session::save_dev_username(&services.db, &name, now_ms()))
+        .await
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+pub fn get_dev_offline_username() -> CmdResult<String> {
+    Err(ErrorPayload::new("app.dev_only"))
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+pub fn set_dev_offline_username(_name: String) -> CmdResult<String> {
+    Err(ErrorPayload::new("app.dev_only"))
 }

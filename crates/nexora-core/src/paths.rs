@@ -73,6 +73,42 @@ impl AppPaths {
         self.root.join("logs")
     }
 
+    pub fn versions_dir(&self) -> PathBuf {
+        self.shared_dir().join("versions")
+    }
+
+    pub fn libraries_dir(&self) -> PathBuf {
+        self.shared_dir().join("libraries")
+    }
+
+    pub fn assets_dir(&self) -> PathBuf {
+        self.shared_dir().join("assets")
+    }
+
+    pub fn runtimes_dir(&self) -> PathBuf {
+        self.shared_dir().join("runtimes")
+    }
+
+    /// 削除しても再取得できるメタデータ（manifest など）。
+    pub fn meta_cache_dir(&self) -> PathBuf {
+        self.cache_dir().join("meta")
+    }
+
+    /// 起動のたびに展開し直す natives。
+    pub fn natives_dir(&self) -> PathBuf {
+        self.cache_dir().join("natives")
+    }
+
+    /// 起動用の一時ファイル（@argfile）。
+    pub fn launch_cache_dir(&self) -> PathBuf {
+        self.cache_dir().join("launch")
+    }
+
+    /// ゲームの出力の書き出し先。
+    pub fn game_logs_dir(&self) -> PathBuf {
+        self.logs_dir().join("game")
+    }
+
     pub fn all_dirs(&self) -> [PathBuf; 7] {
         [
             self.root.clone(),
@@ -96,12 +132,28 @@ impl AppPaths {
 
 use crate::error::CoreError;
 
+/// 開発ビルドでデータフォルダを指定する環境変数。
+pub const DATA_DIR_ENV: &str = "NEXORA_DATA_DIR";
+
 impl AppPaths {
     /// OS の基本のデータフォルダに、プロファイルごとのフォルダ名を付け足す。
     /// Linux では dirs が $XDG_DATA_HOME を優先する。
     pub fn resolve(profile: Profile) -> Result<Self, CoreError> {
         let base = dirs::data_dir().ok_or(CoreError::DataDirUnavailable)?;
         Ok(Self::from_root(base.join(profile.dir_name())))
+    }
+
+    /// 開発ビルドで override_dir が空でなければ、それをルートにする。それ以外は resolve と同じ。
+    pub fn resolve_with(
+        profile: Profile,
+        override_dir: Option<std::ffi::OsString>,
+    ) -> Result<Self, CoreError> {
+        if profile == Profile::Dev
+            && let Some(dir) = override_dir.filter(|d| !d.is_empty())
+        {
+            return Ok(Self::from_root(PathBuf::from(dir)));
+        }
+        Self::resolve(profile)
     }
 }
 
@@ -142,5 +194,42 @@ mod tests {
         };
         assert_eq!(Profile::Release.dir_name(), release);
         assert_eq!(Profile::Dev.dir_name(), dev);
+    }
+
+    #[test]
+    fn shared_and_cache_subdirectories() {
+        let root = std::path::PathBuf::from("/tmp/nexora-test");
+        let paths = AppPaths::from_root(&root);
+        assert_eq!(paths.versions_dir(), root.join("shared").join("versions"));
+        assert_eq!(paths.libraries_dir(), root.join("shared").join("libraries"));
+        assert_eq!(paths.assets_dir(), root.join("shared").join("assets"));
+        assert_eq!(paths.runtimes_dir(), root.join("shared").join("runtimes"));
+        assert_eq!(paths.meta_cache_dir(), root.join("cache").join("meta"));
+        assert_eq!(paths.natives_dir(), root.join("cache").join("natives"));
+        assert_eq!(paths.launch_cache_dir(), root.join("cache").join("launch"));
+        assert_eq!(paths.game_logs_dir(), root.join("logs").join("game"));
+    }
+
+    #[test]
+    fn dev_profile_honours_override() {
+        let paths = AppPaths::resolve_with(Profile::Dev, Some("/tmp/日本語/data".into())).unwrap();
+        assert_eq!(paths.root(), std::path::Path::new("/tmp/日本語/data"));
+    }
+
+    #[test]
+    fn empty_override_is_ignored() {
+        let with_empty = AppPaths::resolve_with(Profile::Dev, Some("".into())).unwrap();
+        let default = AppPaths::resolve(Profile::Dev).unwrap();
+        assert_eq!(with_empty.root(), default.root());
+    }
+
+    #[test]
+    fn release_profile_ignores_override() {
+        let paths =
+            AppPaths::resolve_with(Profile::Release, Some("/tmp/elsewhere".into())).unwrap();
+        assert_eq!(
+            paths.root(),
+            AppPaths::resolve(Profile::Release).unwrap().root()
+        );
     }
 }

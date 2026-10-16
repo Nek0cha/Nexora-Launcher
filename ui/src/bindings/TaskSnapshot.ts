@@ -3,4 +3,8 @@ import type { ErrorPayload } from "./ErrorPayload";
 import type { TaskProgress } from "./TaskProgress";
 import type { TaskState } from "./TaskState";
 
-export type TaskSnapshot = { id: string, kind: string, state: TaskState, progress: TaskProgress, revision: number, error: ErrorPayload | null, createdAt: number, updatedAt: number, };
+export type TaskSnapshot = { id: string, kind: string, 
+/**
+ * このタスクが対象とするインスタンス。インスタンスに属さないタスクは None。
+ */
+instanceId: string | null, state: TaskState, progress: TaskProgress, revision: number, error: ErrorPayload | null, createdAt: number, updatedAt: number, };

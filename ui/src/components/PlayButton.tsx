@@ -4,26 +4,30 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconPlay from "~icons/ph/play-fill";
 import IconRetry from "~icons/ph/arrow-clockwise";
+import IconInstall from "~icons/ph/download-simple";
 import IconStop from "~icons/ph/x";
 import { cancelTask } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
+import type { Instance } from "../bindings/Instance";
 import {
   announcement,
-  DONE_DISPLAY_MS,
-  latestDemo,
+  crashPayload,
+  latestInstanceTask,
   playStateFrom,
+  type Phase,
   type PlayState,
 } from "../features/play/playState";
-import { useDemoStart } from "../features/play/useDemoStart";
+import { useLastExits, useRunning } from "../features/play/useGameSync";
+import { usePlay } from "../features/play/usePlay";
 import { useTasks } from "../features/tasks/useTasks";
 import { FailureNotice } from "./FailureNotice";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 /**
- * 完了の表示の間（until まで）だけ時計を進める。経過時間の表示と、準備完了へ戻すために使う。
- * until を過ぎたら止まるため、古い完了を読み込んだだけでは時計は動かない。
+ * until まで時計を進める。プレイ中の経過時間の表示に使う（プレイ中は until を無限大にする）。
+ * until を過ぎたら止まる。
  */
 function useNow(until: number): number {
   const [now, setNow] = useState(() => Date.now());
@@ -44,15 +48,18 @@ function useNow(until: number): number {
 
 function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
 const NUMBER_MARK = "\u0000";
 
 /** 「準備中 37%」の数字だけを等幅にし、2 桁分の幅を確保して、桁が変わっても文字が動かないようにする（100% は完了の表示に変わる）。 */
-function PreparingLabel({ percent }: { percent: number }) {
+function PreparingLabel({ percent, labelKey }: { percent: number; labelKey: "play.preparingPercent" | "play.launchingPercent" }) {
   const { t } = useTranslation();
-  const [before, after = ""] = t("play.preparingPercent", { percent: NUMBER_MARK }).split(NUMBER_MARK);
+  const [before, after = ""] = t(labelKey, { percent: NUMBER_MARK }).split(NUMBER_MARK);
   return (
     <span>
       {before}
@@ -62,13 +69,18 @@ function PreparingLabel({ percent }: { percent: number }) {
   );
 }
 
-export function PlayButton() {
+const phaseLabelKey = (phase: Phase) => (phase === "install" ? "play.preparingPercent" : "play.launchingPercent");
+
+export function PlayButton({ instance }: { instance: Instance }) {
   const { t } = useTranslation();
   const tasks = useTasks();
-  const snapshot = latestDemo(tasks);
-  const now = useNow(snapshot?.state === "succeeded" ? snapshot.updatedAt + DONE_DISPLAY_MS : 0);
-  const state = playStateFrom(snapshot, now);
-  const { start, starting, error: startError } = useDemoStart();
+  const snapshot = latestInstanceTask(tasks, instance.id);
+  const sessions = useRunning();
+  const running = sessions?.find((r) => r.instanceId === instance.id);
+  const lastExit = useLastExits()[instance.id];
+  const state = playStateFrom({ instance, task: snapshot, running, runningLoaded: sessions !== undefined, lastExit });
+  const now = useNow(state.kind === "playing" ? Number.POSITIVE_INFINITY : 0);
+  const { press, starting, error: startError } = usePlay(instance.id);
   const cancel = useMutation({ mutationFn: (taskId: string) => cancelTask(taskId) });
   // isPending は次の描画まで反映されないため、続けて押された分は印で止める
   const cancelInFlight = useRef(false);
@@ -89,10 +101,12 @@ export function PlayButton() {
   const active = view.kind === "preparing" || view.kind === "cancelling";
   const percent = active ? view.percent : 0;
   // 押しても何も起きない状態。isDisabled にするとフォーカスが外れるため、フォーカスは残して押下だけを無視する
-  const inert = view.kind === "cancelling" || view.kind === "done";
+  const inert = view.kind === "cancelling" || view.kind === "playing" || view.kind === "checking";
 
   // 開始の失敗は、押し直せる状態のときだけ出す（別の場所から開始されて動き出したら古い失敗になる）
-  const shownStartError = view.kind === "ready" || view.kind === "failed" ? startError : null;
+  const shownStartError = view.kind === "ready" || view.kind === "needsInstall" || view.kind === "failed" || view.kind === "crashed"
+      ? startError
+      : null;
   const cancelError = cancel.error ? toErrorPayload(cancel.error) : null;
   const failure: { error: ErrorPayload | null } | null = shownStartError
     ? { error: shownStartError }
@@ -100,16 +114,20 @@ export function PlayButton() {
       ? { error: cancelError }
       : view.kind === "failed"
         ? { error: view.error }
-        : null;
+        : view.kind === "crashed"
+          ? { error: crashPayload(view.exitCode) }
+          : null;
 
   const onPress = () => {
     if (view.kind === "preparing") {
       if (cancelInFlight.current) return;
       cancelInFlight.current = true;
       cancel.mutate(view.taskId, { onSettled: () => (cancelInFlight.current = false) });
-    } else if (view.kind === "ready" || view.kind === "failed") {
+    } else if (
+      view.kind === "ready" || view.kind === "needsInstall" || view.kind === "failed" || view.kind === "crashed"
+    ) {
       cancel.reset();
-      start();
+      press();
     }
   };
 
@@ -118,16 +136,24 @@ export function PlayButton() {
       ? t("play.cancel")
       : view.kind === "cancelling"
         ? t("play.cancelling")
-        : view.kind === "done"
+        : view.kind === "playing"
           ? t("play.playing")
-          : view.kind === "failed"
-            ? t("play.retry")
-            : t("play.play");
+          : view.kind === "needsInstall"
+            ? t("play.install")
+            : view.kind === "failed"
+              ? t("play.retry")
+              : t("play.play");
 
-  const Icon: IconComponent | null = view.kind === "ready" ? IconPlay : view.kind === "failed" ? IconRetry : null;
+  const Icon: IconComponent | null = view.kind === "ready" || view.kind === "crashed"
+      ? IconPlay
+      : view.kind === "needsInstall"
+        ? IconInstall
+        : view.kind === "failed"
+          ? IconRetry
+          : null;
 
   // 進捗の面は準備中だけ見せる。完了では満ちた位置のまま消し、キャンセルと失敗では巻き戻しながら消す
-  const fillScale = active ? percent / 100 : view.kind === "done" ? 1 : 0;
+  const fillScale = active ? percent / 100 : view.kind === "playing" ? 1 : 0;
 
   return (
     <div className="flex flex-col items-start gap-3">
@@ -143,8 +169,8 @@ export function PlayButton() {
           "play-press relative h-14 w-72 overflow-hidden rounded-lg font-display text-lg font-semibold",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
           "data-pending:cursor-progress",
-          view.kind === "done" ? "bg-surface-3 text-text-strong" : "bg-text-strong text-surface-0",
-          view.kind === "ready" || view.kind === "failed" ? "data-hovered:opacity-90" : "",
+          view.kind === "playing" ? "bg-surface-3 text-text-strong" : "bg-text-strong text-surface-0",
+          view.kind === "playing" || view.kind === "cancelling" ? "" : "data-hovered:opacity-90",
           inert ? "cursor-default" : "",
         ].join(" ")}
       >
@@ -168,14 +194,14 @@ export function PlayButton() {
                     <span>{name}</span>
                   </>
                 ) : view.kind === "preparing" ? (
-                  <PreparingLabel percent={percent} />
+                  <PreparingLabel percent={percent} labelKey={phaseLabelKey(view.phase)} />
                 ) : (
                   <>
                     {Icon && <Icon className="size-5" />}
                     <span>{name}</span>
-                    {view.kind === "done" && (
+                    {view.kind === "playing" && (
                       <span className="tabular text-sm font-normal text-text-muted">
-                        {formatElapsed(now - view.startedAt)}
+                        {formatElapsed(now - view.launchedAt)}
                       </span>
                     )}
                   </>
@@ -187,7 +213,7 @@ export function PlayButton() {
       </Button>
       {view.kind === "preparing" && (
         <span id={describedBy} className="sr-only">
-          {t("play.preparingPercent", { percent })}
+          {t(phaseLabelKey(view.phase), { percent })}
         </span>
       )}
       <div aria-live="polite" className="sr-only">

@@ -5,7 +5,8 @@ import { activeCount, mergeList, mergeSnapshot, removeTask, sortedTasks } from "
 function snap(id: string, revision: number, state: TaskSnapshot["state"] = "running"): TaskSnapshot {
   return {
     id,
-    kind: "demo",
+    kind: "install",
+    instanceId: null,
     state,
     progress: { current: revision, total: 100 },
     revision,

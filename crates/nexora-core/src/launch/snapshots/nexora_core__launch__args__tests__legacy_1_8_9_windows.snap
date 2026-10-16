@@ -1,0 +1,31 @@
+---
+source: crates/nexora-core/src/launch/args.rs
+expression: args
+---
+[
+  "-Xmx2048M",
+  "-Dlog4j.configurationFile=/assets/log_configs/client.xml",
+  "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump",
+  "-Djava.library.path=/natives",
+  "-cp",
+  "/lib/a.jar;/v/client.jar",
+  "net.minecraft.client.main.Main",
+  "--username",
+  "Player",
+  "--version",
+  "1.8.9",
+  "--gameDir",
+  "/game",
+  "--assetsDir",
+  "/assets",
+  "--assetIndex",
+  "1.8",
+  "--uuid",
+  "a01e3843e5213998958af459800e4d11",
+  "--accessToken",
+  "0",
+  "--userProperties",
+  "{}",
+  "--userType",
+  "legacy"
+]

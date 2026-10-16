@@ -11,7 +11,10 @@ use rusqlite_migration::{M, Migrations};
 use crate::error::CoreError;
 
 fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(include_str!("../migrations/0001_init.sql"))])
+    Migrations::new(vec![
+        M::up(include_str!("../migrations/0001_init.sql")),
+        M::up(include_str!("../migrations/0002_instances.sql")),
+    ])
 }
 
 #[derive(Clone)]
@@ -79,10 +82,15 @@ mod tests {
     #[test]
     fn open_applies_migrations() {
         let db = Db::open_in_memory().unwrap();
-        let exists = db
-            .with_conn(|conn| Ok(table_exists(conn, "app_settings")))
-            .unwrap();
-        assert!(exists);
+        for table in [
+            "app_settings",
+            "instances",
+            "java_runtimes",
+            "running_sessions",
+        ] {
+            let exists = db.with_conn(|conn| Ok(table_exists(conn, table))).unwrap();
+            assert!(exists, "{table} was not created");
+        }
     }
 
     #[test]
@@ -121,6 +129,7 @@ mod tests {
 
         let broken = Migrations::new(vec![
             M::up(include_str!("../migrations/0001_init.sql")),
+            M::up(include_str!("../migrations/0002_instances.sql")),
             M::up("CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;"),
         ]);
         let result = Db::open_with(&path, &broken);
@@ -134,7 +143,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 
     #[test]

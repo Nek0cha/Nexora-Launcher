@@ -76,22 +76,22 @@ impl TaskManager {
     }
 
     /// タスクを作って、すぐに ID を返す。処理は tokio のタスクとして動く。
-    pub fn spawn<F, Fut>(&self, kind: &str, work: F) -> String
+    pub fn spawn<F, Fut>(&self, kind: &str, instance_id: Option<String>, work: F) -> String
     where
         F: FnOnce(TaskHandle) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(), CoreError>> + Send + 'static,
     {
         let (id, token) = {
             let mut tasks = self.tasks.lock().unwrap();
-            self.insert(&mut tasks, kind)
+            self.insert(&mut tasks, kind, instance_id)
         };
         self.notifier.notify(&id, 1, TaskChange::State);
         self.run(id.clone(), token, work);
         id
     }
 
-    /// 同じ種類の終了していないタスクがあれば、その ID を返す。なければ新しく作る。
-    pub fn spawn_unique<F, Fut>(&self, kind: &str, work: F) -> String
+    /// 種類とインスタンスが同じで終了していないタスクがあれば、その ID を返す。なければ新しく作る。
+    pub fn spawn_unique<F, Fut>(&self, kind: &str, instance_id: Option<String>, work: F) -> String
     where
         F: FnOnce(TaskHandle) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(), CoreError>> + Send + 'static,
@@ -100,12 +100,16 @@ impl TaskManager {
             let mut tasks = self.tasks.lock().unwrap();
             let existing = tasks
                 .values()
-                .find(|e| e.snapshot.kind == kind && !e.snapshot.state.is_terminal())
+                .find(|e| {
+                    e.snapshot.kind == kind
+                        && e.snapshot.instance_id == instance_id
+                        && !e.snapshot.state.is_terminal()
+                })
                 .map(|e| e.snapshot.id.clone());
             if let Some(existing) = existing {
                 return existing;
             }
-            self.insert(&mut tasks, kind)
+            self.insert(&mut tasks, kind, instance_id)
         };
         self.notifier.notify(&id, 1, TaskChange::State);
         self.run(id.clone(), token, work);
@@ -116,6 +120,7 @@ impl TaskManager {
         &self,
         tasks: &mut HashMap<String, Entry>,
         kind: &str,
+        instance_id: Option<String>,
     ) -> (String, CancellationToken) {
         let id = uuid::Uuid::now_v7().to_string();
         let token = CancellationToken::new();
@@ -126,6 +131,7 @@ impl TaskManager {
                 snapshot: TaskSnapshot {
                     id: id.clone(),
                     kind: kind.to_string(),
+                    instance_id,
                     state: TaskState::Queued,
                     progress: TaskProgress::default(),
                     revision: 1,
@@ -374,9 +380,29 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn spawn_unique_is_scoped_to_the_instance() {
+        let (tasks, _) = manager();
+        let slow = || {
+            |_h: TaskHandle| async move {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                Ok(())
+            }
+        };
+        let a1 = tasks.spawn_unique("install", Some("a".into()), slow());
+        let a2 = tasks.spawn_unique("install", Some("a".into()), slow());
+        let b1 = tasks.spawn_unique("install", Some("b".into()), slow());
+        let a_launch = tasks.spawn_unique("launch", Some("a".into()), slow());
+        assert_eq!(a1, a2);
+        assert_ne!(a1, b1);
+        assert_ne!(a1, a_launch);
+        assert_eq!(tasks.get(&a1).unwrap().instance_id.as_deref(), Some("a"));
+        assert_eq!(tasks.get(&b1).unwrap().instance_id.as_deref(), Some("b"));
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn successful_task_reaches_succeeded() {
         let (tasks, recorder) = manager();
-        let id = tasks.spawn("test", |handle| async move {
+        let id = tasks.spawn("test", None, |handle| async move {
             handle.set_progress(1, 2);
             Ok(())
         });
@@ -400,19 +426,21 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn failing_task_keeps_error_payload() {
         let (tasks, _) = manager();
-        let id = tasks.spawn("test", |_| async {
-            Err(CoreError::DemoFailed { percent: 3 })
+        let id = tasks.spawn("test", None, |_| async {
+            Err(CoreError::Offline {
+                message: "x".into(),
+            })
         });
         settle().await;
         let snap = tasks.get(&id).unwrap();
         assert_eq!(snap.state, TaskState::Failed);
-        assert_eq!(snap.error.unwrap().code, "demo.failed");
+        assert_eq!(snap.error.unwrap().code, "net.offline");
     }
 
     #[tokio::test(start_paused = true)]
     async fn panicking_task_fails_and_releases_its_unique_kind() {
         let (tasks, recorder) = manager();
-        let id = tasks.spawn_unique("panic", |_| async {
+        let id = tasks.spawn_unique("panic", None, |_| async {
             panic!("private panic payload");
         });
         settle().await;
@@ -431,7 +459,7 @@ mod tests {
             recorder.changes_for(&id).last(),
             Some(&(snap.revision, TaskChange::State))
         );
-        let next = tasks.spawn_unique("panic", |_| async { Ok(()) });
+        let next = tasks.spawn_unique("panic", None, |_| async { Ok(()) });
         assert_ne!(id, next);
         settle().await;
         assert_eq!(tasks.get(&next).unwrap().state, TaskState::Succeeded);
@@ -440,7 +468,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn suppressed_progress_is_flushed_while_worker_stalls() {
         let (tasks, recorder) = manager();
-        let id = tasks.spawn("test", |handle| async move {
+        let id = tasks.spawn("test", None, |handle| async move {
             for i in 1..=100 {
                 handle.set_progress(i, 100);
             }
@@ -475,7 +503,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn cancel_goes_through_cancelling() {
         let (tasks, _) = manager();
-        let id = tasks.spawn("test", |handle| async move {
+        let id = tasks.spawn("test", None, |handle| async move {
             handle.token().cancelled().await;
             Err(CoreError::Cancelled)
         });
@@ -496,7 +524,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn progress_notifications_are_throttled() {
         let (tasks, recorder) = manager();
-        let id = tasks.spawn("test", |handle| async move {
+        let id = tasks.spawn("test", None, |handle| async move {
             for i in 0..100 {
                 handle.set_progress(i, 100);
             }
@@ -526,12 +554,12 @@ mod tests {
             handle.token().cancelled().await;
             Err(CoreError::Cancelled)
         };
-        let first = tasks.spawn_unique("demo", work);
-        let second = tasks.spawn_unique("demo", work);
+        let first = tasks.spawn_unique("demo", None, work);
+        let second = tasks.spawn_unique("demo", None, work);
         assert_eq!(first, second);
         tasks.cancel(&first).unwrap();
         settle().await;
-        let third = tasks.spawn_unique("demo", work);
+        let third = tasks.spawn_unique("demo", None, work);
         assert_ne!(first, third);
     }
 
@@ -540,7 +568,7 @@ mod tests {
         let (tasks, recorder) = manager();
         let mut ids = Vec::new();
         for _ in 0..(MAX_FINISHED_TASKS + 5) {
-            ids.push(tasks.spawn("test", |_| async { Ok(()) }));
+            ids.push(tasks.spawn("test", None, |_| async { Ok(()) }));
             settle().await;
             tokio::time::advance(std::time::Duration::from_millis(1)).await;
         }

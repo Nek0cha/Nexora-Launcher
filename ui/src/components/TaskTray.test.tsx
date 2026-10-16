@@ -11,7 +11,7 @@ import { TaskTray } from "./TaskTray";
 vi.mock("../api/commands", () => ({ cancelTask: vi.fn() }));
 
 const running: TaskSnapshot = {
-  id: "t1", kind: "demo", state: "running", progress: { current: 40, total: 100 }, revision: 1,
+  id: "t1", kind: "install", instanceId: null, state: "running", progress: { current: 40, total: 100 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0,
 };
 
@@ -49,7 +49,7 @@ describe("TaskTray", () => {
     mount([running]);
     expect(screen.getByRole("button", { name: /Tasks/ }).textContent).toContain("1");
     await openTray();
-    expect(screen.getByRole("progressbar", { name: "Demo task" }).getAttribute("aria-valuenow")).toBe("40");
+    expect(screen.getByRole("progressbar", { name: "Install" }).getAttribute("aria-valuenow")).toBe("40");
   });
 
   it("cancels a task by id", async () => {

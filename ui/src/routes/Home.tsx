@@ -1,14 +1,47 @@
 import { useTranslation } from "react-i18next";
+import IconEmpty from "~icons/ph/stack";
+import { toErrorPayload } from "../api/ipc";
+import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
+import { EmptyState } from "../components/EmptyState";
+import { FailureNotice } from "../components/FailureNotice";
 import { PlayButton } from "../components/PlayButton";
+import { useHomeInstance, useInstances } from "../features/instances/useInstances";
 
 export default function Home() {
   const { t } = useTranslation();
+  const { data, error } = useInstances();
+  // コマンドパレットの起動の項目と同じインスタンス（作成した直後はそのインスタンス）
+  const instance = useHomeInstance();
+  if (error)
+    return (
+      <div className="flex h-full flex-col justify-end gap-6 p-10">
+        <h1 className="font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">{t("nav.home")}</h1>
+        <div role="alert">
+          <FailureNotice error={toErrorPayload(error)} />
+        </div>
+      </div>
+    );
+  // 届く前に空の状態を出すと、インスタンスがあるのに一瞬「まだありません」と見えるため、何も出さない
+  if (!data) return null;
+  if (!instance)
+    return (
+      <EmptyState icon={IconEmpty} title={t("nav.home")} body={t("empty.instances")}>
+        <CreateInstanceDialog trigger="primary" />
+      </EmptyState>
+    );
   return (
     <div className="flex h-full flex-col justify-end gap-6 p-10">
-      {/* 仮の文言。実際のインスタンス名が入る見出しと同じ組み方にし、プレイボタンの上で何を起動するかを示す */}
-      <h1 className="font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">{t("home.placeholderInstance")}</h1>
+      <header className="flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 truncate font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">
+            {instance.name}
+          </h1>
+          <CreateInstanceDialog trigger="quiet" />
+        </div>
+        <p className="text-sm text-text-muted">{instance.mcVersion}</p>
+      </header>
       <section aria-label={t("play.play")}>
-        <PlayButton />
+        <PlayButton instance={instance} />
       </section>
     </div>
   );

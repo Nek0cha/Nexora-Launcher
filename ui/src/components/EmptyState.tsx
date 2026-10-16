@@ -1,13 +1,16 @@
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
 
 export function EmptyState({
   title,
   body,
   icon: Icon,
+  children,
 }: {
   title: string;
   body: string;
   icon?: ComponentType<SVGProps<SVGSVGElement>>;
+  /** 本文の下に置く操作など */
+  children?: ReactNode;
 }) {
   // 中身が届いたときに視線が動かないよう、一覧の左端に揃えて左寄せにする
   return (
@@ -17,6 +20,7 @@ export function EmptyState({
         <h1 className="font-display text-lg font-semibold text-text-strong">{title}</h1>
         <p className="max-w-md text-text-muted">{body}</p>
       </div>
+      {children && <div className="mt-3">{children}</div>}
     </div>
   );
 }

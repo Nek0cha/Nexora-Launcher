@@ -12,11 +12,12 @@ pub struct Services {
     pub paths: AppPaths,
     pub db: Db,
     pub tasks: TaskManager,
+    pub launcher: nexora_core::launcher::Launcher,
 }
 
 pub enum Startup {
     Starting,
-    Ready(Services),
+    Ready(Box<Services>),
     Failed(ErrorPayload),
 }
 
@@ -38,7 +39,7 @@ impl AppState {
     /// 起動が終わっていればサービスを返す。そうでなければ app.not_ready のエラー。
     pub fn services(&self) -> Result<Services, ErrorPayload> {
         match &*self.startup.read().unwrap() {
-            Startup::Ready(services) => Ok(services.clone()),
+            Startup::Ready(services) => Ok(Services::clone(services)),
             _ => Err(ErrorPayload::new("app.not_ready")),
         }
     }

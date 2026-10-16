@@ -9,6 +9,14 @@ pub mod settings;
 
 pub mod task;
 
-pub mod demo;
-
 pub mod app_info;
+
+pub mod install;
+pub mod instance;
+pub mod meta;
+pub mod net;
+
+pub mod java;
+
+pub mod launch;
+pub mod launcher;

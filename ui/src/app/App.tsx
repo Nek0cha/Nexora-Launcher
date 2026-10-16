@@ -8,6 +8,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
 import { TaskTray } from "../components/TaskTray";
 import { useTaskSync } from "../features/tasks/useTasks";
+import { useGameSync } from "../features/play/useGameSync";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
 import { applyTheme } from "./theme";
@@ -27,6 +28,7 @@ function useForcedColors(): boolean {
 
 export function App() {
   useTaskSync();
+  useGameSync();
   const { i18n } = useTranslation();
   const { data: settings } = useSettings();
   const update = useUpdateSetting();

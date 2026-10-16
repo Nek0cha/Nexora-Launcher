@@ -8,12 +8,9 @@
     "settings": "設定"
   },
   "empty": {
-    "instances": "インスタンスはまだありません。作成とインポートは今後のバージョンで使えるようになります。",
+    "instances": "インスタンスはまだありません。バージョンを選んで作成しましょう。",
     "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
     "accounts": "Microsoft アカウントでのログインは、今後のバージョンで使えるようになります。"
-  },
-  "home": {
-    "placeholderInstance": "ここにインスタンス名"
   },
   "play": {
     "play": "プレイ",
@@ -28,15 +25,30 @@
       "progress": "{{percent}}% 完了",
       "done": "準備が終わりました",
       "failed": "準備に失敗しました",
-      "cancelled": "キャンセルしました"
-    }
+      "cancelled": "キャンセルしました",
+      "playing": "ゲームを起動しました",
+      "crashed": "ゲームが異常終了しました"
+    },
+    "install": "インストール",
+    "launchingPercent": "起動中 {{percent}}%"
+  },
+  "create": {
+    "open": "インスタンスを作成",
+    "title": "インスタンスを作成",
+    "name": "名前",
+    "version": "バージョン",
+    "submit": "作成",
+    "cancel": "キャンセル",
+    "loadingVersions": "バージョンを読み込んでいます",
+    "retry": "再試行"
   },
   "tasks": {
     "title": "タスク",
     "running": "実行中 {{count}} 件",
     "cancel": "キャンセル",
     "kind": {
-      "demo": "デモタスク"
+      "install": "インストール",
+      "launch": "起動"
     },
     "state": {
       "queued": "待機中",
@@ -51,8 +63,14 @@
     "placeholder": "コマンドを検索",
     "goTo": "{{page}} を開く",
     "toggleTheme": "テーマを切り替える",
-    "startDemo": "デモタスクを開始する",
-    "noResults": "一致するコマンドはありません"
+    "noResults": "一致するコマンドはありません",
+    "launchLast": "{{name}} を起動する"
+  },
+  "accounts": {
+    "devTitle": "開発用のオフラインアカウント",
+    "devHint": "開発ビルドでだけ使えます。製品版では Microsoft アカウントでログインします。",
+    "save": "保存",
+    "saved": "保存しました"
   },
   "startup": {
     "title": "Nexora を起動できませんでした",
