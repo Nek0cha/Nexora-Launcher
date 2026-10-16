@@ -12,9 +12,6 @@
     "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
     "accounts": "Microsoft アカウントでのログインは、今後のバージョンで使えるようになります。"
   },
-  "home": {
-    "placeholderInstance": "ここにインスタンス名"
-  },
   "play": {
     "play": "プレイ",
     "cancel": "キャンセル",
@@ -28,15 +25,20 @@
       "progress": "{{percent}}% 完了",
       "done": "準備が終わりました",
       "failed": "準備に失敗しました",
-      "cancelled": "キャンセルしました"
-    }
+      "cancelled": "キャンセルしました",
+      "playing": "ゲームを起動しました",
+      "crashed": "ゲームが異常終了しました"
+    },
+    "install": "インストール",
+    "launchingPercent": "起動中 {{percent}}%"
   },
   "tasks": {
     "title": "タスク",
     "running": "実行中 {{count}} 件",
     "cancel": "キャンセル",
     "kind": {
-      "demo": "デモタスク"
+      "install": "インストール",
+      "launch": "起動"
     },
     "state": {
       "queued": "待機中",
@@ -51,7 +53,6 @@
     "placeholder": "コマンドを検索",
     "goTo": "{{page}} を開く",
     "toggleTheme": "テーマを切り替える",
-    "startDemo": "デモタスクを開始する",
     "noResults": "一致するコマンドはありません"
   },
   "startup": {

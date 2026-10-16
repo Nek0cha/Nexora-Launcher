@@ -3,11 +3,11 @@ import { IpcError, toErrorPayload } from "./ipc";
 
 describe("toErrorPayload", () => {
   it("preserves valid payloads and wrapped errors", () => {
-    const payload = { code: "demo.failed", params: { step: 1 }, detail: null };
+    const payload = { code: "net.http_status", params: { step: 1 }, detail: null };
     expect(toErrorPayload(payload)).toBe(payload);
     expect(toErrorPayload(new IpcError(payload))).toBe(payload);
     for (const detail of [undefined, null, "diagnostic"]) {
-      const value = { code: "demo.failed", params: {}, detail };
+      const value = { code: "net.http_status", params: {}, detail };
       expect(toErrorPayload(value)).toBe(value);
     }
   });

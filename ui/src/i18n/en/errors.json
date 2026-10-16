@@ -3,17 +3,49 @@
   "app": {
     "not_ready": "Startup has not finished yet",
     "data_dir_unavailable": "The data folder could not be found",
-    "unexpected": "An unexpected problem occurred"
+    "unexpected": "An unexpected problem occurred",
+    "dev_only": "Only available in development builds"
   },
-  "io": { "failed": "Could not read or write a file: {{path}}" },
+  "io": {
+    "failed": "Could not read or write a file: {{path}}"
+  },
   "db": {
     "failed": "A database operation failed",
     "migration_failed": "Updating the database failed"
   },
-  "settings": { "invalid_value": "The setting value is invalid" },
+  "settings": {
+    "invalid_value": "The setting value is invalid"
+  },
   "task": {
     "not_found": "The task was not found",
     "cancelled": "Cancelled"
   },
-  "demo": { "failed": "The demo task failed at {{percent}}%" }
+  "net": {
+    "offline": "Can't connect to the internet",
+    "http_status": "The server returned an error (HTTP {{status}})",
+    "hash_mismatch": "A downloaded file was corrupted"
+  },
+  "meta": {
+    "invalid": "Couldn't read the version information",
+    "version_not_found": "Version {{id}} was not found"
+  },
+  "install": {
+    "unsupported_profile": "This version's format isn't supported"
+  },
+  "java": {
+    "no_compatible_runtime": "No Java ({{component}}) is available for this computer",
+    "verify_failed": "Couldn't verify the installed Java"
+  },
+  "launch": {
+    "already_running": "This instance is already running",
+    "command_too_long": "The launch command is too long",
+    "spawn_failed": "Couldn't start the game",
+    "no_account": "No account is available to play"
+  },
+  "instance": {
+    "not_found": "Instance not found"
+  },
+  "game": {
+    "crashed": "The game crashed (exit code {{exitCode}})"
+  }
 }

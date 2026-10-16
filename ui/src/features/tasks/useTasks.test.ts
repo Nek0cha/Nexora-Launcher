@@ -13,7 +13,7 @@ vi.mock("../../api/commands", () => ({ getTask: vi.fn(), listTasks: vi.fn() }));
 vi.mock("../../api/events", () => ({ onTaskChanged: vi.fn() }));
 
 function snap(id: string, revision: number): TaskSnapshot {
-  return { id, revision, kind: "demo", instanceId: null, state: "running", progress: { current: revision, total: 100 }, error: null, createdAt: 1, updatedAt: revision };
+  return { id, revision, kind: "install", instanceId: null, state: "running", progress: { current: revision, total: 100 }, error: null, createdAt: 1, updatedAt: revision };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;

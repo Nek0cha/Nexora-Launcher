@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import IconSearch from "~icons/ph/magnifying-glass";
 import { filterCommands, modifierLabel, nextTheme, type PaletteCommand } from "../features/palette/commands";
-import { useDemoStart } from "../features/play/useDemoStart";
 import { useUpdateSetting } from "../features/settings/useSettings";
 
 const PAGES = [
@@ -34,7 +33,6 @@ export function CommandPalette() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const update = useUpdateSetting();
-  const { start } = useDemoStart();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -70,9 +68,8 @@ export function CommandPalette() {
           update.mutate({ key: "theme", value: nextTheme(current) });
         },
       },
-      { id: "start-demo", label: t("palette.startDemo"), run: start },
     ],
-    [t, navigate, update, start],
+    [t, navigate, update],
   );
 
   const visible = filterCommands(commands, query);
