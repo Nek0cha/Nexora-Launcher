@@ -76,6 +76,22 @@ describe("useGameSync", () => {
     expect(invalidatedKeys()).toContain(JSON.stringify(INSTANCES_KEY));
   });
 
+  it("keeps the last exit while nothing observes it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client } = setup();
+      await flush();
+      act(() => exited({ instanceId: "i1", exitCode: 1 }));
+      // 既定の gcTime（5 分）を大きく超えても、ホームに戻ったときに通知を出せるよう残す
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000);
+      });
+      expect(client.getQueryData<Record<string, LastExit>>(LAST_EXIT_KEY)?.i1?.exitCode).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("clearLastExit removes only the given instance", () => {
     const client = new QueryClient();
     const exit = (id: string): LastExit => ({ instanceId: id, exitCode: 1, at: 1 });

@@ -13,6 +13,19 @@ export const LAST_EXIT_KEY = ["lastExit"] as const;
 
 export type LastExit = { instanceId: string; exitCode: number | null; at: number };
 
+/**
+ * 最後の終了は backend から取り直せないので、見ている部品がなくても消さず、取り直しもしない。
+ * setQueryData で作られるキャッシュにも効くよう、クライアントの既定として登録する。
+ */
+const LAST_EXIT_OPTIONS = {
+  gcTime: Number.POSITIVE_INFINITY,
+  staleTime: Number.POSITIVE_INFINITY,
+} as const;
+
+function keepLastExits(client: QueryClient): void {
+  client.setQueryDefaults(LAST_EXIT_KEY, LAST_EXIT_OPTIONS);
+}
+
 /** 起動中のセッション。最初の応答が届くまでは undefined（遊んでいるか不明）。 */
 export function useRunning(): RunningSession[] | undefined {
   return useQuery({ queryKey: RUNNING_KEY, queryFn: listRunning }).data;
@@ -24,7 +37,7 @@ export function useLastExits(): Record<string, LastExit> {
     queryFn: skipToken,
     enabled: false,
     initialData: {},
-    staleTime: Number.POSITIVE_INFINITY,
+    ...LAST_EXIT_OPTIONS,
   });
   return data ?? {};
 }
@@ -53,6 +66,7 @@ export function useGameSync(): void {
   }, [client, finished]);
 
   useEffect(() => {
+    keepLastExits(client);
     let disposed = false;
     const stops: Array<() => void> = [];
     const refresh = () => {
