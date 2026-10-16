@@ -41,6 +41,7 @@ mod dev {
     use crate::error::CoreError;
 
     pub const DEV_USERNAME_KEY: &str = "dev.offline_username";
+    pub const DEV_OFFLINE_ACTIVE_KEY: &str = "dev.offline_active";
     pub const DEFAULT_DEV_USERNAME: &str = "Player";
 
     /// Vanilla のサーバーのオフラインモードと同じく、"OfflinePlayer:<名前>" の MD5 から v3 の UUID を作る。
@@ -101,6 +102,36 @@ mod dev {
         })?;
         Ok(name.to_string())
     }
+
+    /// 開発用のオフラインアカウントが使用中か。値は JSON の真偽値。
+    pub fn dev_offline_active(db: &Db) -> Result<bool, CoreError> {
+        let raw: Option<String> = db.with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = ?1",
+                    [DEV_OFFLINE_ACTIVE_KEY],
+                    |r| r.get(0),
+                )
+                .optional()?)
+        })?;
+        Ok(raw
+            .and_then(|r| serde_json::from_str::<bool>(&r).ok())
+            .unwrap_or(false))
+    }
+
+    pub fn set_dev_offline_active(db: &Db, value: bool, now: i64) -> Result<(), CoreError> {
+        let value = serde_json::to_string(&value).map_err(|e| CoreError::Unexpected {
+            message: e.to_string(),
+        })?;
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                params![DEV_OFFLINE_ACTIVE_KEY, value, now],
+            )?;
+            Ok(())
+        })
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -141,6 +172,33 @@ mod tests {
         assert_eq!(load_dev_username(&db).unwrap(), "Player");
         assert_eq!(save_dev_username(&db, "Alex_01", 1).unwrap(), "Alex_01");
         assert_eq!(load_dev_username(&db).unwrap(), "Alex_01");
+    }
+
+    #[test]
+    fn dev_offline_active_defaults_to_false_and_round_trips() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(!dev_offline_active(&db).unwrap());
+        set_dev_offline_active(&db, true, 1).unwrap();
+        assert!(dev_offline_active(&db).unwrap());
+        set_dev_offline_active(&db, false, 2).unwrap();
+        assert!(!dev_offline_active(&db).unwrap());
+    }
+
+    #[test]
+    fn set_active_clears_dev_offline_active() {
+        use crate::auth::accounts::{self, EntitlementState, ProfileRecord};
+        let db = Db::open_in_memory().unwrap();
+        let id = Uuid::from_u128(1);
+        let p = ProfileRecord {
+            id,
+            username: "A".into(),
+            xuid: None,
+            skin_url: None,
+        };
+        accounts::save_profile(&db, &p, EntitlementState::Verified, 1).unwrap();
+        set_dev_offline_active(&db, true, 2).unwrap();
+        accounts::set_active(&db, id).unwrap();
+        assert!(!dev_offline_active(&db).unwrap());
     }
 
     #[test]

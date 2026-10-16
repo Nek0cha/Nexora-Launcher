@@ -1,5 +1,7 @@
 //! Microsoft 認証（OAuth、Xbox、Minecraft Services）。
 
+pub mod accounts;
+
 use std::time::Duration;
 
 /// ログインの待ち受け時間。

@@ -18,7 +18,7 @@ tracing = "0.1"
 
 tokio = { version = "1.53", features = ["rt", "sync", "time", "macros", "fs", "process", "io-util"] }
 tokio-util = "0.7"
-uuid = { version = "1", features = ["v7", "v4"] }
+uuid = { version = "1", features = ["v7", "v4", "serde"] }
 
 secrecy = "0.10"
 
