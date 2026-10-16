@@ -1,6 +1,7 @@
 //! Microsoft 認証（OAuth、Xbox、Minecraft Services）。
 
 pub mod accounts;
+pub mod loopback;
 pub mod oauth;
 pub mod store;
 
