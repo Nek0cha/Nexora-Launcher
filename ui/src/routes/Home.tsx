@@ -5,11 +5,13 @@ import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
 import { PlayButton } from "../components/PlayButton";
-import { useInstances } from "../features/instances/useInstances";
+import { useHomeInstance, useInstances } from "../features/instances/useInstances";
 
 export default function Home() {
   const { t } = useTranslation();
   const { data, error } = useInstances();
+  // コマンドパレットの起動の項目と同じインスタンス（作成した直後はそのインスタンス）
+  const instance = useHomeInstance();
   if (error)
     return (
       <div className="flex h-full flex-col justify-end gap-6 p-10">
@@ -21,8 +23,6 @@ export default function Home() {
     );
   // 届く前に空の状態を出すと、インスタンスがあるのに一瞬「まだありません」と見えるため、何も出さない
   if (!data) return null;
-  // backend が最後に遊んだ順（なければ作成の新しい順）に並べている
-  const instance = data[0];
   if (!instance)
     return (
       <EmptyState icon={IconEmpty} title={t("nav.home")} body={t("empty.instances")}>
