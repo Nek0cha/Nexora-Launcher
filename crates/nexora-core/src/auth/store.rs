@@ -196,12 +196,18 @@ impl SecretStore for KeyringStore {
 pub struct MemoryStore {
     map: Mutex<HashMap<String, String>>,
     fail_writes: AtomicBool,
+    fail_reads: AtomicBool,
 }
 
 impl MemoryStore {
     /// `true` の間、`set` と `delete` が失敗する（値は変わらない）。
     pub fn fail_writes(&self, on: bool) {
         self.fail_writes.store(on, Ordering::SeqCst);
+    }
+
+    /// `true` の間、`get` が失敗する。
+    pub fn fail_reads(&self, on: bool) {
+        self.fail_reads.store(on, Ordering::SeqCst);
     }
 
     pub fn value(&self, key: &str) -> Option<String> {
@@ -219,6 +225,9 @@ impl MemoryStore {
 
 impl SecretStore for MemoryStore {
     fn get(&self, key: &str) -> Result<Option<SecretString>, StoreError> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Err(StoreError::new("memory store: read failed"));
+        }
         Ok(self.value(key).map(SecretString::from))
     }
 

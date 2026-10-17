@@ -431,7 +431,7 @@ impl AuthService {
 
     /// refresh token から連鎖をやり直し、`accounts` とメモリを更新する。
     async fn renew(&self, id: Uuid) -> Result<McToken, CoreError> {
-        let (refresh, unsaved) = self.refresh_token(id).await.ok_or_else(login_required)?;
+        let (refresh, unsaved) = self.refresh_token(id).await?.ok_or_else(login_required)?;
         let client_id = self.client_id.as_deref().ok_or(CoreError::NoClientId)?;
         let ms =
             microsoft::refresh(&self.http, &self.urls, client_id, &refresh, self.now()).await?;
@@ -487,7 +487,11 @@ impl AuthService {
 
     /// 使う refresh token と、それがメモリだけにある（保存できていない）か。
     /// 保存に失敗してメモリに持っているものを優先する。
-    async fn refresh_token(&self, id: Uuid) -> Option<(SecretString, bool)> {
+    ///
+    /// `Ok(None)` は、保存したログインが本当にない（資格情報ストアがない、エントリがない）場合だけ。
+    /// ストアを読めなかったときは、一時的な失敗として `Offline` を返す。呼び出し側
+    /// （`user_facing`）が `auth.offline` に変え、`needs_login` にはしない（spec 4.5）。
+    async fn refresh_token(&self, id: Uuid) -> Result<Option<(SecretString, bool)>, CoreError> {
         let unsaved = self
             .cache
             .lock()
@@ -495,19 +499,24 @@ impl AuthService {
             .get(&id)
             .and_then(|c| c.refresh.clone());
         if let Some(token) = unsaved {
-            return Some((token, true));
+            return Ok(Some((token, true)));
         }
-        let store = self.store.clone()?;
+        let Some(store) = self.store.clone() else {
+            return Ok(None);
+        };
         let k = key(id);
+        let read_failed = || CoreError::Offline {
+            message: "could not read the saved sign-in".into(),
+        };
         match tokio::task::spawn_blocking(move || store.get(&k)).await {
-            Ok(Ok(token)) => token.map(|t| (t, false)),
+            Ok(Ok(token)) => Ok(token.map(|t| (t, false))),
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "could not read the saved sign-in");
-                None
+                Err(read_failed())
             }
             Err(e) => {
                 tracing::warn!(error = %e, "credential store task failed");
-                None
+                Err(read_failed())
             }
         }
     }

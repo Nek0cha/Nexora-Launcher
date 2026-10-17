@@ -1181,6 +1181,39 @@ async fn service_missing_refresh_token_is_login_required() {
 }
 
 #[tokio::test]
+async fn service_failed_store_read_is_offline_and_does_not_set_needs_login() {
+    use std::sync::atomic::AtomicUsize;
+    for (verified_at, expected) in [(T0, true), (T0 - OFFLINE_GRACE_MS - 1, false)] {
+        let e = env().await;
+        e.seed(EntitlementState::Verified, verified_at);
+        e.store.fail_reads(true);
+        let changes = Arc::new(AtomicUsize::new(0));
+        let c = changes.clone();
+        let auth = e.auth.clone().with_on_change(Arc::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        }));
+        let err = auth.session_for_launch().await.unwrap_err();
+        match err {
+            CoreError::AuthOffline { offline_available } => {
+                assert_eq!(offline_available, expected)
+            }
+            other => panic!("{other:?}"),
+        }
+        // 起動時の warm_up も、静かに終わる
+        auth.warm_up().await;
+        assert!(!e.row().needs_login);
+        assert_eq!(changes.load(Ordering::SeqCst), 0);
+        assert_eq!(e.requests().await, 0);
+        assert_eq!(e.stored().as_deref(), Some(REFRESH_1));
+        // 読めるようになれば、そのまま refresh できる
+        e.store.fail_reads(false);
+        mount_refresh(&e.server, None, None).await;
+        mount_chain(&e.server, 86_400, Ownership::Owned).await;
+        auth.session_for_launch().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn service_minecraft_401_retries_once() {
     let e = env().await;
     e.seed(EntitlementState::Verified, T0);
