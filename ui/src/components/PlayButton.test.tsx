@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelTask, launchInstance, listRunning } from "../api/commands";
+import { cancelTask, launchInstance, listAccounts, listRunning } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
@@ -15,6 +15,13 @@ vi.mock("../api/commands", () => ({
   launchInstance: vi.fn(),
   cancelTask: vi.fn(),
   listRunning: vi.fn().mockResolvedValue([]),
+  listAccounts: vi.fn(),
+  getSkin: vi.fn().mockResolvedValue(null),
+  beginLogin: vi.fn(),
+}));
+vi.mock("../api/events", () => ({
+  onLoginProgress: vi.fn().mockResolvedValue(() => {}),
+  onAccountsChanged: vi.fn().mockResolvedValue(() => {}),
 }));
 
 const instance: Instance = {
@@ -158,6 +165,45 @@ describe("PlayButton", () => {
     expect(await screen.findByText("The game crashed (exit code 1)")).toBeTruthy();
     await press("Play");
     await waitFor(() => expect(screen.queryByText("The game crashed (exit code 1)")).toBeNull());
-    expect(launchInstance).toHaveBeenCalledWith("i1");
+    expect(launchInstance).toHaveBeenCalledWith("i1", false);
+  });
+
+  it("PlayButton opens the dialog instead of showing a failure", async () => {
+    vi.mocked(listAccounts).mockResolvedValue({
+      accounts: [{ id: "acc1", username: "Steve", isActive: true, entitlement: "verified", needsLogin: true, loginSaved: true, hasSkin: false }],
+      devOffline: null,
+    });
+    vi.mocked(launchInstance).mockResolvedValue("t5");
+    mount();
+    await press("Play");
+    act(() => {
+      client.setQueryData(TASKS_KEY, {
+        t5: {
+          id: "t5", kind: "launch", instanceId: "i1", state: "failed", progress: { current: 0, total: 0 }, revision: 2,
+          error: { code: "auth.login_required", params: { accountId: "acc1" }, detail: null },
+          createdAt: 0, updatedAt: Date.now(),
+        },
+      });
+    });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Sign in again to play");
+    // プレイボタンの下（上）に失敗の説明を出さない
+    expect(screen.queryByText("Please sign in again")).toBeNull();
+
+    await press("Cancel");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Please sign in again")).toBeNull();
+    // フォーカスはプレイボタンに戻る
+    await waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe("Try again"));
+  });
+
+  it("also opens the dialog when the start call itself fails with an auth error", async () => {
+    vi.mocked(listAccounts).mockResolvedValue({ accounts: [], devOffline: null });
+    vi.mocked(launchInstance).mockRejectedValueOnce(new IpcError({ code: "auth.no_account", params: {}, detail: null }));
+    mount();
+    await press("Play");
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Sign in with a Microsoft account");
+    expect(screen.queryByText("No account is signed in")).toBeNull();
   });
 });

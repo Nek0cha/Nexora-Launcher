@@ -75,5 +75,41 @@
   "startup": {
     "title": "Nexora could not start",
     "body": "A problem occurred while loading data. Please include the details below when reporting it."
+  },
+  "login": {
+    "titleRelogin": "Sign in again to play",
+    "titleSignIn": "Sign in with a Microsoft account",
+    "titleOffline": "Can't connect to Microsoft",
+    "titleAdd": "Add a Microsoft account",
+    "titleReloginAccount": "Sign in to your Microsoft account again",
+    "launchAfter": "The game starts as soon as you've signed in",
+    "signInAndPlay": "Sign in with Microsoft and play",
+    "signIn": "Sign in with Microsoft",
+    "useOther": "Use a different account",
+    "cancel": "Cancel",
+    "close": "Close",
+    "offlineBody": "Check your internet connection or the status of Microsoft's services.",
+    "playOffline": "Play offline",
+    "offlineNeedsVerify": "To play offline, ownership must be confirmed online once",
+    "retry": "Retry",
+    "preparing": "Getting ready…",
+    "waiting": "Signing in with your browser…",
+    "waitingHint": "Finish signing in in the browser that opened. If it didn't open, open it again or sign in with a code.",
+    "reopen": "Open the browser again",
+    "useCode": "Sign in with a code",
+    "codeInstruction": "Open the page below and enter the code.",
+    "copy": "Copy code",
+    "copied": "Copied",
+    "openPage": "Open the page",
+    "checking": "Checking your account…",
+    "loggedInAs": "Signed in as {{name}}",
+    "loggedInAsHint": "The game has not started. Press Play again to play with this account.",
+    "buy": "Buy Minecraft",
+    "trial": "Try the free trial",
+    "createProfile": "Create a profile",
+    "hint": {
+      "appNotApproved": "This is a problem on the launcher's side, not with your account.",
+      "denied": "Allow access on the sign-in page in your browser to continue."
+    }
   }
 }
