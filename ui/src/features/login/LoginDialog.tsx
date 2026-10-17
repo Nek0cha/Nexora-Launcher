@@ -11,6 +11,7 @@ import { SkinFace } from "../accounts/SkinFace";
 import { pickActive, useAccounts } from "../accounts/useAccounts";
 import { usePlay, type Play } from "../play/usePlay";
 import {
+  isAllowedAuthorizeUrl,
   isAllowedVerificationUri,
   PROFILE_URL,
   PURCHASE_URL,
@@ -294,23 +295,26 @@ function ProgressView({ login, onCancel }: { login: LoginState; onCancel: () => 
 
   if (progress?.stage === "waitingForBrowser") {
     const url = progress.url;
+    // サーバーから届いた URL は、固定の認可のエンドポイントのときだけ開く
+    const reopenable = isAllowedAuthorizeUrl(url);
     return (
       <>
         <Status text={t("login.waiting")} />
         <p className="text-sm text-text-muted">{t("login.waitingHint")}</p>
         <Footer links={cancelButton(false)}>
-          <Button onPress={() => login.start("deviceCode")} className={secondaryButton}>
+          <Button autoFocus={!reopenable} onPress={() => login.start("deviceCode")} className={secondaryButton}>
             {t("login.useCode")}
           </Button>
-          <Button
-            autoFocus
-            isDisabled={!url.startsWith("https://")}
-            onPress={() => void openExternal(url).catch((e) => console.warn("open failed", e))}
-            className={secondaryButton}
-          >
-            <IconExternal aria-hidden className="size-4" />
-            <span>{t("login.reopen")}</span>
-          </Button>
+          {reopenable && (
+            <Button
+              autoFocus
+              onPress={() => void openExternal(url).catch((e) => console.warn("open failed", e))}
+              className={secondaryButton}
+            >
+              <IconExternal aria-hidden className="size-4" />
+              <span>{t("login.reopen")}</span>
+            </Button>
+          )}
         </Footer>
       </>
     );

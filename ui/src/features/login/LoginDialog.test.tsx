@@ -24,6 +24,8 @@ vi.mock("../../api/commands", () => ({
 vi.mock("../../api/events", () => ({ onLoginProgress: vi.fn(), onAccountsChanged: vi.fn() }));
 vi.mock("../../api/opener", () => ({ openExternal: vi.fn() }));
 
+const AUTHORIZE = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_id=x";
+
 const account = (id: string, username: string, isActive: boolean): Account => ({
   id, username, isActive, entitlement: "verified", needsLogin: false, loginSaved: true, hasSkin: false,
 });
@@ -173,6 +175,16 @@ describe("LoginDialog", () => {
     await waitFor(() => expect(beginLogin).toHaveBeenLastCalledWith("deviceCode"));
   });
 
+  it("reopen is offered only for the fixed Microsoft authorize URL", async () => {
+    mount("play", { kind: "noAccount" });
+    await startLogin();
+    progress({ stage: "waitingForBrowser", url: "https://evil.example/consumers/oauth2/v2.0/authorize?x" });
+    expect(screen.getByText("Signing in with your browser…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open the browser again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in with a code" })).toBeTruthy();
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
   it("device code view shows a copyable code and opens only allowlisted URLs", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
@@ -203,7 +215,7 @@ describe("LoginDialog", () => {
   it("cancel closes the dialog without an error", async () => {
     mount("play", { kind: "noAccount" });
     await startLogin();
-    progress({ stage: "waitingForBrowser", url: "https://login.microsoftonline.com/x" });
+    progress({ stage: "waitingForBrowser", url: AUTHORIZE });
     await press("Cancel");
     expect(cancelTask).toHaveBeenCalledWith("L1");
     expect(onClose).toHaveBeenCalled();
@@ -250,7 +262,7 @@ describe("LoginDialog", () => {
   it("Esc during a running login cancels it and closes", async () => {
     mount("play", { kind: "noAccount" });
     await startLogin();
-    progress({ stage: "waitingForBrowser", url: "https://login.microsoftonline.com/x" });
+    progress({ stage: "waitingForBrowser", url: AUTHORIZE });
     await act(async () => {
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
       await Promise.resolve();

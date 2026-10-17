@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
-import { isAllowedVerificationUri, loginPrompt, sameAccount } from "./loginState";
+import { isAllowedAuthorizeUrl, isAllowedVerificationUri, loginPrompt, sameAccount } from "./loginState";
 
 const err = (code: string, params: ErrorPayload["params"] = {}): ErrorPayload => ({ code, params, detail: null });
 
@@ -26,6 +26,19 @@ describe("isAllowedVerificationUri", () => {
     expect(isAllowedVerificationUri("https://www.microsoft.com/link?x=1")).toBe(false);
     expect(isAllowedVerificationUri("http://www.microsoft.com/link")).toBe(false);
     expect(isAllowedVerificationUri("https://evil.example/link")).toBe(false);
+  });
+});
+
+describe("isAllowedAuthorizeUrl", () => {
+  it("allows only the Microsoft consumers authorize endpoint with a query", () => {
+    const base = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
+    expect(isAllowedAuthorizeUrl(`${base}?client_id=x&state=y`)).toBe(true);
+    expect(isAllowedAuthorizeUrl(base)).toBe(false);
+    expect(isAllowedAuthorizeUrl("https://login.microsoftonline.com/x")).toBe(false);
+    expect(isAllowedAuthorizeUrl("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x")).toBe(false);
+    expect(isAllowedAuthorizeUrl(`${base}.evil.example/?x`)).toBe(false);
+    expect(isAllowedAuthorizeUrl("https://login.microsoftonline.com.evil.example/consumers/oauth2/v2.0/authorize?x")).toBe(false);
+    expect(isAllowedAuthorizeUrl(`http://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?x`)).toBe(false);
   });
 });
 

@@ -35,6 +35,16 @@ export function isAllowedVerificationUri(uri: string): boolean {
   return VERIFICATION_URIS.has(uri);
 }
 
+/**
+ * 「ブラウザを開き直す」で開いてよい認可の URL の先頭。core の `AuthUrls::default().authorize`
+ * （`https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize`）にクエリが付いたものだけを開く。
+ */
+const AUTHORIZE_URL_PREFIX = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?";
+
+export function isAllowedAuthorizeUrl(url: string): boolean {
+  return url.startsWith(AUTHORIZE_URL_PREFIX);
+}
+
 /** アカウントの ID が同じか。ハイフンの有無と大文字小文字は問わない。空の ID はどれとも一致しない。 */
 export function sameAccount(a: string, b: string): boolean {
   const norm = (id: string) => id.replaceAll("-", "").toLowerCase();
