@@ -277,6 +277,8 @@ describe("LoginDialog", () => {
     mount("play", { kind: "noAccount" });
     await startLogin();
     progress({ stage: "waitingForBrowser", url: AUTHORIZE });
+    // autoFocus はクリックの後だと次のフレームまで遅れるため、ダイアログの中に移るのを待つ
+    await waitFor(() => expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true));
     await act(async () => {
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
       await Promise.resolve();
