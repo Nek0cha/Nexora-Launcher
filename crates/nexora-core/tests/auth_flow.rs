@@ -737,10 +737,32 @@ async fn profile_without_an_active_skin_has_none() {
 }
 
 #[tokio::test]
+async fn profile_upgrades_an_http_textures_url_to_https() {
+    // Minecraft Services はスキンの URL を http で返す
+    let server = MockServer::start().await;
+    mount_profile(
+        &server,
+        200,
+        r#"{"id":"069a79f444e94726a5befca90e38aaf5","name":"N","skins":[
+            {"state":"ACTIVE","url":"http://textures.minecraft.net/texture/a"}]}"#,
+    )
+    .await;
+    let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap();
+    assert_eq!(
+        p.skin_url.as_deref(),
+        Some("https://textures.minecraft.net/texture/a")
+    );
+}
+
+#[tokio::test]
 async fn profile_ignores_skin_urls_off_textures_host() {
     for url in [
-        "http://textures.minecraft.net/texture/a",
+        "http://textures.minecraft.net:8080/texture/a",
+        "ftp://textures.minecraft.net/texture/a",
         "https://evil.example/texture/a",
+        "http://evil.example/texture/a",
         "https://textures.minecraft.net.evil.example/a",
         "not a url",
     ] {
