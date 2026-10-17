@@ -17,6 +17,8 @@ use crate::paths::Profile;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoreError {
     pub message: String,
+    /// エントリはあるが、中身を読み解けない。ログインし直して上書きするしかない。
+    pub corrupt: bool,
 }
 
 impl std::fmt::Display for StoreError {
@@ -31,6 +33,14 @@ impl StoreError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            corrupt: false,
+        }
+    }
+
+    fn corrupt(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            corrupt: true,
         }
     }
 }
@@ -57,8 +67,8 @@ fn map_error(err: keyring_core::Error) -> StoreError {
     use keyring_core::Error;
     match err {
         // 取得した中身を持つ種類は、中身に触れない固定の文言にする。
-        Error::BadEncoding(_) => StoreError::new("stored secret is not valid UTF-8"),
-        Error::BadDataFormat(..) => StoreError::new("stored secret has an unexpected format"),
+        Error::BadEncoding(_) => StoreError::corrupt("stored secret is not valid UTF-8"),
+        Error::BadDataFormat(..) => StoreError::corrupt("stored secret has an unexpected format"),
         other => StoreError::new(other.to_string()),
     }
 }
@@ -141,7 +151,7 @@ fn secret_from_bytes(bytes: Vec<u8>) -> Result<SecretString, StoreError> {
         Ok(s) => Ok(SecretString::from(s)),
         Err(e) => {
             e.into_bytes().zeroize();
-            Err(StoreError::new("stored secret is not valid UTF-8"))
+            Err(StoreError::corrupt("stored secret is not valid UTF-8"))
         }
     }
 }
@@ -197,6 +207,7 @@ pub struct MemoryStore {
     map: Mutex<HashMap<String, String>>,
     fail_writes: AtomicBool,
     fail_reads: AtomicBool,
+    corrupt_reads: AtomicBool,
 }
 
 impl MemoryStore {
@@ -208,6 +219,11 @@ impl MemoryStore {
     /// `true` の間、`get` が失敗する。
     pub fn fail_reads(&self, on: bool) {
         self.fail_reads.store(on, Ordering::SeqCst);
+    }
+
+    /// `true` の間、`get` が壊れたエントリとして失敗する。
+    pub fn corrupt_reads(&self, on: bool) {
+        self.corrupt_reads.store(on, Ordering::SeqCst);
     }
 
     pub fn value(&self, key: &str) -> Option<String> {
@@ -227,6 +243,9 @@ impl SecretStore for MemoryStore {
     fn get(&self, key: &str) -> Result<Option<SecretString>, StoreError> {
         if self.fail_reads.load(Ordering::SeqCst) {
             return Err(StoreError::new("memory store: read failed"));
+        }
+        if self.corrupt_reads.load(Ordering::SeqCst) {
+            return Err(StoreError::corrupt("memory store: corrupt entry"));
         }
         Ok(self.value(key).map(SecretString::from))
     }
@@ -300,6 +319,24 @@ mod tests {
     fn invalid_utf8_gives_a_fixed_message_without_the_bytes() {
         let err = secret_from_bytes(vec![0x41, 0xff, 0xfe]).unwrap_err();
         assert_eq!(err.message, "stored secret is not valid UTF-8");
+        assert!(err.corrupt);
+    }
+
+    #[test]
+    fn only_bad_contents_are_corrupt() {
+        assert!(map_error(keyring_core::Error::BadEncoding(vec![0xff])).corrupt);
+        assert!(map_error(keyring_core::Error::BadDataFormat(vec![0xff], "x".into())).corrupt);
+        assert!(!map_error(keyring_core::Error::NoStorageAccess("locked".into())).corrupt);
+    }
+
+    #[test]
+    fn memory_store_can_return_corrupt_reads() {
+        let s = MemoryStore::default();
+        s.set("a", &secret("v")).unwrap();
+        s.corrupt_reads(true);
+        assert!(s.get("a").unwrap_err().corrupt);
+        s.corrupt_reads(false);
+        assert_eq!(s.get("a").unwrap().unwrap().expose_secret(), "v");
     }
 
     #[test]
@@ -326,6 +363,11 @@ mod tests {
         let long = "a".repeat(2000);
         s.set(&key, &secret(&long)).unwrap();
         assert_eq!(s.get(&key).unwrap().unwrap().expose_secret(), long);
+        s.entry(&key)
+            .unwrap()
+            .set_secret(&[0x41, 0xff, 0xfe])
+            .unwrap();
+        assert!(s.get(&key).unwrap_err().corrupt);
         s.delete(&key).unwrap();
         assert!(s.get(&key).unwrap().is_none());
         s.delete(&key).unwrap();

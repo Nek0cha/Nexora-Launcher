@@ -488,7 +488,8 @@ impl AuthService {
     /// 使う refresh token と、それがメモリだけにある（保存できていない）か。
     /// 保存に失敗してメモリに持っているものを優先する。
     ///
-    /// `Ok(None)` は、保存したログインが本当にない（資格情報ストアがない、エントリがない）場合だけ。
+    /// `Ok(None)` は、保存したログインが使えない（資格情報ストアがない、エントリがない、
+    /// エントリが壊れている）場合だけ。壊れたエントリは、ログインし直したときに上書きされる。
     /// ストアを読めなかったときは、一時的な失敗として `Offline` を返す。呼び出し側
     /// （`user_facing`）が `auth.offline` に変え、`needs_login` にはしない（spec 4.5）。
     async fn refresh_token(&self, id: Uuid) -> Result<Option<(SecretString, bool)>, CoreError> {
@@ -510,6 +511,10 @@ impl AuthService {
         };
         match tokio::task::spawn_blocking(move || store.get(&k)).await {
             Ok(Ok(token)) => Ok(token.map(|t| (t, false))),
+            Ok(Err(e)) if e.corrupt => {
+                tracing::warn!(error = %e, "the saved sign-in is corrupt; asking to sign in again");
+                Ok(None)
+            }
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "could not read the saved sign-in");
                 Err(read_failed())
