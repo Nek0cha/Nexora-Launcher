@@ -121,6 +121,20 @@ describe("LoginDialog", () => {
     expect(screen.getByText("To play offline, ownership must be confirmed online once")).toBeTruthy();
   });
 
+  it("offline dialog for an account that needs login asks to sign in again once online", async () => {
+    vi.mocked(listAccounts).mockResolvedValue({
+      accounts: [{ ...account("acc1", "Steve", true), needsLogin: true }],
+      devOffline: null,
+    });
+    mount("play", { kind: "offline", offlineAvailable: false });
+    expect(screen.getByRole("heading", { name: "Can't connect to Microsoft" })).toBeTruthy();
+    expect(await screen.findByText("Sign in again once you're back online")).toBeTruthy();
+    expect(screen.getByText("Steve")).toBeTruthy();
+    expect(screen.queryByText("To play offline, ownership must be confirmed online once")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Play offline" })).toBeNull();
+    await startLogin();
+  });
+
   it("offline dialog retry launches again", async () => {
     mount("play", { kind: "offline", offlineAvailable: false });
     await press("Retry");

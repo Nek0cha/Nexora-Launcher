@@ -153,6 +153,11 @@ function LoginContent({
           })()
         : undefined;
 
+  // オフラインで遊べず、アカウントがすでにログインし直しを必要としているとき。所有の確認ではなく、
+  // ログインし直しを案内し、ログインのボタンを出す
+  const reloginOffline =
+    prompt?.kind === "offline" && !prompt.offlineAvailable && target?.needsLogin === true;
+
   let body: ReactNode;
   if (switchedTo !== null) {
     const name = accounts?.accounts.find((a) => sameAccount(a.id, switchedTo))?.username ?? "";
@@ -172,12 +177,13 @@ function LoginContent({
     );
   } else if (login.running) {
     body = <ProgressView login={login} onCancel={cancel} />;
-  } else if (mode === "play" && prompt?.kind === "offline") {
+  } else if (mode === "play" && prompt?.kind === "offline" && !reloginOffline) {
     body = <OfflineView play={play} offlineAvailable={prompt.offlineAvailable} account={target} onClose={onClose} onCancel={cancel} />;
   } else {
     body = (
       <>
         {target && <AccountRow id={target.id} name={target.username} />}
+        {reloginOffline && <p className="text-sm text-text">{t("login.offlineRelogin")}</p>}
         {mode === "play" && <p className="text-sm text-text-muted">{t("login.launchAfter")}</p>}
         {login.error && <LoginError error={login.error} />}
         <Footer

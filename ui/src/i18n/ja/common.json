@@ -110,6 +110,7 @@
     "offlineBody": "インターネットへの接続か、Microsoft のサービスの状況を確認してください。",
     "playOffline": "オフラインで遊ぶ",
     "offlineNeedsVerify": "オフラインで遊ぶには、一度オンラインで所有を確認する必要があります",
+    "offlineRelogin": "オンラインになってからログインし直してください",
     "retry": "再試行",
     "preparing": "準備しています…",
     "waiting": "ブラウザでログインしています…",

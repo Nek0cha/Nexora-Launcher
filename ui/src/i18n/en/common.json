@@ -110,6 +110,7 @@
     "offlineBody": "Check your internet connection or the status of Microsoft's services.",
     "playOffline": "Play offline",
     "offlineNeedsVerify": "To play offline, ownership must be confirmed online once",
+    "offlineRelogin": "Sign in again once you're back online",
     "retry": "Retry",
     "preparing": "Getting ready…",
     "waiting": "Signing in with your browser…",
