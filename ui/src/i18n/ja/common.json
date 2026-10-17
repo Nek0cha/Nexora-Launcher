@@ -10,7 +10,7 @@
   "empty": {
     "instances": "インスタンスはまだありません。バージョンを選んで作成しましょう。",
     "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
-    "accounts": "Microsoft アカウントでのログインは、今後のバージョンで使えるようになります。"
+    "accounts": "Microsoft アカウントを追加すると、Minecraft を遊べます。"
   },
   "play": {
     "play": "プレイ",
@@ -70,7 +70,25 @@
     "devTitle": "開発用のオフラインアカウント",
     "devHint": "開発ビルドでだけ使えます。製品版では Microsoft アカウントでログインします。",
     "save": "保存",
-    "saved": "保存しました"
+    "saved": "保存しました",
+    "add": "Microsoft アカウントを追加",
+    "use": "使う",
+    "relogin": "ログインし直す",
+    "remove": "削除",
+    "status": {
+      "active": "使用中",
+      "needsLogin": "ログインが必要",
+      "unsaved": "ログインが保存されていない",
+      "ownershipUnknown": "所有を確認できない"
+    },
+    "removeTitle": "{{name}} を削除しますか？",
+    "removeBody": "このパソコンからログインの情報を消します。Microsoft 側で発行済みのトークンが無効になるわけではありません。",
+    "removeConfirm": "削除",
+    "cancel": "キャンセル"
+  },
+  "sidebar": {
+    "login": "ログイン",
+    "accountNeedsLogin": "{{name}}（ログインが必要）"
   },
   "startup": {
     "title": "Nexora を起動できませんでした",

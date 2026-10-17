@@ -10,7 +10,7 @@
   "empty": {
     "instances": "No instances yet. Pick a version to create one.",
     "browse": "Browsing mods and resource packs will arrive in a future version.",
-    "accounts": "Signing in with a Microsoft account will arrive in a future version."
+    "accounts": "Add a Microsoft account to play Minecraft."
   },
   "play": {
     "play": "Play",
@@ -70,7 +70,25 @@
     "devTitle": "Development offline account",
     "devHint": "Only in development builds. Release builds sign in with a Microsoft account.",
     "save": "Save",
-    "saved": "Saved"
+    "saved": "Saved",
+    "add": "Add a Microsoft account",
+    "use": "Use",
+    "relogin": "Sign in again",
+    "remove": "Remove",
+    "status": {
+      "active": "In use",
+      "needsLogin": "Sign-in needed",
+      "unsaved": "Sign-in not saved",
+      "ownershipUnknown": "Ownership not confirmed"
+    },
+    "removeTitle": "Remove {{name}}?",
+    "removeBody": "This removes the sign-in information from this computer. Tokens that Microsoft has already issued are not revoked.",
+    "removeConfirm": "Remove",
+    "cancel": "Cancel"
+  },
+  "sidebar": {
+    "login": "Sign in",
+    "accountNeedsLogin": "{{name}} (sign-in needed)"
   },
   "startup": {
     "title": "Nexora could not start",
