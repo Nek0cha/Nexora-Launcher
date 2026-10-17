@@ -17,8 +17,10 @@ const account: Account = {
 let changed: () => void;
 const unlisten = vi.fn();
 
+let client: QueryClient;
+
 function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderHook(() => useAccounts(), {
     wrapper: ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -42,6 +44,17 @@ describe("useAccounts", () => {
     changed();
     await waitFor(() => expect(result.current.active).toEqual({ kind: "msa", account }));
     expect(listAccounts).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates the skins on accounts://changed", async () => {
+    vi.mocked(listAccounts).mockResolvedValue({ accounts: [account], devOffline: null });
+    const { result } = mount();
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    client.setQueryData(["skin", "a"], "data:image/png;base64,old");
+    expect(client.getQueryState(["skin", "a"])?.isInvalidated).toBe(false);
+    await waitFor(() => expect(changed).toBeDefined());
+    changed();
+    await waitFor(() => expect(client.getQueryState(["skin", "a"])?.isInvalidated).toBe(true));
   });
 
   it("returns the dev offline account when it is active", async () => {

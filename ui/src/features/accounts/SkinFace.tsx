@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import IconUser from "~icons/ph/user-circle";
 import { getSkin } from "../../api/commands";
+import { SKIN_KEY } from "./useAccounts";
 
 /** スキンの画像の高さを調べる。読めなければ null。 */
 function useSkinHeight(src: string | null | undefined): number | null {
@@ -24,7 +25,7 @@ function useSkinHeight(src: string | null | undefined): number | null {
 /** スキンの顔（8,8）と帽子（40,8）を拡大して出す。スキンがなければ既定のアイコン。 */
 export function SkinFace({ accountId, size }: { accountId: string | null; size: number }) {
   const { data: skin } = useQuery({
-    queryKey: ["skin", accountId],
+    queryKey: [...SKIN_KEY, accountId],
     queryFn: () => getSkin(accountId as string),
     enabled: accountId !== null,
     staleTime: Number.POSITIVE_INFINITY,

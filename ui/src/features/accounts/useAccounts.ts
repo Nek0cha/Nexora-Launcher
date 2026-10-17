@@ -6,6 +6,8 @@ import type { Account } from "../../bindings/Account";
 import type { AccountList } from "../../bindings/AccountList";
 
 export const ACCOUNTS_KEY = ["accounts"] as const;
+/** スキンの画像のクエリの先頭のキー。`["skin", accountId]` で持つ。 */
+export const SKIN_KEY = ["skin"] as const;
 
 export type ActiveAccount =
   | { kind: "msa"; account: Account }
@@ -19,7 +21,7 @@ export function pickActive(list: AccountList | undefined): ActiveAccount | null 
   return account ? { kind: "msa", account } : null;
 }
 
-/** アカウントの一覧。`accounts://changed` で取り直す。 */
+/** アカウントの一覧。`accounts://changed` で取り直す（ログインし直してスキンが変わることもあるため、スキンも）。 */
 export function useAccounts() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ACCOUNTS_KEY, queryFn: listAccounts });
@@ -29,6 +31,7 @@ export function useAccounts() {
     let unlisten: (() => void) | undefined;
     onAccountsChanged(() => {
       void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      void queryClient.invalidateQueries({ queryKey: SKIN_KEY });
     })
       .then((stop) => {
         if (disposed) stop();
