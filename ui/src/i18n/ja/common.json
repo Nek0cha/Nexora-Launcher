@@ -48,7 +48,8 @@
     "cancel": "キャンセル",
     "kind": {
       "install": "インストール",
-      "launch": "起動"
+      "launch": "起動",
+      "login": "ログイン"
     },
     "state": {
       "queued": "待機中",

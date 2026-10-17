@@ -52,6 +52,16 @@ describe("TaskTray", () => {
     expect(screen.getByRole("progressbar", { name: "Install" }).getAttribute("aria-valuenow")).toBe("40");
   });
 
+  it("labels a login task in both languages", async () => {
+    mount([{ ...running, kind: "login" }]);
+    await openTray();
+    expect(screen.getByRole("progressbar", { name: "Sign in" })).toBeTruthy();
+    await act(async () => {
+      await i18n.changeLanguage("ja");
+    });
+    expect(screen.getByRole("progressbar", { name: "ログイン" })).toBeTruthy();
+  });
+
   it("cancels a task by id", async () => {
     vi.mocked(cancelTask).mockResolvedValue(null);
     mount([running]);

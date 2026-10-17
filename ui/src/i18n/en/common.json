@@ -48,7 +48,8 @@
     "cancel": "Cancel",
     "kind": {
       "install": "Install",
-      "launch": "Launch"
+      "launch": "Launch",
+      "login": "Sign in"
     },
     "state": {
       "queued": "Queued",
