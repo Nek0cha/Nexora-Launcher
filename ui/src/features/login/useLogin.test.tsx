@@ -124,4 +124,76 @@ describe("useLogin", () => {
     expect(result.current.taskId).toBeNull();
     expect(result.current.running).toBe(false);
   });
+
+  it("cancels the task when cancel runs before begin_login answers", async () => {
+    let resolve!: (id: string) => void;
+    vi.mocked(beginLogin).mockReturnValue(new Promise((r) => { resolve = r; }));
+    const { result } = mount();
+    act(() => result.current.start("browser"));
+    act(() => result.current.cancel());
+    expect(cancelTask).not.toHaveBeenCalled();
+    await act(async () => { resolve("L1"); await Promise.resolve(); });
+    expect(cancelTask).toHaveBeenCalledWith("L1");
+    expect(result.current.taskId).toBeNull();
+  });
+
+  it("cancels a running login when unmounted", async () => {
+    vi.mocked(beginLogin).mockResolvedValue("L1");
+    const { result, unmount } = mount();
+    await act(async () => result.current.start("browser"));
+    await waitFor(() => expect(result.current.taskId).toBe("L1"));
+    unmount();
+    expect(cancelTask).toHaveBeenCalledWith("L1");
+  });
+
+  it("cancels a login that is still being started when unmounted", async () => {
+    let resolve!: (id: string) => void;
+    vi.mocked(beginLogin).mockReturnValue(new Promise((r) => { resolve = r; }));
+    const { result, unmount } = mount();
+    act(() => result.current.start("browser"));
+    unmount();
+    await act(async () => { resolve("L1"); await Promise.resolve(); });
+    expect(cancelTask).toHaveBeenCalledWith("L1");
+  });
+
+  it("does not cancel a finished login when unmounted", async () => {
+    vi.mocked(beginLogin).mockResolvedValue("L1");
+    vi.mocked(listAccounts).mockResolvedValue({ accounts: [], devOffline: null });
+    const { result, unmount } = mount();
+    await act(async () => result.current.start("browser"));
+    await waitFor(() => expect(result.current.taskId).toBe("L1"));
+    setTask(snapshot("L1", "failed", { code: "auth.denied", params: {}, detail: null }));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    unmount();
+    expect(cancelTask).not.toHaveBeenCalled();
+  });
+
+  it("starts again once an old task that is still cancelling ends", async () => {
+    vi.mocked(beginLogin).mockResolvedValueOnce("OLD").mockResolvedValueOnce("L2");
+    const { result } = mount();
+    setTask(snapshot("OLD", "cancelling"));
+    await act(async () => result.current.start("browser"));
+    await waitFor(() => expect(result.current.taskId).toBe("OLD"));
+    expect(result.current.running).toBe(true);
+    setTask(snapshot("OLD", "cancelled"));
+    await waitFor(() => expect(result.current.taskId).toBe("L2"));
+    expect(beginLogin).toHaveBeenLastCalledWith("browser");
+    expect(beginLogin).toHaveBeenCalledTimes(2);
+    expect(result.current.running).toBe(true);
+  });
+
+  it("ignores early progress of other tasks once its own id is known", async () => {
+    vi.mocked(beginLogin).mockResolvedValueOnce("L1").mockResolvedValueOnce("L2");
+    const { result } = mount();
+    await waitFor(() => expect(onLoginProgress).toHaveBeenCalled());
+    await act(async () => result.current.start("browser"));
+    await waitFor(() => expect(result.current.taskId).toBe("L1"));
+    // L1 が動いている間の別のタスクの進み具合は、取っておかない
+    act(() => emit({ taskId: "L2", progress: { stage: "checkingXbox" } }));
+    setTask(snapshot("L1", "failed", { code: "auth.denied", params: {}, detail: null }));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    await act(async () => result.current.start("browser"));
+    await waitFor(() => expect(result.current.taskId).toBe("L2"));
+    expect(result.current.progress).toBeNull();
+  });
 });

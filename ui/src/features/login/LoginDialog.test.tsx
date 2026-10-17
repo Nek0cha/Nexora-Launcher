@@ -246,4 +246,24 @@ describe("LoginDialog", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(launchInstance).not.toHaveBeenCalled();
   });
+
+  it("Esc during a running login cancels it and closes", async () => {
+    mount("play", { kind: "noAccount" });
+    await startLogin();
+    progress({ stage: "waitingForBrowser", url: "https://login.microsoftonline.com/x" });
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      await Promise.resolve();
+    });
+    expect(cancelTask).toHaveBeenCalledWith("L1");
+    expect(onClose).toHaveBeenCalled();
+    expect(launchInstance).not.toHaveBeenCalled();
+  });
+
+  it("is centred vertically", () => {
+    mount("play", { kind: "noAccount" });
+    const overlay = screen.getByRole("dialog").closest(".fixed");
+    expect(overlay?.className).toContain("items-center");
+    expect(overlay?.className).not.toContain("items-start");
+  });
 });

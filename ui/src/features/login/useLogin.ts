@@ -7,8 +7,8 @@ import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { LoginMethod } from "../../bindings/LoginMethod";
 import type { LoginProgress } from "../../bindings/LoginProgress";
 import { ACCOUNTS_KEY, pickActive } from "../accounts/useAccounts";
-import { isTerminal } from "../tasks/taskTable";
-import { useTasks } from "../tasks/useTasks";
+import { isTerminal, type TaskTable } from "../tasks/taskTable";
+import { TASKS_KEY, useTasks } from "../tasks/useTasks";
 
 export type LoginState = {
   start(method: LoginMethod): void;
@@ -46,6 +46,8 @@ export function useLogin(): LoginState {
   const pendingRef = useRef<LoginMethod | null>(null);
   // start と cancel のたびに進める。古い呼び出しの応答を捨てるため
   const generation = useRef(0);
+  // 最後に cancel したときの generation。これより前に始めた呼び出しの ID は、届いたらキャンセルする
+  const cancelledAt = useRef(0);
   // ID が分かる前に届いた進み具合
   const early = useRef(new Map<string, LoginProgress>());
 
@@ -57,7 +59,7 @@ export function useLogin(): LoginState {
       if (event.taskId === taskIdRef.current) {
         // 切り替えのためにキャンセルしたタスクの進み具合は、もう見せない
         if (pendingRef.current === null) setProgress(event.progress);
-      } else {
+      } else if (taskIdRef.current === null) {
         early.current.set(event.taskId, event.progress);
       }
     })
@@ -83,10 +85,21 @@ export function useLogin(): LoginState {
     setRunning(true);
     beginLogin(m).then(
       (id) => {
-        if (gen !== generation.current) return;
+        if (gen !== generation.current) {
+          // ID が届く前にキャンセルされた（閉じた）ときは、ここでタスクを止める
+          if (cancelledAt.current > gen) cancelTask(id).catch(warn);
+          return;
+        }
         taskIdRef.current = id;
         setTaskId(id);
-        setProgress(early.current.get(id) ?? null);
+        const snapshot = client.getQueryData<TaskTable>(TASKS_KEY)?.[id];
+        if (snapshot?.state === "cancelling") {
+          // キャンセル中の古いタスクの ID が返った。終わるのを待ってから始め直す（切り替えと同じ扱い）
+          pendingRef.current = m;
+          setProgress(null);
+        } else {
+          setProgress(early.current.get(id) ?? null);
+        }
         early.current.clear();
       },
       (e) => {
@@ -95,7 +108,7 @@ export function useLogin(): LoginState {
         setRunning(false);
       },
     );
-  }, []);
+  }, [client]);
 
   const succeed = useCallback(() => {
     const gen = generation.current;
@@ -154,7 +167,7 @@ export function useLogin(): LoginState {
   );
 
   const cancel = useCallback(() => {
-    generation.current++;
+    cancelledAt.current = ++generation.current;
     const current = taskIdRef.current;
     if (current && handledRef.current !== current) cancelTask(current).catch(warn);
     taskIdRef.current = null;
@@ -165,6 +178,11 @@ export function useLogin(): LoginState {
     setResult(null);
     setRunning(false);
   }, []);
+
+  // 途中で閉じられた（部品が消えた）ら、動いているログインを止める
+  const cancelRef = useRef(cancel);
+  cancelRef.current = cancel;
+  useEffect(() => () => cancelRef.current(), []);
 
   return { start, cancel, progress, taskId, result, error, method, running };
 }

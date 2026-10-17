@@ -6,7 +6,7 @@ import IconCopy from "~icons/ph/copy";
 import { openExternal } from "../../api/opener";
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import { FailureNotice } from "../../components/FailureNotice";
-import { modalClass, overlayClass } from "../../components/modal";
+import { centeredOverlayClass, modalClass } from "../../components/modal";
 import { SkinFace } from "../accounts/SkinFace";
 import { pickActive, useAccounts } from "../accounts/useAccounts";
 import { usePlay, type Play } from "../play/usePlay";
@@ -72,7 +72,8 @@ export function LoginDialog({ mode, prompt, instanceId, isOpen = true, onClose }
       }}
       // ブラウザでの操作から戻ったときの誤操作で閉じないよう、外側を押しても閉じない（Esc では閉じる）
       isDismissable={false}
-      className={overlayClass}
+      // spec 6.3：画面の中央に出す
+      className={centeredOverlayClass}
     >
       <Modal className={modalClass}>
         <Dialog className="outline-hidden">
@@ -116,12 +117,18 @@ function LoginContent({
     cancelRef.current = login.running ? login.cancel : null;
   }, [cancelRef, login.running, login.cancel]);
 
+  // ダイアログを開いたときの対象のアカウント（ruling 2）。開いている間に prompt が変わっても、比べる相手は変えない
+  const [openedFor] = useState(() => (prompt?.kind === "loginRequired" ? prompt.accountId : null));
+  // 成功の処理で使う値は、常に最新のものを読む
+  const latest = useRef({ mode, instanceId, play, onClose });
+  latest.current = { mode, instanceId, play, onClose };
+
   useEffect(() => {
     if (!login.result) return;
     const id = login.result.accountId;
+    const { mode, instanceId, play, onClose } = latest.current;
     // アカウントがない状態からのログインは、遊ぶためのログインなので、そのまま起動する
-    const expected = prompt?.kind === "loginRequired" ? prompt.accountId : null;
-    if (mode === "add" || expected === null || sameAccount(expected, id)) {
+    if (mode === "add" || openedFor === null || sameAccount(openedFor, id)) {
       if (mode === "play" && instanceId) play.retry();
       onClose();
       return;

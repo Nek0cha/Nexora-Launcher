@@ -1,11 +1,17 @@
 // モーダルの暗幕と出入りの動き。コマンドパレットと作成のダイアログで共有する
 
 // 背景の暗幕は不透明度だけを変える
-export const overlayClass = [
-  "fixed inset-0 z-50 flex items-start justify-center bg-surface-0/60 p-4 pt-[15vh]",
+const overlayBase = [
+  "fixed inset-0 z-50 flex justify-center bg-surface-0/60 p-4",
   "transition-opacity duration-(--duration-base) ease-out-quint",
   "data-entering:opacity-0 data-exiting:opacity-0 data-exiting:duration-(--duration-fast)",
 ].join(" ");
+
+// 上寄せ（コマンドパレットと作成のダイアログ）
+export const overlayClass = `${overlayBase} items-start pt-[15vh]`;
+
+// 縦も中央（ログインのダイアログ）
+export const centeredOverlayClass = `${overlayBase} items-center`;
 
 // 下から 8px 動きながら現れる。閉じるときは fast。動きを減らす設定では不透明度だけ
 export const modalClass = [
