@@ -6,6 +6,17 @@ import type { ErrorPayload } from "../bindings/ErrorPayload";
 import { errorKey } from "../features/errors/errorText";
 import i18n from "../i18n";
 
+/** auth.xbox は XErr の番号ごとの文言があればそれを使い、なければ番号つきの汎用文にする。 */
+function noticeKey(error: ErrorPayload): string {
+  const exists = (k: string) => i18n.exists(k);
+  const xerr = error.params.xerr;
+  if (error.code === "auth.xbox" && xerr !== undefined) {
+    const specific = `errors:auth.xbox_${xerr}`;
+    if (exists(specific)) return specific;
+  }
+  return errorKey(error.code, exists);
+}
+
 /** 失敗の説明。タスクの失敗と、開始やキャンセルの呼び出し自体の失敗の両方に使う。 */
 export function FailureNotice({ error }: { error: ErrorPayload | null }) {
   const { t } = useTranslation();
@@ -17,7 +28,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
         <IconWarning aria-hidden className="size-4 shrink-0" />
         <span className="select-text">
           {error
-            ? t(errorKey(error.code, (k) => i18n.exists(k)) as never, {
+            ? t(noticeKey(error) as never, {
                 ...(error.params as Record<string, unknown>),
                 code: error.code,
               })
