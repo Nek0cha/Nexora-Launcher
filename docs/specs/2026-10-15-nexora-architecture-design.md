@@ -202,7 +202,7 @@ Nexora/
 | pinned | バージョンを固定しているか |
 | installed_as | explicit（ユーザーが導入）または dependency（依存として自動導入） |
 
-**accounts**：id（Minecraft の UUID）、username、skin_url、is_active、added_at、profile_fetched_at、entitlement_state（verified、not_owned、unknown）、entitlement_checked_at。トークンは保存しない。プロフィールを取得できたことと、Java 版の利用権を確認できたことは区別して記録する。
+**accounts**：id（Minecraft の UUID）、username、xuid（Xbox のユーザー ID）、skin_url、is_active、added_at、profile_fetched_at、entitlement_state（verified、not_owned、unknown）、entitlement_checked_at、verified_at（Java 版の利用権を最後に確認できた時刻）、needs_login（再ログインが必要かどうか）。トークンは保存しない。プロフィールを取得できたことと、Java 版の利用権を確認できたことは区別して記録する。
 
 **java_runtimes**：path、major_version、component、os、arch、vendor、source（mojang、system、user）、last_verified_at。
 
@@ -331,7 +331,7 @@ Microsoft（refresh token）→ Xbox Live ユーザートークン → XSTS（rp
   - HTTP 403「Invalid app registration」（クライアント ID が未承認）
   - プロフィールが存在しない（HTTP 404）
   - 所有権の確認に失敗した場合（一時的な失敗と、所有していない場合を区別する）
-- `oauth2` 5.0 は reqwest 0.12 に依存し、本体の reqwest 0.13 とバージョンが合わない。HTTP クライアントの抽象を実装するか、PKCE とトークン交換を自前で実装するかを、フェーズ 3 の spec で決める。
+- OAuth は `oauth2` クレートを使わず、PKCE とトークン交換を自前で実装する。`oauth2` 5.0 は reqwest 0.12 に依存し、本体の reqwest 0.13 とバージョンが合わないため。
 
 ### 6.5 起動への受け渡し
 
@@ -623,7 +623,7 @@ GitHub Actions で、Windows、Linux、macOS のビルドとテストを行う�
 | 事項 | 決める時期 |
 |---|---|
 | ライセンス | 決定済み：Apache-2.0（2026-10-16） |
-| oauth2 クレートを使うか、自前で実装するか | フェーズ 3 |
+| oauth2 クレートを使うか、自前で実装するか | 決定済み：自前で実装（フェーズ 3、2026-10-16） |
 | 1.8.9〜1.12.2 の Forge に対応するか | フェーズ 7 |
 | Minecraft API の審査の結果と、オフライン方針の最終確認 | フェーズ 3 |
 | CurseForge の API キーの許可 | フェーズ 10 |

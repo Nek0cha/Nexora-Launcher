@@ -6,10 +6,10 @@ A modern, lightweight, open-source launcher for Minecraft: Java Edition, built w
 
 Nexora Launcher installs and launches official Minecraft: Java Edition versions. Windows is the first target, and macOS and Linux are planned.
 
-The project is in early development.
+The project is in early development. Building the Microsoft sign-in needs a client ID in the `NEXORA_MS_CLIENT_ID` environment variable; forks must register their own and pass Minecraft API review (aka.ms/mce-reviewappid).
 
 - Done: installing and launching vanilla game versions, including the Java runtime
-- Next: signing in with a Microsoft account and managing several accounts
+- Microsoft sign-in is implemented; waiting for Minecraft API approval
 - Planned: skin changes, mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
@@ -57,9 +57,27 @@ macOS と Linux では次のように指定します。
 NEXORA_DATA_DIR="$HOME/日本語のフォルダ/nexora" pnpm dev
 ```
 
+### Microsoft サインインのクライアント ID
+
+Microsoft のアカウントでサインインするには、ビルド時に環境変数 `NEXORA_MS_CLIENT_ID` でクライアント ID を指定します。Windows の PowerShell では次のように指定します。
+
+```powershell
+$env:NEXORA_MS_CLIENT_ID = "<クライアント ID>"; pnpm dev
+```
+
+macOS と Linux では次のように指定します。
+
+```sh
+NEXORA_MS_CLIENT_ID="<クライアント ID>" pnpm dev
+```
+
+値が空の場合は未設定として扱います。指定されていないビルドでは、サインインのボタンを押すと「このビルドには Microsoft のクライアント ID が含まれていないため、サインインできません」（`auth.no_client_id`）と表示されます。このときも、開発用のオフラインアカウントでは起動できます。
+
+フォークして配布する場合は、ご自身でクライアント ID を取得し、Minecraft API の利用について審査（aka.ms/mce-reviewappid）を受ける必要があります。
+
 ### 開発用のオフラインアカウント
 
-フェーズ 3（Microsoft 認証）までは、開発ビルドだけオフラインアカウントで起動できます。名前はアカウント画面で変更できます（既定は `Player`）。リリースビルドでは起動できません。
+開発ビルドでは、アカウント画面の「開発用のオフラインアカウント」の行で使うを選ぶと、そのアカウントで起動できます。名前はアカウント画面で変更できます（既定は `Player`）。リリースビルドでは起動できません。
 
 ## テスト
 
