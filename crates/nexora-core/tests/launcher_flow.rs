@@ -547,3 +547,20 @@ async fn login_task_is_unique() {
     h.tasks.cancel(&first).unwrap();
     assert_eq!(wait(&h.tasks, &first).await.state, TaskState::Cancelled);
 }
+
+#[tokio::test]
+async fn login_after_a_cancelled_login_starts_a_new_task() {
+    let fake = FakeMojang::start().await;
+    let h = harness_with(&fake).await;
+    let begin = |method| {
+        h.launcher
+            .begin_login(method, Arc::new(NoBrowser), Arc::new(NoProgress))
+    };
+    let first = begin(LoginMethod::Browser);
+    h.tasks.cancel(&first).unwrap();
+    assert_eq!(wait(&h.tasks, &first).await.state, TaskState::Cancelled);
+    let second = begin(LoginMethod::DeviceCode);
+    assert_ne!(first, second);
+    h.tasks.cancel(&second).unwrap();
+    wait(&h.tasks, &second).await;
+}

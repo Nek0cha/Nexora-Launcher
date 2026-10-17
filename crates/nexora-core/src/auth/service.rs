@@ -30,6 +30,8 @@ use crate::launch::session::{LaunchSession, UserType};
 use crate::paths::AppPaths;
 
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
+/// アカウントの一覧に見える変化（追加、削除、切り替え、`needs_login`）を知らせる関数。
+pub type ChangeFn = Arc<dyn Fn() + Send + Sync>;
 /// ログインの進捗を知らせる関数。ログインのタスク（Send が必要）から呼ぶため Sync とする。
 pub type ProgressFn<'a> = &'a (dyn Fn(LoginProgress) + Send + Sync);
 
@@ -128,6 +130,7 @@ pub struct AuthService {
     store: Option<Arc<dyn SecretStore>>,
     client_id: Option<String>,
     clock: Clock,
+    on_change: Option<ChangeFn>,
     cache: Arc<Mutex<HashMap<Uuid, Cached>>>,
     locks: Arc<Mutex<HashMap<Uuid, Arc<tokio::sync::Mutex<()>>>>>,
 }
@@ -150,6 +153,7 @@ impl AuthService {
             store,
             client_id,
             clock: Arc::new(now_ms),
+            on_change: None,
             cache: Arc::default(),
             locks: Arc::default(),
         }
@@ -159,6 +163,19 @@ impl AuthService {
     pub fn with_clock(mut self, clock: Clock) -> Self {
         self.clock = clock;
         self
+    }
+
+    /// アカウントの一覧が変わったときに呼ぶ関数を設定する。
+    pub fn with_on_change(mut self, on_change: ChangeFn) -> Self {
+        self.on_change = Some(on_change);
+        self
+    }
+
+    /// アカウントの一覧が変わったことを知らせる。開発用のオフラインの切り替えも含む。
+    pub fn notify_changed(&self) {
+        if let Some(f) = &self.on_change {
+            f();
+        }
     }
 
     /// Microsoft のクライアント ID。未設定なら None。
@@ -282,6 +299,7 @@ impl AuthService {
         }
         accounts::set_active(&self.db, id)?;
         self.cache.lock().unwrap().entry(id).or_default().mc = Some(signed.mc);
+        self.notify_changed();
         Ok(id)
     }
 
@@ -315,7 +333,9 @@ impl AuthService {
     }
 
     pub fn set_active(&self, id: Uuid) -> Result<(), CoreError> {
-        accounts::set_active(&self.db, id)
+        accounts::set_active(&self.db, id)?;
+        self.notify_changed();
+        Ok(())
     }
 
     /// `accounts` の行、資格情報ストアの refresh token、メモリのトークンを消す。
@@ -324,6 +344,7 @@ impl AuthService {
         let lock = self.lock_for(id);
         let _guard = lock.lock().await;
         accounts::remove(&self.db, id)?;
+        self.notify_changed();
         self.cache.lock().unwrap().remove(&id);
         if let Some(store) = self.store.clone() {
             let k = key(id);
@@ -394,8 +415,11 @@ impl AuthService {
                     .is_ok_and(|row| offline_allowed(&row, self.now())),
             },
             CoreError::LoginRequired { .. } | CoreError::HttpStatus { status: 401, .. } => {
-                if let Err(e) = accounts::set_needs_login(&self.db, id, true) {
-                    tracing::warn!(code = e.code(), "could not mark the account for sign-in");
+                match accounts::set_needs_login(&self.db, id, true) {
+                    Ok(()) => self.notify_changed(),
+                    Err(e) => {
+                        tracing::warn!(code = e.code(), "could not mark the account for sign-in");
+                    }
                 }
                 CoreError::LoginRequired {
                     account_id: key(id),
@@ -456,7 +480,9 @@ impl AuthService {
             xuid: s.xuid.clone(),
             skin_url: s.profile.skin_url.clone(),
         };
-        accounts::save_profile(&self.db, &record, s.entitlement, self.now())
+        accounts::save_profile(&self.db, &record, s.entitlement, self.now())?;
+        self.notify_changed();
+        Ok(())
     }
 
     /// 使う refresh token と、それがメモリだけにある（保存できていない）か。
@@ -517,6 +543,40 @@ mod tests {
     use super::*;
 
     fn assert_send<T: Send>(_: &T) {}
+
+    #[tokio::test]
+    async fn on_change_fires_on_set_active_and_remove() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = count.clone();
+        let db = Db::open_in_memory().unwrap();
+        let auth = AuthService::new(
+            db.clone(),
+            AppPaths::from_root("unused"),
+            AuthHttp::new().unwrap(),
+            AuthUrls::default(),
+            None,
+            None,
+        )
+        .with_on_change(Arc::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        }));
+        let id = Uuid::from_u128(1);
+        let record = ProfileRecord {
+            id,
+            username: "A".into(),
+            xuid: None,
+            skin_url: None,
+        };
+        accounts::save_profile(&db, &record, EntitlementState::Verified, 1).unwrap();
+        auth.set_active(id).unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        // 失敗したときは知らせない
+        assert!(auth.set_active(Uuid::from_u128(2)).is_err());
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        auth.remove(id).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
 
     /// ログインと起動はタスク（Send が必要）の中で動くため、各 future は Send でなければならない。
     #[test]

@@ -59,7 +59,11 @@ fn start_services(app: &tauri::AppHandle) -> Result<Services, ErrorPayload> {
         AuthUrls::default(),
         store,
         auth::client_id().map(str::to_string),
-    );
+    )
+    .with_on_change({
+        let app = app.clone();
+        Arc::new(move || events::emit_accounts_changed(&app))
+    });
     let launcher = nexora_core::launcher::Launcher::new(
         paths.clone(),
         db.clone(),
@@ -107,6 +111,9 @@ pub fn run() {
                             tracing::warn!(code = err.code(), "failed to reattach running games");
                         }
                     });
+                    // 使用中のアカウントのセッションを裏で用意する
+                    let auth = services.launcher.auth().clone();
+                    tauri::async_runtime::spawn(async move { auth.warm_up().await });
                     state.set(Startup::Ready(Box::new(services)));
                 }
                 Err(err) => {
@@ -137,6 +144,12 @@ pub fn run() {
             commands::list_running,
             commands::get_dev_offline_username,
             commands::set_dev_offline_username,
+            commands::list_accounts,
+            commands::set_active_account,
+            commands::set_dev_offline_active,
+            commands::remove_account,
+            commands::begin_login,
+            commands::get_skin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexora");
