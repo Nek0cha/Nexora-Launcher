@@ -1227,6 +1227,21 @@ async fn service_missing_refresh_token_is_login_required() {
 }
 
 #[tokio::test]
+async fn service_corrupt_store_entry_is_login_required() {
+    // 壊れたエントリは、保存したログインがないのと同じに扱う。auth.offline のままだと戻れない
+    let e = env().await;
+    e.seed(EntitlementState::Verified, T0);
+    e.store.corrupt_reads(true);
+    let err = e.auth.session_for_launch().await.unwrap_err();
+    assert!(
+        matches!(&err, CoreError::LoginRequired { account_id } if account_id == PROFILE_ID),
+        "{err:?}"
+    );
+    assert!(e.row().needs_login);
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
 async fn service_failed_store_read_is_offline_and_does_not_set_needs_login() {
     use std::sync::atomic::AtomicUsize;
     for (verified_at, expected) in [(T0, true), (T0 - OFFLINE_GRACE_MS - 1, false)] {
