@@ -123,7 +123,50 @@ fn platform_store() -> Result<Arc<CredentialStore>, StoreError> {
     Err(StoreError::new("no credential store for this platform"))
 }
 
+/// Windows の資格情報 1 件に入る blob の上限（`CRED_MAX_CREDENTIAL_BLOB_SIZE`）。テストで使う。
+#[cfg(test)]
+const WINDOWS_BLOB_LIMIT: usize = 2560;
+
+/// ストアに書くバイト列。UTF-8 のまま渡す。
+#[cfg(any(windows, test))]
+fn secret_bytes(value: &SecretString) -> &[u8] {
+    value.expose_secret().as_bytes()
+}
+
+/// ストアから読んだバイト列を UTF-8 として解く。失敗しても中身は文言に含めない。
+#[cfg(any(windows, test))]
+fn secret_from_bytes(bytes: Vec<u8>) -> Result<SecretString, StoreError> {
+    use secrecy::zeroize::Zeroize;
+    match String::from_utf8(bytes) {
+        Ok(s) => Ok(SecretString::from(s)),
+        Err(e) => {
+            e.into_bytes().zeroize();
+            Err(StoreError::new("stored secret is not valid UTF-8"))
+        }
+    }
+}
+
 impl SecretStore for KeyringStore {
+    // Windows では `set_password` が値を UTF-16LE にして保存するため、2,560 バイトの上限に
+    // 約 1,280 文字しか入らない。refresh token はこれを超えることがあるので、UTF-8 の
+    // バイト列のまま `set_secret` / `get_secret` で読み書きする。
+    #[cfg(windows)]
+    fn get(&self, key: &str) -> Result<Option<SecretString>, StoreError> {
+        match self.entry(key)?.get_secret() {
+            Ok(bytes) => secret_from_bytes(bytes).map(Some),
+            Err(keyring_core::Error::NoEntry) => Ok(None),
+            Err(e) => Err(map_error(e)),
+        }
+    }
+
+    #[cfg(windows)]
+    fn set(&self, key: &str, value: &SecretString) -> Result<(), StoreError> {
+        self.entry(key)?
+            .set_secret(secret_bytes(value))
+            .map_err(map_error)
+    }
+
+    #[cfg(not(windows))]
     fn get(&self, key: &str) -> Result<Option<SecretString>, StoreError> {
         match self.entry(key)?.get_password() {
             Ok(v) => Ok(Some(SecretString::from(v))),
@@ -132,6 +175,7 @@ impl SecretStore for KeyringStore {
         }
     }
 
+    #[cfg(not(windows))]
     fn set(&self, key: &str, value: &SecretString) -> Result<(), StoreError> {
         self.entry(key)?
             .set_password(value.expose_secret())
@@ -231,6 +275,25 @@ mod tests {
     }
 
     #[test]
+    fn a_2000_char_token_fits_the_windows_blob_limit() {
+        let token = secret(&"a".repeat(2000));
+        assert!(secret_bytes(&token).len() <= WINDOWS_BLOB_LIMIT);
+    }
+
+    #[test]
+    fn stored_bytes_round_trip_as_utf8() {
+        let token = secret("M.C5_\u{3042}_token");
+        let back = secret_from_bytes(secret_bytes(&token).to_vec()).unwrap();
+        assert_eq!(back.expose_secret(), token.expose_secret());
+    }
+
+    #[test]
+    fn invalid_utf8_gives_a_fixed_message_without_the_bytes() {
+        let err = secret_from_bytes(vec![0x41, 0xff, 0xfe]).unwrap_err();
+        assert_eq!(err.message, "stored secret is not valid UTF-8");
+    }
+
+    #[test]
     fn service_names_match_the_profile() {
         assert_eq!(service_name(Profile::Release), "net.ny4n.nexora");
         assert_eq!(service_name(Profile::Dev), "net.ny4n.nexora.dev");
@@ -251,6 +314,9 @@ mod tests {
         s.set(&key, &secret("v1")).unwrap();
         s.set(&key, &secret("v2")).unwrap();
         assert_eq!(s.get(&key).unwrap().unwrap().expose_secret(), "v2");
+        let long = "a".repeat(2000);
+        s.set(&key, &secret(&long)).unwrap();
+        assert_eq!(s.get(&key).unwrap().unwrap().expose_secret(), long);
         s.delete(&key).unwrap();
         assert!(s.get(&key).unwrap().is_none());
         s.delete(&key).unwrap();
