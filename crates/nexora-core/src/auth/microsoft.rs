@@ -101,11 +101,16 @@ fn read_reply(reply: &Reply, url: &str) -> Result<TokenReply, CoreError> {
     }
 }
 
+/// 応答の `expires_in`（秒）から期限を求める。極端な値でも溢れないようにする。
+fn expires_at(now_ms: i64, expires_in: i64) -> i64 {
+    now_ms.saturating_add(expires_in.max(0).saturating_mul(1000))
+}
+
 fn into_tokens(body: TokenBody, now_ms: i64) -> MsTokens {
     MsTokens {
         access: SecretString::from(body.access_token),
         refresh: body.refresh_token.map(SecretString::from),
-        expires_at_ms: now_ms + body.expires_in * 1000,
+        expires_at_ms: expires_at(now_ms, body.expires_in),
     }
 }
 
@@ -194,7 +199,7 @@ pub async fn request_device_code(
         verification_uri: b.verification_uri,
         device_code: SecretString::from(b.device_code),
         interval: Duration::from_secs(b.interval.unwrap_or(DEFAULT_INTERVAL_SECS)),
-        expires_at_ms: now_ms + b.expires_in * 1000,
+        expires_at_ms: expires_at(now_ms, b.expires_in),
     })
 }
 
@@ -245,5 +250,13 @@ mod tests {
     fn slow_down_adds_five_seconds() {
         assert_eq!(slowed(Duration::ZERO), Duration::from_secs(5));
         assert_eq!(slowed(Duration::from_secs(5)), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn expires_at_saturates_and_ignores_negative_values() {
+        assert_eq!(expires_at(1_000, 60), 61_000);
+        assert_eq!(expires_at(1_000, i64::MAX), i64::MAX);
+        assert_eq!(expires_at(i64::MAX - 1, 60), i64::MAX);
+        assert_eq!(expires_at(1_000, -5), 1_000);
     }
 }

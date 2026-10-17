@@ -161,6 +161,30 @@ async fn redirects_are_not_followed() {
     assert!(target.received_requests().await.unwrap().is_empty());
 }
 
+#[tokio::test]
+async fn refresh_clamps_a_hostile_expires_in() {
+    for (expires_in, expected) in [(i64::MAX, i64::MAX), (-5, NOW)] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+                r#"{{"access_token":"A","expires_in":{expires_in}}}"#
+            )))
+            .mount(&server)
+            .await;
+        let tokens = refresh(
+            &AuthHttp::new().unwrap(),
+            &auth_urls(&server),
+            "cid",
+            &secret("r"),
+            NOW,
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokens.expires_at_ms, expected);
+    }
+}
+
 async fn device_server(interval: u64) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
