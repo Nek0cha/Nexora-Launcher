@@ -7,6 +7,8 @@ import type { SettingChange } from "../bindings/SettingChange";
 import type { StartupStatus } from "../bindings/StartupStatus";
 import type { Settings } from "../bindings/Settings";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
+import type { AccountList } from "../bindings/AccountList";
+import type { LoginMethod } from "../bindings/LoginMethod";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -21,7 +23,15 @@ export const listVersions = () => call<VersionEntry[]>("list_versions");
 export const listInstances = () => call<Instance[]>("list_instances");
 export const createInstance = (name: string, mcVersion: string) =>
   call<CreatedInstance>("create_instance", { name, mcVersion });
-export const launchInstance = (instanceId: string) => call<string>("launch_instance", { instanceId });
+export const launchInstance = (instanceId: string, offline = false) =>
+  call<string>("launch_instance", { instanceId, offline });
 export const listRunning = () => call<RunningSession[]>("list_running");
 export const getDevOfflineUsername = () => call<string>("get_dev_offline_username");
 export const setDevOfflineUsername = (name: string) => call<string>("set_dev_offline_username", { name });
+
+export const listAccounts = () => call<AccountList>("list_accounts");
+export const setActiveAccount = (accountId: string) => call<null>("set_active_account", { accountId });
+export const setDevOfflineActive = (active: boolean) => call<null>("set_dev_offline_active", { active });
+export const removeAccount = (accountId: string) => call<null>("remove_account", { accountId });
+export const beginLogin = (method: LoginMethod) => call<string>("begin_login", { method });
+export const getSkin = (accountId: string) => call<string | null>("get_skin", { accountId });

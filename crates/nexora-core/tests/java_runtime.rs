@@ -121,6 +121,53 @@ async fn wrong_arch_is_rejected_and_not_registered() {
     assert_eq!(find_registered(&db, "jre-test").unwrap(), None);
 }
 
+/// Java が起動できず、出力を読めなかった場合。
+struct UnreadableProbe;
+
+impl JavaProbe for UnreadableProbe {
+    fn probe<'a>(
+        &'a self,
+        _java: &'a Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<JavaInfo, CoreError>> + Send + 'a>> {
+        Box::pin(async {
+            Err(CoreError::JavaVerifyFailed {
+                expected_major: 0,
+                found: "exit code 2: Error: could not find java.dll".into(),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn unreadable_probe_reports_the_expected_major() {
+    let fake = FakeMojang::start().await;
+    let temp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_root(temp.path());
+    let db = Db::open_in_memory().unwrap();
+    let prepared = prepare_runtime(&http(), &paths, &fake.runtime_index_url(), "jre-test", 17)
+        .await
+        .unwrap();
+    fetch_all(
+        &http(),
+        prepared.downloads.clone(),
+        Depth::Full,
+        4,
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await
+    .unwrap();
+    let err = finish_runtime(&db, &prepared, &UnreadableProbe, 1)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        CoreError::JavaVerifyFailed { expected_major: 17, ref found }
+            if found == "exit code 2: Error: could not find java.dll"
+    ));
+    assert_eq!(find_registered(&db, "jre-test").unwrap(), None);
+}
+
 #[tokio::test]
 async fn corrupt_runtime_manifest_is_rejected() {
     let fake = FakeMojang::start().await;

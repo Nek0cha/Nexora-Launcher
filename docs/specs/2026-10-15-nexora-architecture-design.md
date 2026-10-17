@@ -202,7 +202,7 @@ Nexora/
 | pinned | バージョンを固定しているか |
 | installed_as | explicit（ユーザーが導入）または dependency（依存として自動導入） |
 
-**accounts**：id（Minecraft の UUID）、username、skin_url、is_active、added_at、profile_fetched_at、entitlement_state（verified、not_owned、unknown）、entitlement_checked_at。トークンは保存しない。プロフィールを取得できたことと、Java 版の利用権を確認できたことは区別して記録する。
+**accounts**：id（Minecraft の UUID）、username、xuid（Xbox のユーザー ID）、skin_url、is_active、added_at、profile_fetched_at、entitlement_state（verified、not_owned、unknown）、entitlement_checked_at、verified_at（Java 版の利用権を最後に確認できた時刻）、needs_login（再ログインが必要かどうか）。トークンは保存しない。プロフィールを取得できたことと、Java 版の利用権を確認できたことは区別して記録する。
 
 **java_runtimes**：path、major_version、component、os、arch、vendor、source（mojang、system、user）、last_verified_at。
 
@@ -331,7 +331,7 @@ Microsoft（refresh token）→ Xbox Live ユーザートークン → XSTS（rp
   - HTTP 403「Invalid app registration」（クライアント ID が未承認）
   - プロフィールが存在しない（HTTP 404）
   - 所有権の確認に失敗した場合（一時的な失敗と、所有していない場合を区別する）
-- `oauth2` 5.0 は reqwest 0.12 に依存し、本体の reqwest 0.13 とバージョンが合わない。HTTP クライアントの抽象を実装するか、PKCE とトークン交換を自前で実装するかを、フェーズ 3 の spec で決める。
+- OAuth は `oauth2` クレートを使わず、PKCE とトークン交換を自前で実装する。`oauth2` 5.0 は reqwest 0.12 に依存し、本体の reqwest 0.13 とバージョンが合わないため。
 
 ### 6.5 起動への受け渡し
 
@@ -589,7 +589,7 @@ GitHub Actions で、Windows、Linux、macOS のビルドとテストを行う�
 | インスタンス一覧 | インスタンスの一覧と作成 |
 | インスタンス詳細 | タブ：コンテンツ、設定、ワールド、ログ、バックアップ |
 | 探す | Modrinth の検索。検索から導入までを画面内で完結させる |
-| アカウント | アカウントの追加、切り替え、削除 |
+| アカウント | アカウントの追加、切り替え、削除。スキンの表示と変更 |
 | 設定 | アプリ全体の設定 |
 
 - Ctrl+K でコマンドパレットを開き、インスタンスの起動、画面の移動、検索を行える。
@@ -606,7 +606,7 @@ GitHub Actions で、Windows、Linux、macOS のビルドとテストを行う�
 | 1 | 土台：Tauri、React、Tailwind CSS、React Aria Components、デザイントークン、i18n、core の骨組み、DB、タスク管理、ログ、CI |
 | 2 | Vanilla のインストールと起動、Java の導入（開発用のオフラインアカウントを使う） |
 | 3 | Microsoft 認証とアカウント管理 |
-| 4 | インスタンス管理の UI（作成、編集、複製、削除、ホーム） |
+| 4 | インスタンス管理の UI（作成、編集、複製、削除、ホーム）、スキンの変更 |
 | 5 | Fabric、Quilt、Modrinth 連携（検索、依存の解決、更新、更新前のバックアップ） |
 | 6 | インスタンス間の設定同期 |
 | 7 | Forge、NeoForge、`.mrpack` のインポートとエクスポート |
@@ -615,14 +615,15 @@ GitHub Actions で、Windows、Linux、macOS のビルドとテストを行う�
 | 10 | バックアップの UI、自己更新、ライセンス表示、CurseForge のキー、OSS としての公開 |
 
 - Microsoft 認証をフェーズ 3 にしているのは、Minecraft API の審査を待つ間も、フェーズ 2 をオフラインで進められるためである。
+- スキンの変更は、Minecraft のアクセストークンを使うため、フェーズ 3 の認証の後に置く。フェーズ 3 では現在のスキンの表示までを行い、変更はフェーズ 4 で UI の作業とあわせて行う。
 - 環境レシピは、`.mrpack` に Nexora 独自の設定を加えた形式とする想定であるため、フェーズ 7 より後に置く。形式はフェーズ 9 の spec で定める。
 
 ## 14. 未決定の事項
 
 | 事項 | 決める時期 |
 |---|---|
-| ライセンス（Apache-2.0 を予定） | 公開前 |
-| oauth2 クレートを使うか、自前で実装するか | フェーズ 3 |
+| ライセンス | 決定済み：Apache-2.0（2026-10-16） |
+| oauth2 クレートを使うか、自前で実装するか | 決定済み：自前で実装（フェーズ 3、2026-10-16） |
 | 1.8.9〜1.12.2 の Forge に対応するか | フェーズ 7 |
 | Minecraft API の審査の結果と、オフライン方針の最終確認 | フェーズ 3 |
 | CurseForge の API キーの許可 | フェーズ 10 |

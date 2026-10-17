@@ -1,4 +1,4 @@
-import { NavLink } from "react-router";
+import { Link, NavLink } from "react-router";
 import { useTranslation } from "react-i18next";
 import IconHouse from "~icons/ph/house";
 import IconHouseFill from "~icons/ph/house-fill";
@@ -11,6 +11,8 @@ import IconUserFill from "~icons/ph/user-circle-fill";
 import IconGear from "~icons/ph/gear-six";
 import IconGearFill from "~icons/ph/gear-six-fill";
 import type { ComponentType, ReactNode, SVGProps } from "react";
+import { SkinFace } from "../features/accounts/SkinFace";
+import { useAccounts } from "../features/accounts/useAccounts";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -69,7 +71,46 @@ export function Sidebar({ materialOn, footer }: { materialOn: boolean; footer?: 
           )}
         </NavLink>
       ))}
-      <div className="mt-auto">{footer}</div>
+      <div className="mt-auto flex flex-col gap-1">
+        <AccountLink />
+        {footer}
+      </div>
     </nav>
+  );
+}
+
+/** 使用中のアカウントの顔と名前。押すとアカウント画面に移る（spec 6.2）。 */
+function AccountLink() {
+  const { t } = useTranslation();
+  const { data, active } = useAccounts();
+  // 一覧が届くまでは何も出さない（「ログイン」が一瞬見えないように）
+  if (!data) return null;
+  const needsLogin = active?.kind === "msa" && active.account.needsLogin;
+  const name = active?.kind === "msa" ? active.account.username : active?.username;
+  return (
+    // 現在地はナビゲーションの「アカウント」の項目で示すため、ここは NavLink にしない
+    <Link
+      to="/accounts"
+      // 黄色の点は色だけなので、スクリーンリーダーには名前に続けて「ログインが必要」と伝える
+      aria-label={needsLogin ? t("sidebar.accountNeedsLogin", { name }) : undefined}
+      className={`${itemBase} text-text-muted hover:bg-surface-2 hover:text-text`}
+    >
+      {active ? (
+        <>
+          <span className="relative shrink-0">
+            <SkinFace accountId={active.kind === "msa" ? active.account.id : null} size={24} />
+            {needsLogin && (
+              <span aria-hidden className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warning" />
+            )}
+          </span>
+          <span className="truncate text-text">{name}</span>
+        </>
+      ) : (
+        <>
+          <IconUser aria-hidden className="size-4 shrink-0" />
+          <span className="truncate">{t("sidebar.login")}</span>
+        </>
+      )}
+    </Link>
   );
 }

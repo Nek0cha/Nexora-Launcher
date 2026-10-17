@@ -170,7 +170,7 @@ impl FakeMojang {
         );
         let version = format!(
             r#"{{"id":"1.99-test","type":"release","mainClass":"net.minecraft.client.main.Main",
-"arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}"],"jvm":["-cp","${{classpath}}"]}},
+"arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}","--uuid","${{auth_uuid}}","--accessToken","${{auth_access_token}}","--xuid","${{auth_xuid}}","--userType","${{user_type}}"],"jvm":["-cp","${{classpath}}"]}},
 "assetIndex":{{"id":"test","sha1":"{is}","size":{il},"totalSize":0,"url":"{u}/index.json"}},
 "downloads":{{"client":{{"sha1":"{cs}","size":{cl},"url":"{u}/client.jar"}}}},
 "libraries":[{{"name":"com.example:lib:1.0","downloads":{{"artifact":{{"path":"com/example/lib/1.0/lib-1.0.jar","sha1":"{ls}","size":{ll},"url":"{lib_url}"}}}}}}],
@@ -338,4 +338,162 @@ pub fn shell(script: &str) -> (std::path::PathBuf, Vec<String>) {
     } else {
         ("sh".into(), vec!["-c".into(), script.into()])
     }
+}
+
+/// 認証のエンドポイントを wiremock の URL に向ける。
+pub fn auth_urls(server: &MockServer) -> nexora_core::auth::AuthUrls {
+    let u = server.uri();
+    nexora_core::auth::AuthUrls {
+        authorize: format!("{u}/authorize"),
+        token: format!("{u}/token"),
+        device_code: format!("{u}/devicecode"),
+        xbox_user: format!("{u}/xbox/user"),
+        xsts: format!("{u}/xsts"),
+        mc_login: format!("{u}/mc/login"),
+        mc_store: format!("{u}/mc/store"),
+        mc_license: format!("{u}/mc/license"),
+        mc_profile: format!("{u}/mc/profile"),
+    }
+}
+
+// ---- 認証の連鎖の偽物 ----
+
+/// テストで使うトークン。どれもエラーやログに出てはいけない。
+pub const MS_ACCESS: &str = "MS-ACCESS-SECRET";
+pub const REFRESH_1: &str = "REFRESH-ONE-SECRET";
+pub const REFRESH_2: &str = "REFRESH-TWO-SECRET";
+pub const REFRESH_3: &str = "REFRESH-THREE-SECRET";
+pub const XBL_TOKEN: &str = "XBL-USER-SECRET";
+pub const XSTS_TOKEN: &str = "XSTS-SECRET";
+pub const MC_TOKEN: &str = "MC-ACCESS-SECRET";
+pub const ALL_SECRETS: [&str; 7] = [
+    MS_ACCESS, REFRESH_1, REFRESH_2, REFRESH_3, XBL_TOKEN, XSTS_TOKEN, MC_TOKEN,
+];
+pub const PROFILE_ID: &str = "0123456789abcdef0123456789abcdef";
+pub const PROFILE_NAME: &str = "Steve";
+pub const XUID: &str = "2535400000000001";
+
+/// 所有権の確認の応答。
+#[derive(Debug, Clone, Copy)]
+pub enum Ownership {
+    Owned,
+    NotOwned,
+    /// mcstore が 500（license は空）。
+    Unknown,
+}
+
+/// refresh_token=from の refresh に、新しい refresh token（to）を付けて答える。
+/// from が None なら、どの refresh token にも答える。
+pub async fn mount_refresh(server: &MockServer, from: Option<&str>, to: Option<&str>) {
+    use wiremock::matchers::body_string_contains;
+    let body = match to {
+        Some(to) => {
+            format!(r#"{{"access_token":"{MS_ACCESS}","refresh_token":"{to}","expires_in":3600}}"#)
+        }
+        None => format!(r#"{{"access_token":"{MS_ACCESS}","expires_in":3600}}"#),
+    };
+    let mut mock = Mock::given(method("POST")).and(path("/token"));
+    if let Some(from) = from {
+        mock = mock.and(body_string_contains(format!("refresh_token={from}")));
+    }
+    mock.respond_with(ResponseTemplate::new(200).set_body_string(body))
+        .mount(server)
+        .await;
+}
+
+/// トークンのエンドポイントが status と本文で答える。
+pub async fn mount_token_failure(server: &MockServer, status: u16, body: &str) {
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(status).set_body_string(body.to_string()))
+        .mount(server)
+        .await;
+}
+
+/// Xbox Live のユーザートークンと XSTS。
+pub async fn mount_xbox(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/xbox/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"Token":"{XBL_TOKEN}","NotAfter":"2100-01-01T00:00:00Z"}}"#
+        )))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/xsts"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"Token":"{XSTS_TOKEN}","NotAfter":"2100-01-01T00:00:00Z","DisplayClaims":{{"xui":[{{"uhs":"UHS","xid":"{XUID}"}}]}}}}"#
+        )))
+        .mount(server)
+        .await;
+}
+
+/// login_with_xbox。Minecraft のトークンは expires_in 秒で切れる。
+pub async fn mount_mc_login(server: &MockServer, expires_in: i64) {
+    Mock::given(method("POST"))
+        .and(path("/mc/login"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"access_token":"{MC_TOKEN}","expires_in":{expires_in}}}"#
+        )))
+        .mount(server)
+        .await;
+}
+
+pub async fn mount_entitlements(server: &MockServer, ownership: Ownership) {
+    let (store, license) = match ownership {
+        Ownership::Owned => (
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"items":[{"name":"product_minecraft"}]}"#),
+            ResponseTemplate::new(200).set_body_string(r#"{"items":[]}"#),
+        ),
+        Ownership::NotOwned => (
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"items":[{"name":"product_minecraft_bedrock"}]}"#),
+            ResponseTemplate::new(200).set_body_string(r#"{"items":[]}"#),
+        ),
+        Ownership::Unknown => (
+            ResponseTemplate::new(500),
+            ResponseTemplate::new(200).set_body_string(r#"{"items":[]}"#),
+        ),
+    };
+    Mock::given(method("GET"))
+        .and(path("/mc/store"))
+        .respond_with(store)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mc/license"))
+        .respond_with(license)
+        .mount(server)
+        .await;
+}
+
+/// プロフィール（PROFILE_ID、PROFILE_NAME、スキンなし）。
+pub async fn mount_mc_profile(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[]}}"#
+        )))
+        .mount(server)
+        .await;
+}
+
+/// Xbox から Minecraft のプロフィールまで、すべて成功する連鎖（refresh は含まない）。
+pub async fn mount_chain(server: &MockServer, mc_expires_in: i64, ownership: Ownership) {
+    mount_xbox(server).await;
+    mount_mc_login(server, mc_expires_in).await;
+    mount_entitlements(server, ownership).await;
+    mount_mc_profile(server).await;
+}
+
+/// route へのリクエストの回数。
+pub async fn hits_on(server: &MockServer, route: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == route)
+        .count()
 }

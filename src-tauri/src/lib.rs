@@ -6,6 +6,10 @@ mod state;
 
 use std::sync::Arc;
 
+use nexora_core::auth::http::AuthHttp;
+use nexora_core::auth::service::AuthService;
+use nexora_core::auth::store::{KeyringStore, SecretStore};
+use nexora_core::auth::{self, AuthUrls};
 use nexora_core::db::Db;
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::paths::{AppPaths, Profile};
@@ -40,11 +44,32 @@ fn start_services(app: &tauri::AppHandle) -> Result<Services, ErrorPayload> {
 
     let db = Db::open(&paths.db_file())?;
     let tasks = TaskManager::new(Arc::new(events::TauriNotifier::new(app.clone())));
+    // 資格情報ストアを使えなければ、ログインをメモリだけに持つ
+    let store: Option<Arc<dyn SecretStore>> = match KeyringStore::new(Profile::current()) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(err) => {
+            tracing::warn!(error = %err, "credential store is unavailable; sign-ins last until the launcher closes");
+            None
+        }
+    };
+    let auth = AuthService::new(
+        db.clone(),
+        paths.clone(),
+        AuthHttp::new()?,
+        AuthUrls::default(),
+        store,
+        auth::client_id().map(str::to_string),
+    )
+    .with_on_change({
+        let app = app.clone();
+        Arc::new(move || events::emit_accounts_changed(&app))
+    });
     let launcher = nexora_core::launcher::Launcher::new(
         paths.clone(),
         db.clone(),
         tasks.clone(),
         Arc::new(events::TauriGameNotifier::new(app.clone())),
+        auth,
     )?;
     Ok(Services {
         paths,
@@ -86,6 +111,9 @@ pub fn run() {
                             tracing::warn!(code = err.code(), "failed to reattach running games");
                         }
                     });
+                    // 使用中のアカウントのセッションを裏で用意する
+                    let auth = services.launcher.auth().clone();
+                    tauri::async_runtime::spawn(async move { auth.warm_up().await });
                     state.set(Startup::Ready(Box::new(services)));
                 }
                 Err(err) => {
@@ -116,6 +144,12 @@ pub fn run() {
             commands::list_running,
             commands::get_dev_offline_username,
             commands::set_dev_offline_username,
+            commands::list_accounts,
+            commands::set_active_account,
+            commands::set_dev_offline_active,
+            commands::remove_account,
+            commands::begin_login,
+            commands::get_skin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexora");

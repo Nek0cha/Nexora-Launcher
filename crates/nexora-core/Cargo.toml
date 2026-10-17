@@ -16,13 +16,13 @@ thiserror = "2"
 ts-rs = "12"
 tracing = "0.1"
 
-tokio = { version = "1.53", features = ["rt", "sync", "time", "macros", "fs", "process", "io-util"] }
+tokio = { version = "1.53", features = ["rt", "sync", "time", "macros", "fs", "process", "io-util", "net"] }
 tokio-util = "0.7"
-uuid = { version = "1", features = ["v7"] }
+uuid = { version = "1", features = ["v7", "v4", "serde"] }
 
 secrecy = "0.10"
 
-reqwest = { version = "0.13", features = ["stream"] }
+reqwest = { version = "0.13", features = ["stream", "form"] }
 futures = "0.3"
 sha1 = "0.11"
 md-5 = "0.11"
@@ -30,6 +30,21 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.42"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 regex = "1"
+
+sha2 = "0.11"
+base64 = "0.23"
+getrandom = "0.4"
+keyring-core = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store = "1.1"
+windows-sys = { version = "0.61", features = ["Win32_Globalization"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["fmt"] }

@@ -10,7 +10,7 @@
   "empty": {
     "instances": "インスタンスはまだありません。バージョンを選んで作成しましょう。",
     "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
-    "accounts": "Microsoft アカウントでのログインは、今後のバージョンで使えるようになります。"
+    "accounts": "Microsoft アカウントを追加すると、Minecraft を遊べます。"
   },
   "play": {
     "play": "プレイ",
@@ -48,7 +48,8 @@
     "cancel": "キャンセル",
     "kind": {
       "install": "インストール",
-      "launch": "起動"
+      "launch": "起動",
+      "login": "ログイン"
     },
     "state": {
       "queued": "待機中",
@@ -70,10 +71,65 @@
     "devTitle": "開発用のオフラインアカウント",
     "devHint": "開発ビルドでだけ使えます。製品版では Microsoft アカウントでログインします。",
     "save": "保存",
-    "saved": "保存しました"
+    "saved": "保存しました",
+    "add": "Microsoft アカウントを追加",
+    "use": "使う",
+    "relogin": "ログインし直す",
+    "remove": "削除",
+    "status": {
+      "active": "使用中",
+      "needsLogin": "ログインが必要",
+      "unsaved": "ログインが保存されていない",
+      "ownershipUnknown": "所有を確認できない"
+    },
+    "removeTitle": "{{name}} を削除しますか？",
+    "removeBody": "このパソコンからログインの情報を消します。Microsoft 側で発行済みのトークンが無効になるわけではありません。",
+    "removeConfirm": "削除",
+    "cancel": "キャンセル"
+  },
+  "sidebar": {
+    "login": "ログイン",
+    "accountNeedsLogin": "{{name}}（ログインが必要）"
   },
   "startup": {
     "title": "Nexora を起動できませんでした",
     "body": "データの読み込み中に問題が起きました。下の詳細を添えて報告してください。"
+  },
+  "login": {
+    "titleRelogin": "遊ぶ前にログインし直してください",
+    "titleSignIn": "Microsoft アカウントでログイン",
+    "titleOffline": "Microsoft に接続できません",
+    "titleAdd": "Microsoft アカウントを追加",
+    "titleReloginAccount": "Microsoft アカウントにログインし直す",
+    "launchAfter": "ログインが終わると、そのまま起動します",
+    "signInAndPlay": "Microsoft でログインして起動",
+    "signIn": "Microsoft でログイン",
+    "useOther": "別のアカウントを使う",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "offlineBody": "インターネットへの接続か、Microsoft のサービスの状況を確認してください。",
+    "playOffline": "オフラインで遊ぶ",
+    "offlineNeedsVerify": "オフラインで遊ぶには、一度オンラインで所有を確認する必要があります",
+    "offlineRelogin": "オンラインになってからログインし直してください",
+    "retry": "再試行",
+    "preparing": "準備しています…",
+    "waiting": "ブラウザでログインしています…",
+    "waitingHint": "開いたブラウザでログインを済ませてください。ブラウザが開かないときは、開き直すか、コードを使ってログインできます。",
+    "reopen": "ブラウザを開き直す",
+    "useCode": "コードを使ってログイン",
+    "codeInstruction": "次のページを開き、下のコードを入力してください。",
+    "copy": "コードをコピー",
+    "copied": "コピーしました",
+    "openPage": "ページを開く",
+    "checking": "アカウントを確認しています…",
+    "loggedInAs": "{{name}} としてログインしました",
+    "loggedInAsHint": "まだ起動していません。このアカウントで遊ぶときは、もう一度プレイを押してください。",
+    "buy": "Minecraft を購入する",
+    "trial": "体験版を試す",
+    "createProfile": "プロフィールを作成する",
+    "hint": {
+      "appNotApproved": "ランチャー側の問題（審査を待っている状態）です。お使いのアカウントの問題ではありません。",
+      "denied": "ブラウザのログインの画面で、アクセスを許可すると先に進めます。"
+    }
   }
 }

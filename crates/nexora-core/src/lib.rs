@@ -18,5 +18,6 @@ pub mod net;
 
 pub mod java;
 
+pub mod auth;
 pub mod launch;
 pub mod launcher;

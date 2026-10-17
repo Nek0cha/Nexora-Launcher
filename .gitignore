@@ -5,3 +5,6 @@ docs/plans/
 node_modules/
 /ui/dist/
 /src-tauri/gen/schemas/
+
+# Brainstorming mockups
+.superpowers/

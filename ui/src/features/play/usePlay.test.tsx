@@ -43,7 +43,7 @@ describe("usePlay", () => {
       home.result.current.press();
     });
     expect(launchInstance).toHaveBeenCalledTimes(1);
-    expect(launchInstance).toHaveBeenCalledWith("i1");
+    expect(launchInstance).toHaveBeenCalledWith("i1", false);
     await waitFor(() => expect(palette.result.current.starting).toBe(true));
   });
 
@@ -65,11 +65,12 @@ describe("usePlay", () => {
   });
 
   it("shares a failure with another hook instance and clears it on a later success", async () => {
-    vi.mocked(launchInstance).mockRejectedValueOnce(new IpcError({ code: "launch.no_account", params: {}, detail: "d" }));
+    // auth.* の失敗はダイアログで扱うため、ここでは別の失敗を使う
+    vi.mocked(launchInstance).mockRejectedValueOnce(new IpcError({ code: "app.not_ready", params: {}, detail: "d" }));
     const { home, palette } = setup();
     await act(async () => palette.result.current.press());
-    await waitFor(() => expect(home.result.current.error?.code).toBe("launch.no_account"));
-    expect(palette.result.current.error?.code).toBe("launch.no_account");
+    await waitFor(() => expect(home.result.current.error?.code).toBe("app.not_ready"));
+    expect(palette.result.current.error?.code).toBe("app.not_ready");
 
     vi.mocked(launchInstance).mockResolvedValueOnce("t2");
     await act(async () => home.result.current.press());
@@ -86,6 +87,49 @@ describe("usePlay", () => {
     vi.mocked(launchInstance).mockResolvedValueOnce("t2");
     await act(async () => home.result.current.press());
     expect(launchInstance).toHaveBeenCalledTimes(2);
+  });
+
+  it("turns an auth failure of the launch task into a shared prompt instead of an error", async () => {
+    vi.mocked(launchInstance).mockResolvedValue("t9");
+    const { client, home, palette } = setup();
+    await act(async () => home.result.current.press());
+    act(() => {
+      client.setQueryData(TASKS_KEY, {
+        t9: { ...task("launch", "failed"), id: "t9", error: { code: "auth.login_required", params: { accountId: "a1" }, detail: null } },
+      });
+    });
+    await waitFor(() => expect(palette.result.current.prompt).toEqual({ kind: "loginRequired", accountId: "a1" }));
+    expect(home.result.current.prompt).toEqual({ kind: "loginRequired", accountId: "a1" });
+    expect(home.result.current.error).toBeNull();
+
+    act(() => palette.result.current.dismissPrompt());
+    await waitFor(() => expect(home.result.current.prompt).toBeNull());
+    expect(home.result.current.error).toBeNull();
+  });
+
+  it("turns an auth failure of the call into a prompt", async () => {
+    vi.mocked(launchInstance).mockRejectedValueOnce(
+      new IpcError({ code: "auth.offline", params: { offlineAvailable: true }, detail: null }),
+    );
+    const { home } = setup();
+    await act(async () => home.result.current.press());
+    await waitFor(() => expect(home.result.current.prompt).toEqual({ kind: "offline", offlineAvailable: true }));
+    expect(home.result.current.error).toBeNull();
+  });
+
+  it("playOffline and retry dismiss the prompt and launch again", async () => {
+    vi.mocked(launchInstance).mockRejectedValueOnce(
+      new IpcError({ code: "auth.offline", params: { offlineAvailable: true }, detail: null }),
+    );
+    const { home } = setup();
+    await act(async () => home.result.current.press());
+    await waitFor(() => expect(home.result.current.prompt).not.toBeNull());
+    vi.mocked(launchInstance).mockResolvedValue("t3");
+    await act(async () => home.result.current.playOffline());
+    expect(launchInstance).toHaveBeenLastCalledWith("i1", true);
+    await waitFor(() => expect(home.result.current.prompt).toBeNull());
+    await act(async () => home.result.current.retry());
+    expect(launchInstance).toHaveBeenLastCalledWith("i1", false);
   });
 
   it("clears the last exit of the instance when pressed", async () => {

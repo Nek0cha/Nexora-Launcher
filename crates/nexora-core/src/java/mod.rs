@@ -122,7 +122,14 @@ pub async fn finish_runtime(
     for (path, target) in &prepared.links {
         make_link(path, target)?;
     }
-    let info = probe.probe(&prepared.java).await?;
+    // probe は期待する版を知らないため、ここで補う
+    let info = probe.probe(&prepared.java).await.map_err(|e| match e {
+        CoreError::JavaVerifyFailed { found, .. } => CoreError::JavaVerifyFailed {
+            expected_major: prepared.major,
+            found,
+        },
+        other => other,
+    })?;
     let arch = std::env::consts::ARCH;
     if info.major != prepared.major || !arch_matches(&info.arch, arch) {
         return Err(CoreError::JavaVerifyFailed {

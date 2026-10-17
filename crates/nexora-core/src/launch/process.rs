@@ -167,6 +167,17 @@ impl GameProcesses {
         })
     }
 
+    /// account_id（ハイフンなしの UUID）で実行中のゲームがあるか。
+    pub fn is_account_running(&self, account_id: &str) -> Result<bool, CoreError> {
+        self.db.with_conn(|conn| {
+            Ok(conn.query_row(
+                "SELECT count(*) FROM running_sessions WHERE account_id = ?1",
+                [account_id],
+                |r| r.get::<_, i64>(0),
+            )? > 0)
+        })
+    }
+
     /// 起動して記録する。出力の読み取りと終了の処理は、裏で続ける。
     pub async fn spawn(&self, spec: SpawnSpec) -> Result<RunningSession, CoreError> {
         if let Some(parent) = spec.log_path.parent() {
@@ -267,8 +278,14 @@ impl GameProcesses {
         }
     }
 
-    /// プレイ時間を足し、記録を消して終了を知らせる。pid が違う行（新しい起動）は消さない。
+    /// プレイ時間を足し、記録と argfile を消して終了を知らせる。pid が違う行（新しい起動）は消さない。
     fn finish(&self, instance_id: &str, pid: u32, play_ms: i64, exit_code: Option<i32>) {
+        let argfile = self.paths.argfile(instance_id);
+        match std::fs::remove_file(&argfile) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => tracing::warn!(instance_id, %err, "failed to remove the argfile"),
+        }
         if let Err(err) = instance::add_play_time(&self.db, instance_id, play_ms) {
             tracing::warn!(instance_id, code = err.code(), "failed to add play time");
         }

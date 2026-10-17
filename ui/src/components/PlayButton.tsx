@@ -18,6 +18,8 @@ import {
   type Phase,
   type PlayState,
 } from "../features/play/playState";
+import { PlayLoginDialog, usePlayDialogHost } from "../features/login/LoginDialog";
+import { loginPrompt } from "../features/login/loginState";
 import { useLastExits, useRunning } from "../features/play/useGameSync";
 import { usePlay } from "../features/play/usePlay";
 import { useTasks } from "../features/tasks/useTasks";
@@ -80,7 +82,11 @@ export function PlayButton({ instance }: { instance: Instance }) {
   const lastExit = useLastExits()[instance.id];
   const state = playStateFrom({ instance, task: snapshot, running, runningLoaded: sessions !== undefined, lastExit });
   const now = useNow(state.kind === "playing" ? Number.POSITIVE_INFINITY : 0);
-  const { press, starting, error: startError } = usePlay(instance.id);
+  const play = usePlay(instance.id);
+  const { press, starting, error: startError } = play;
+  // ログインのダイアログはここに置く（ホームが出ている間は、コマンドパレットからの起動の分も）
+  usePlayDialogHost(instance.id);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const cancel = useMutation({ mutationFn: (taskId: string) => cancelTask(taskId) });
   // isPending は次の描画まで反映されないため、続けて押された分は印で止める
   const cancelInFlight = useRef(false);
@@ -112,7 +118,8 @@ export function PlayButton({ instance }: { instance: Instance }) {
     ? { error: shownStartError }
     : cancelError
       ? { error: cancelError }
-      : view.kind === "failed"
+      // ログインのダイアログで扱う失敗は、ボタンのそばには出さない
+      : view.kind === "failed" && !loginPrompt(view.error)
         ? { error: view.error }
         : view.kind === "crashed"
           ? { error: crashPayload(view.exitCode) }
@@ -160,6 +167,7 @@ export function PlayButton({ instance }: { instance: Instance }) {
       {/* 失敗の説明はボタンの上に出す。画面の下端に揃えているため、下に足すとボタンが押し上げられ、再試行しようとした位置からずれる */}
       {failure && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
       <Button
+        ref={buttonRef}
         onPress={onPress}
         isPending={starting}
         aria-disabled={inert || undefined}
@@ -219,6 +227,12 @@ export function PlayButton({ instance }: { instance: Instance }) {
       <div aria-live="polite" className="sr-only">
         {message}
       </div>
+      <PlayLoginDialog
+        instanceId={instance.id}
+        play={play}
+        // 閉じたらフォーカスをプレイボタンに戻す。閉じる動きに入ってフォーカスの閉じ込めが解けてから移す
+        onClosed={() => window.setTimeout(() => buttonRef.current?.focus(), 0)}
+      />
     </div>
   );
 }

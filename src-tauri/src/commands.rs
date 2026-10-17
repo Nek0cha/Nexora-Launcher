@@ -1,6 +1,12 @@
 //! UI から呼ぶ command。引数を受け取り、core を呼び、結果を返すだけにする。
 
+use std::sync::Arc;
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use nexora_core::app_info::{AppInfo, StartupStatus};
+use nexora_core::auth::login::LoginMethod;
+use nexora_core::auth::service::AccountList;
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::Instance;
 use nexora_core::launch::process::RunningSession;
@@ -10,6 +16,7 @@ use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::task::TaskSnapshot;
 use tauri::{AppHandle, Manager, State};
 
+use crate::events::{TauriLoginNotifier, TauriUrlOpener};
 use crate::state::AppState;
 
 type CmdResult<T> = Result<T, ErrorPayload>;
@@ -142,11 +149,15 @@ pub async fn create_instance(
 }
 
 #[tauri::command]
-pub async fn launch_instance(state: State<'_, AppState>, instance_id: String) -> CmdResult<String> {
+pub async fn launch_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    offline: bool,
+) -> CmdResult<String> {
     let services = state.services()?;
     services
         .launcher
-        .launch_instance(&instance_id)
+        .launch_instance(&instance_id, offline)
         .map_err(ErrorPayload::from)
 }
 
@@ -154,6 +165,99 @@ pub async fn launch_instance(state: State<'_, AppState>, instance_id: String) ->
 pub async fn list_running(state: State<'_, AppState>) -> CmdResult<Vec<RunningSession>> {
     let services = state.services()?;
     blocking(move || services.launcher.list_running()).await
+}
+
+/// UI からのアカウント ID（ハイフンの有無は問わない）。読めなければ見つからないものとして扱う。
+fn parse_account_id(raw: &str) -> Result<uuid::Uuid, ErrorPayload> {
+    uuid::Uuid::parse_str(raw).map_err(|_| {
+        CoreError::AccountNotFound {
+            account_id: raw.chars().take(64).collect(),
+        }
+        .to_payload()
+    })
+}
+
+#[tauri::command]
+pub async fn list_accounts(state: State<'_, AppState>) -> CmdResult<AccountList> {
+    let services = state.services()?;
+    blocking(move || services.launcher.auth().list()).await
+}
+
+#[tauri::command]
+pub async fn set_active_account(state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    blocking(move || services.launcher.auth().set_active(id)).await
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn set_dev_offline_active(state: State<'_, AppState>, active: bool) -> CmdResult<()> {
+    let services = state.services()?;
+    let db = services.db.clone();
+    blocking(move || nexora_core::launch::session::set_dev_offline_active(&db, active, now_ms()))
+        .await?;
+    services.launcher.auth().notify_changed();
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+pub fn set_dev_offline_active(_active: bool) -> CmdResult<()> {
+    Err(ErrorPayload::new("app.dev_only"))
+}
+
+#[tauri::command]
+pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .remove_account(id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// ログインのタスクを始め、その ID を返す。進捗は `login://progress` で届く。
+#[tauri::command]
+pub async fn begin_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    method: LoginMethod,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    Ok(services.launcher.begin_login(
+        method,
+        Arc::new(TauriUrlOpener::new(app.clone())),
+        Arc::new(TauriLoginNotifier::new(app)),
+    ))
+}
+
+/// スキンの画像全体を `data:image/png;base64,...` で返す。顔の切り出しは UI が行う。
+#[tauri::command]
+pub async fn get_skin(state: State<'_, AppState>, account_id: String) -> CmdResult<Option<String>> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    let Some(path) = services
+        .launcher
+        .auth()
+        .skin_path(id)
+        .await
+        .map_err(ErrorPayload::from)?
+    else {
+        return Ok(None);
+    };
+    blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|source| CoreError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        Ok(Some(format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(bytes)
+        )))
+    })
+    .await
 }
 
 #[cfg(debug_assertions)]
