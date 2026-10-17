@@ -57,9 +57,9 @@ macOS と Linux では次のように指定します。
 NEXORA_DATA_DIR="$HOME/日本語のフォルダ/nexora" pnpm dev
 ```
 
-### Microsoft サインインのクライアント ID
+### Microsoft ログインのクライアント ID
 
-Microsoft のアカウントでサインインするには、ビルド時に環境変数 `NEXORA_MS_CLIENT_ID` でクライアント ID を指定します。Windows の PowerShell では次のように指定します。
+Microsoft のアカウントでログインするには、ビルド時に環境変数 `NEXORA_MS_CLIENT_ID` でクライアント ID を指定します。Windows の PowerShell では次のように指定します。
 
 ```powershell
 $env:NEXORA_MS_CLIENT_ID = "<クライアント ID>"; pnpm dev
@@ -71,7 +71,7 @@ macOS と Linux では次のように指定します。
 NEXORA_MS_CLIENT_ID="<クライアント ID>" pnpm dev
 ```
 
-値が空の場合は未設定として扱います。指定されていないビルドでは、サインインのボタンを押すと「このビルドには Microsoft のクライアント ID が含まれていないため、サインインできません」（`auth.no_client_id`）と表示されます。このときも、開発用のオフラインアカウントでは起動できます。
+値が空の場合は未設定として扱います。指定されていないビルドでは、「Microsoft でログイン」のボタンを押すと「このビルドには Microsoft のクライアント ID が含まれていないため、ログインできません」（`auth.no_client_id`）と表示されます。このときも、開発用のオフラインアカウントでは起動できます。
 
 フォークして配布する場合は、ご自身でクライアント ID を取得し、Minecraft API の利用について審査（aka.ms/mce-reviewappid）を受ける必要があります。
 
