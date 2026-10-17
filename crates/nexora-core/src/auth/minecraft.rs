@@ -153,8 +153,14 @@ fn trusted_url(u: &reqwest::Url) -> bool {
     u.scheme() == "https" && u.host_str() == Some(SKIN_HOST) && u.port().is_none()
 }
 
-fn trusted_skin_url(url: &str) -> bool {
-    reqwest::Url::parse(url).is_ok_and(|u| trusted_url(&u))
+/// プロフィールのスキンの URL を、取得に使う https の URL にする。
+/// Minecraft Services は `http://textures.minecraft.net/...` を返すため、http は https に置き換える。
+fn skin_url_from_profile(url: &str) -> Option<String> {
+    let mut u = reqwest::Url::parse(url).ok()?;
+    if u.scheme() == "http" && u.port().is_none() {
+        u.set_scheme("https").ok()?;
+    }
+    trusted_url(&u).then(|| u.to_string())
 }
 
 /// プロフィールを読む。プロフィールがなければ NoProfile。
@@ -177,7 +183,7 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
         .into_iter()
         .find(|s| s.state.as_deref() == Some("ACTIVE"))
         .and_then(|s| s.url)
-        .filter(|u| trusted_skin_url(u));
+        .and_then(|u| skin_url_from_profile(&u));
     Ok(Profile {
         id,
         name: b.name,
@@ -283,16 +289,33 @@ mod tests {
     }
 
     #[test]
-    fn only_https_textures_host_without_a_port_is_trusted() {
-        assert!(trusted_skin_url("https://textures.minecraft.net/texture/a"));
-        assert!(trusted_skin_url(
-            "https://textures.minecraft.net:443/texture/a"
-        ));
-        assert!(!trusted_skin_url(
-            "https://textures.minecraft.net:8443/texture/a"
-        ));
-        assert!(!trusted_skin_url("http://textures.minecraft.net/texture/a"));
-        assert!(!trusted_skin_url("https://evil.example/texture/a"));
+    fn only_textures_host_without_a_port_is_trusted() {
+        let https = Some("https://textures.minecraft.net/texture/a".to_string());
+        assert_eq!(
+            skin_url_from_profile("https://textures.minecraft.net/texture/a"),
+            https
+        );
+        assert_eq!(
+            skin_url_from_profile("https://textures.minecraft.net:443/texture/a"),
+            https
+        );
+        assert_eq!(
+            skin_url_from_profile("http://textures.minecraft.net/texture/a"),
+            https
+        );
+        assert_eq!(
+            skin_url_from_profile("https://textures.minecraft.net:8443/texture/a"),
+            None
+        );
+        assert_eq!(
+            skin_url_from_profile("http://textures.minecraft.net:8080/texture/a"),
+            None
+        );
+        assert_eq!(skin_url_from_profile("http://evil.example/texture/a"), None);
+        assert_eq!(
+            skin_url_from_profile("https://evil.example/texture/a"),
+            None
+        );
     }
 
     #[tokio::test]
