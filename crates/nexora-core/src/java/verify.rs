@@ -38,6 +38,21 @@ pub fn parse_properties(output: &str) -> Option<JavaInfo> {
     })
 }
 
+/// 読めなかった出力の要約。終了コードと、Java が出した最初の行（200 文字まで）を返す。
+pub fn describe_unreadable(exit_code: Option<i32>, output: &str) -> String {
+    let status = match exit_code {
+        Some(code) => format!("exit code {code}"),
+        None => "terminated".to_string(),
+    };
+    let line = output
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(|l| l.chars().take(200).collect::<String>())
+        .unwrap_or_else(|| "no output".to_string());
+    format!("{status}: {line}")
+}
+
 fn normalize(arch: &str) -> &str {
     match arch {
         "amd64" | "x86_64" => "x86_64",
@@ -83,7 +98,7 @@ impl JavaProbe for SystemProbe {
             let text = String::from_utf8_lossy(&output.stderr);
             parse_properties(&text).ok_or_else(|| CoreError::JavaVerifyFailed {
                 expected_major: 0,
-                found: "unreadable java output".into(),
+                found: describe_unreadable(output.status.code(), &text),
             })
         })
     }
@@ -112,6 +127,22 @@ mod tests {
             })
         );
         assert_eq!(parse_properties("garbage"), None);
+    }
+
+    #[test]
+    fn describes_unreadable_output() {
+        let out = "\r\nError: could not find java.dll\r\nError: Could not find Java SE Runtime Environment.\r\n";
+        assert_eq!(
+            describe_unreadable(Some(2), out),
+            "exit code 2: Error: could not find java.dll"
+        );
+        assert_eq!(describe_unreadable(Some(1), ""), "exit code 1: no output");
+        assert_eq!(describe_unreadable(None, "x"), "terminated: x");
+        let long = "e".repeat(500);
+        assert_eq!(
+            describe_unreadable(Some(1), &long).chars().count(),
+            13 + 200
+        );
     }
 
     #[test]
