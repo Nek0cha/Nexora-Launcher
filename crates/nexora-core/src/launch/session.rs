@@ -137,7 +137,8 @@ mod dev {
 #[cfg(debug_assertions)]
 pub use dev::*;
 
-#[cfg(test)]
+// 開発用のオフラインアカウントの関数は開発ビルドにしかないため、テストも合わせる。
+#[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
     use crate::db::Db;

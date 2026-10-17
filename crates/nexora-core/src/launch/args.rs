@@ -218,10 +218,29 @@ fn command_length_of(args: &[String]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::launch::session::offline_session;
+    use crate::launch::session::{LaunchSession, UserType};
     use crate::meta::mojang::rules::OsName;
     use secrecy::SecretString;
     use std::path::PathBuf;
+
+    /// 開発用の offline_session("Player") と同じ値。
+    /// `session::offline_session` は開発ビルドにしかないため、リリースのテストでも使えるよう固定で作る。
+    fn player_session() -> LaunchSession {
+        LaunchSession {
+            uuid: uuid::Uuid::parse_str("a01e3843e5213998958af459800e4d11").unwrap(),
+            username: "Player".to_string(),
+            access_token: SecretString::from("0".to_string()),
+            xuid: None,
+            user_type: UserType::Offline,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn player_session_matches_the_dev_offline_session() {
+        let dev = crate::launch::session::offline_session("Player");
+        assert_eq!(player_session().uuid, dev.uuid);
+    }
 
     fn fixture(name: &str) -> VersionJson {
         let path = format!(
@@ -232,7 +251,7 @@ mod tests {
     }
 
     fn args_for(name: &str, os: OsName) -> Vec<String> {
-        let LaunchArgs { mut jvm, game } = launch_args_for(name, os, &offline_session("Player"));
+        let LaunchArgs { mut jvm, game } = launch_args_for(name, os, &player_session());
         jvm.extend(game);
         jvm
     }
@@ -330,13 +349,13 @@ mod tests {
 
     #[test]
     fn main_class_ends_the_jvm_part() {
-        let args = launch_args_for("1.21.5", OsName::Windows, &offline_session("Player"));
+        let args = launch_args_for("1.21.5", OsName::Windows, &player_session());
         assert_eq!(
             args.jvm.last().map(String::as_str),
             Some("net.minecraft.client.main.Main")
         );
         assert_eq!(args.game.first().map(String::as_str), Some("--username"));
-        let legacy = launch_args_for("1.8.9", OsName::Windows, &offline_session("Player"));
+        let legacy = launch_args_for("1.8.9", OsName::Windows, &player_session());
         assert_eq!(
             legacy.jvm.last().map(String::as_str),
             Some("net.minecraft.client.main.Main")
@@ -403,7 +422,7 @@ mod tests {
 
     #[test]
     fn argfile_never_contains_the_access_token() {
-        let mut session = offline_session("Player");
+        let mut session = player_session();
         session.access_token = SecretString::from("secret-token-value".to_string());
         let args = launch_args_for("1.21.5", OsName::Windows, &session);
         let limit = argfile_only_limit(&args);
@@ -419,7 +438,7 @@ mod tests {
 
     #[test]
     fn argfile_ends_with_the_main_class() {
-        let args = launch_args_for("1.21.5", OsName::Windows, &offline_session("Player"));
+        let args = launch_args_for("1.21.5", OsName::Windows, &player_session());
         let game = args.game.clone();
         let limit = argfile_only_limit(&args);
         let out = fit_command(Path::new("java"), args, 21, limit, Path::new("a.args")).unwrap();
