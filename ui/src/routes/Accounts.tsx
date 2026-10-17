@@ -355,6 +355,7 @@ function RemoveDialog({
   onConfirm: (id: string) => void;
 }) {
   const { t } = useTranslation();
+  const bodyId = useId();
   return (
     <ModalOverlay
       isOpen={isOpen}
@@ -365,11 +366,13 @@ function RemoveDialog({
       className={overlayClass}
     >
       <Modal className={modalClass}>
-        <Dialog role="alertdialog" className="flex flex-col gap-4 p-5 outline-hidden">
+        <Dialog role="alertdialog" aria-describedby={bodyId} className="flex flex-col gap-4 p-5 outline-hidden">
           <Heading slot="title" className="font-display text-lg font-semibold text-text-strong">
             {t("accounts.removeTitle", { name: account?.username ?? "" })}
           </Heading>
-          <p className="text-sm text-text">{t("accounts.removeBody")}</p>
+          <p id={bodyId} className="text-sm text-text">
+            {t("accounts.removeBody")}
+          </p>
           <div className="flex justify-end gap-2 pt-1">
             <Button autoFocus onPress={onCancel} isDisabled={isPending} className={secondaryButton}>
               {t("accounts.cancel")}

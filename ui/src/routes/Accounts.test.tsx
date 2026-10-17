@@ -131,6 +131,18 @@ describe("Accounts", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
+  it("the remove confirmation is described by its body text", async () => {
+    mount({ accounts: [account("a1", "Alex", { isActive: true })], devOffline: null });
+    await press(within(await row("Alex")).getByRole("button", { name: "Remove" }));
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: "Remove Alex?",
+        description:
+          "This removes the sign-in information from this computer. Tokens that Microsoft has already issued are not revoked.",
+      }),
+    ).toBeTruthy();
+  });
+
   it("cancel in the remove confirmation keeps the account", async () => {
     mount({ accounts: [account("a1", "Alex", { isActive: true })], devOffline: null });
     await press(within(await row("Alex")).getByRole("button", { name: "Remove" }));
