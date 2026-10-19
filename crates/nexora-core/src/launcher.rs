@@ -1,5 +1,6 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,11 +15,12 @@ use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
 use crate::install::{InstallEnv, Urls, install, kib, now_ms};
 use crate::instance::lock::InstanceLocks;
-use crate::instance::{self, Instance, InstanceState};
+use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
 use crate::java::verify::{JavaProbe, SystemProbe};
 use crate::java::{find_registered, finish_runtime, prepare_runtime, requirement};
 use crate::launch::argfile;
 use crate::launch::args::{ArgInputs, CommandLine, WINDOWS_COMMAND_LIMIT, build_args, fit_command};
+use crate::launch::jvm_args;
 use crate::launch::natives::extract_natives;
 use crate::launch::process::{GameNotifier, GameProcesses, RunningSession, SpawnSpec};
 use crate::meta::mojang::manifest::{
@@ -33,8 +35,8 @@ use crate::task::{TaskHandle, TaskManager};
 
 pub const INSTALL_KIND: &str = "install";
 pub const LAUNCH_KIND: &str = "launch";
-/// フェーズ 2 のメモリの割り当て（自動設定はフェーズ 9）。
-const MEMORY_MB: u32 = 2048;
+/// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
+const AUTO_MEMORY_MB: u32 = 2048;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +61,30 @@ fn already_running(instance_id: &str) -> CoreError {
     CoreError::AlreadyRunning {
         instance_id: instance_id.to_string(),
     }
+}
+
+/// インスタンスの設定による -Xmx の値（MB）。
+fn memory_mb(inst: &Instance) -> u32 {
+    match (inst.memory_mode, inst.memory_mb) {
+        (MemoryMode::Manual, Some(mb)) => mb,
+        // 手動で値がないのは保存時の検証で起きないが、起きても自動と同じ値で起動する
+        (MemoryMode::Manual, None) | (MemoryMode::Auto, _) => AUTO_MEMORY_MB,
+    }
+}
+
+/// 手動の Java の実行ファイル。自動なら None。存在しなければ `JavaPathMissing`。
+/// Mojang の要求する major と合うかは確かめない（利用者の責任とする）。
+fn manual_java(inst: &Instance) -> Result<Option<PathBuf>, CoreError> {
+    if inst.java_mode == JavaMode::Auto {
+        return Ok(None);
+    }
+    let path = inst.java_path.as_deref().unwrap_or("").trim();
+    if path.is_empty() || !Path::new(path).is_file() {
+        return Err(CoreError::JavaPathMissing {
+            path: path.to_string(),
+        });
+    }
+    Ok(Some(PathBuf::from(path)))
 }
 
 impl Launcher {
@@ -228,6 +254,17 @@ impl Launcher {
         if self.processes.is_running(id)? {
             return Err(already_running(id));
         }
+        let env = &self.env;
+        let inst = instance::get(&env.db, id)?;
+        // 手動の Java がなければ、ログインやダウンロードより前に知らせる
+        let manual_java = manual_java(&inst)?;
+        let (extra_jvm_args, had_xmx) = jvm_args::strip_memory(jvm_args::split(&inst.jvm_args));
+        if had_xmx {
+            tracing::info!(
+                instance_id = id,
+                "ignoring -Xmx in the JVM arguments; the memory setting is used"
+            );
+        }
         // ダウンロードより前にセッションを用意する（ログインし直しなどを先に知らせるため）
         let session = if offline {
             self.auth.offline_session()?
@@ -235,9 +272,7 @@ impl Launcher {
             // 途中で打ち切ると、新しい refresh token を保存する前に捨てるおそれがあるため、最後まで待つ
             self.auth.session_for_launch().await?
         };
-        let env = &self.env;
         let token = handle.token();
-        let inst = instance::get(&env.db, id)?;
         // 固定済みのメタデータだけで解決する。欠けていればそのときだけ取得する
         let version = match load_pinned_version(&env.paths, &inst.mc_version)? {
             Some(v) => v,
@@ -264,7 +299,11 @@ impl Launcher {
         .await?;
 
         let (component, major) = requirement(&version);
-        let java = match find_registered(&env.db, &component)? {
+        let chosen = match manual_java {
+            Some(path) => Some(path),
+            None => find_registered(&env.db, &component)?,
+        };
+        let java = match chosen {
             Some(path) => path,
             None => {
                 let runtime = prepare_runtime(
@@ -311,7 +350,8 @@ impl Launcher {
             library_dir: &env.paths.libraries_dir(),
             classpath: &game.classpath,
             logging_argument: game.logging.as_ref().map(|l| l.argument.as_str()),
-            memory_mb: MEMORY_MB,
+            memory_mb: memory_mb(&inst),
+            extra_jvm_args: &extra_jvm_args,
             launcher_version: env!("CARGO_PKG_VERSION"),
         });
         let argfile = env.paths.argfile(id);

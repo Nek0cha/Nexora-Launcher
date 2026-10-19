@@ -13,7 +13,7 @@ use nexora_core::auth::store::{MemoryStore, SecretStore};
 use nexora_core::db::Db;
 use nexora_core::error::ParamValue;
 use nexora_core::install::{Urls, now_ms};
-use nexora_core::instance::{self, InstanceState};
+use nexora_core::instance::{self, InstanceSettings, InstanceState, JavaMode, MemoryMode};
 use nexora_core::launcher::{INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::paths::AppPaths;
 use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
@@ -22,7 +22,7 @@ use uuid::Uuid;
 use wiremock::MockServer;
 
 use common::{
-    FakeMojang, FixedProbe, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, REFRESH_2,
+    FAKE_JAVA, FakeMojang, FixedProbe, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, REFRESH_2,
     RecordingGame, XUID, auth_urls, hits_on, http, mount_chain, mount_refresh,
 };
 
@@ -563,4 +563,153 @@ async fn login_after_a_cancelled_login_starts_a_new_task() {
     assert_ne!(first, second);
     h.tasks.cancel(&second).unwrap();
     wait(&h.tasks, &second).await;
+}
+
+// ---- インスタンスの設定の起動への反映（フェーズ 4） ----
+
+/// 引数をそのまま出力する偽の Java を作る。Windows ではバッチファイルにする。
+fn echo_java(dir: &std::path::Path) -> std::path::PathBuf {
+    if cfg!(windows) {
+        let path = dir.join("fake-java.bat");
+        std::fs::write(
+            &path,
+            b"@echo fake game %*
+",
+        )
+        .unwrap();
+        path
+    } else {
+        let path = dir.join("fake-java");
+        std::fs::write(&path, FAKE_JAVA).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path
+    }
+}
+
+fn settings(
+    memory_mode: MemoryMode,
+    memory_mb: Option<u32>,
+    java_path: Option<String>,
+    jvm_args: &str,
+) -> InstanceSettings {
+    InstanceSettings {
+        name: "x".into(),
+        memory_mode,
+        memory_mb,
+        java_mode: if java_path.is_some() {
+            JavaMode::Manual
+        } else {
+            JavaMode::Auto
+        },
+        java_path,
+        jvm_args: jvm_args.into(),
+    }
+}
+
+/// 手動の Java（引数を出力するもの）で起動し、ゲームの出力を返す。
+async fn launch_with(memory_mode: MemoryMode, memory_mb: Option<u32>, jvm_args: &str) -> String {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let java = echo_java(h._temp.path());
+    instance::update_settings(
+        h.launcher.db(),
+        &id,
+        &settings(
+            memory_mode,
+            memory_mb,
+            Some(java.display().to_string()),
+            jvm_args,
+        ),
+    )
+    .unwrap();
+    let task = h.launcher.launch_instance(&id, false).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    h.game.wait_exit(&id).await;
+    h.game.messages().join(
+        "
+",
+    )
+}
+
+fn count(haystack: &str, needle: &str) -> usize {
+    haystack.matches(needle).count()
+}
+
+#[tokio::test]
+async fn manual_memory_is_used_for_xmx() {
+    let messages = launch_with(MemoryMode::Manual, Some(4096), "").await;
+    assert!(messages.contains("fake game"), "{messages}");
+    assert!(messages.contains("-Xmx4096M"), "{messages}");
+    assert_eq!(count(&messages, "-Xmx"), 1, "{messages}");
+}
+
+#[tokio::test]
+async fn auto_memory_keeps_the_default() {
+    let messages = launch_with(MemoryMode::Auto, None, "").await;
+    assert!(messages.contains("-Xmx2048M"), "{messages}");
+    assert_eq!(count(&messages, "-Xmx"), 1, "{messages}");
+}
+
+#[tokio::test]
+async fn jvm_args_are_passed_and_their_xmx_is_ignored() {
+    let messages = launch_with(
+        MemoryMode::Manual,
+        Some(3072),
+        "-Xmx8G -XX:+UseG1GC -Dnexora.test=ok",
+    )
+    .await;
+    assert!(messages.contains("-XX:+UseG1GC"), "{messages}");
+    assert!(messages.contains("-Dnexora.test=ok"), "{messages}");
+    assert!(messages.contains("-Xmx3072M"), "{messages}");
+    assert!(!messages.contains("-Xmx8G"), "{messages}");
+    assert_eq!(count(&messages, "-Xmx"), 1, "{messages}");
+}
+
+#[tokio::test]
+async fn unclosed_quote_or_empty_quotes_in_jvm_args_still_launch() {
+    for jvm_args in ["-Dnexora.test=\"unclosed", "\"\"", "\""] {
+        let messages = launch_with(MemoryMode::Auto, None, jvm_args).await;
+        assert!(messages.contains("fake game"), "{jvm_args:?}: {messages}");
+        assert!(
+            messages.contains("net.minecraft.client.main.Main"),
+            "{jvm_args:?}: {messages}"
+        );
+        assert_eq!(count(&messages, "-Xmx"), 1, "{jvm_args:?}: {messages}");
+    }
+}
+
+#[tokio::test]
+async fn missing_manual_java_fails_before_downloading() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let missing = h
+        ._temp
+        .path()
+        .join("no-such-java.exe")
+        .display()
+        .to_string();
+    instance::update_settings(
+        h.launcher.db(),
+        &id,
+        &settings(MemoryMode::Auto, None, Some(missing.clone()), ""),
+    )
+    .unwrap();
+    // 起動で取り直すファイルを消しておく（失敗が取得より前なら、取得の要求は増えない）
+    std::fs::remove_dir_all(AppPaths::from_root(h._temp.path()).libraries_dir()).unwrap();
+    let before = fake.server.received_requests().await.unwrap().len();
+    let task = h.launcher.launch_instance(&id, false).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    let error = snap.error.unwrap();
+    assert_eq!(error.code, "java.path_missing");
+    assert_eq!(error.params.get("path"), Some(&ParamValue::Str(missing)));
+    assert_eq!(fake.server.received_requests().await.unwrap().len(), before);
+    assert!(h.game.started.lock().unwrap().is_empty());
 }

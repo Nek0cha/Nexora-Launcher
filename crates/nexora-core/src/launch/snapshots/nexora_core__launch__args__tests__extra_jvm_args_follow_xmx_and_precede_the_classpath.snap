@@ -1,0 +1,20 @@
+---
+source: crates/nexora-core/src/launch/args.rs
+expression: args.jvm
+---
+[
+  "-Xmx2048M",
+  "-XX:+UseG1GC",
+  "-Dnexora.test=a b",
+  "-Dlog4j.configurationFile=/assets/log_configs/client.xml",
+  "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump",
+  "-Djava.library.path=/natives",
+  "-Djna.tmpdir=/natives",
+  "-Dorg.lwjgl.system.SharedLibraryExtractPath=/natives",
+  "-Dio.netty.native.workdir=/natives",
+  "-Dminecraft.launcher.brand=Nexora",
+  "-Dminecraft.launcher.version=0.1.0",
+  "-cp",
+  "/lib/a.jar;/v/client.jar",
+  "net.minecraft.client.main.Main"
+]

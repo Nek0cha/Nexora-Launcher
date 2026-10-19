@@ -34,7 +34,8 @@
   },
   "java": {
     "no_compatible_runtime": "この PC で使える Java（{{component}}）がありません",
-    "verify_failed": "導入した Java を確認できませんでした"
+    "verify_failed": "導入した Java を確認できませんでした",
+    "path_missing": "このインスタンスに設定した Java が見つかりません：{{path}}"
   },
   "launch": {
     "already_running": "このインスタンスはすでに起動しています",

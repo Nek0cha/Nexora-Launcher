@@ -41,6 +41,8 @@ pub enum CoreError {
     NoCompatibleRuntime { component: String, platform: String },
     #[error("installed Java did not match: expected major {expected_major}, found {found}")]
     JavaVerifyFailed { expected_major: u32, found: String },
+    #[error("the Java executable set for the instance was not found: {path}")]
+    JavaPathMissing { path: String },
     #[error("instance {instance_id} is already running")]
     AlreadyRunning { instance_id: String },
     #[error("command line is too long ({length} characters)")]
@@ -104,6 +106,7 @@ impl CoreError {
             CoreError::UnsupportedProfile { .. } => "install.unsupported_profile",
             CoreError::NoCompatibleRuntime { .. } => "java.no_compatible_runtime",
             CoreError::JavaVerifyFailed { .. } => "java.verify_failed",
+            CoreError::JavaPathMissing { .. } => "java.path_missing",
             CoreError::AlreadyRunning { .. } => "launch.already_running",
             CoreError::CommandTooLong { .. } => "launch.command_too_long",
             CoreError::SpawnFailed { .. } => "launch.spawn_failed",
@@ -168,6 +171,9 @@ impl CoreError {
                     ParamValue::Num(f64::from(*expected_major)),
                 );
                 params.insert("found".into(), ParamValue::Str(found.clone()));
+            }
+            CoreError::JavaPathMissing { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
             }
             CoreError::InvalidInstanceSetting { field } => {
                 params.insert("field".into(), ParamValue::Str(field.clone()));
@@ -466,6 +472,18 @@ mod tests {
             .to_payload()
             .params
             .is_empty()
+        );
+    }
+
+    #[test]
+    fn phase4_java_path_missing() {
+        let err = CoreError::JavaPathMissing {
+            path: "C:/jdk/bin/javaw.exe".into(),
+        };
+        assert_eq!(err.code(), "java.path_missing");
+        assert_eq!(
+            err.to_payload().params.get("path"),
+            Some(&ParamValue::Str("C:/jdk/bin/javaw.exe".into()))
         );
     }
 }

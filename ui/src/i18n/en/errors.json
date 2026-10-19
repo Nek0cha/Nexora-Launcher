@@ -34,7 +34,8 @@
   },
   "java": {
     "no_compatible_runtime": "No Java ({{component}}) is available for this computer",
-    "verify_failed": "Couldn't verify the installed Java"
+    "verify_failed": "Couldn't verify the installed Java",
+    "path_missing": "The Java set for this instance was not found: {{path}}"
   },
   "launch": {
     "already_running": "This instance is already running",
