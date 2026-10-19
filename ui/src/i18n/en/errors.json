@@ -67,7 +67,8 @@
     "account_in_use": "This account can't be removed while a game is running"
   },
   "instance": {
-    "not_found": "Instance not found"
+    "not_found": "Instance not found",
+    "invalid_setting": "A setting value is not valid"
   },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"

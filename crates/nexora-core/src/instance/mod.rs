@@ -1,4 +1,4 @@
-//! インスタンスの作成と取得。
+//! インスタンスの作成、取得、設定の更新。
 
 pub mod dir_name;
 pub mod lock;
@@ -6,7 +6,7 @@ pub mod lock;
 use std::path::PathBuf;
 
 use rusqlite::{OptionalExtension, Row, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::db::Db;
@@ -40,6 +40,60 @@ impl InstanceState {
     }
 }
 
+/// メモリ割り当ての方式。DB には `auto`、`manual` で保存する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemoryMode {
+    Auto,
+    Manual,
+}
+
+impl MemoryMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            MemoryMode::Auto => "auto",
+            MemoryMode::Manual => "manual",
+        }
+    }
+
+    fn parse(s: &str) -> Self {
+        match s {
+            "manual" => MemoryMode::Manual,
+            _ => MemoryMode::Auto,
+        }
+    }
+}
+
+/// Java の選び方。DB には `auto`、`manual` で保存する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum JavaMode {
+    Auto,
+    Manual,
+}
+
+impl JavaMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            JavaMode::Auto => "auto",
+            JavaMode::Manual => "manual",
+        }
+    }
+
+    fn parse(s: &str) -> Self {
+        match s {
+            "manual" => JavaMode::Manual,
+            _ => JavaMode::Auto,
+        }
+    }
+}
+
+/// 手動で指定できるメモリの下限と上限（MB）。
+pub const MEMORY_MIN_MB: u32 = 512;
+pub const MEMORY_MAX_MB: u32 = 65536;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -52,13 +106,33 @@ pub struct Instance {
     pub created_at: i64,
     pub last_played_at: Option<i64>,
     pub play_time_ms: i64,
+    pub memory_mode: MemoryMode,
+    pub memory_mb: Option<u32>,
+    pub java_mode: JavaMode,
+    pub java_path: Option<String>,
+    pub jvm_args: String,
 }
 
-const COLUMNS: &str =
-    "id, name, dir_name, mc_version, state, created_at, last_played_at, play_time_ms";
+/// 設定画面から更新できる項目。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstanceSettings {
+    pub name: String,
+    pub memory_mode: MemoryMode,
+    pub memory_mb: Option<u32>,
+    pub java_mode: JavaMode,
+    pub java_path: Option<String>,
+    pub jvm_args: String,
+}
+
+const COLUMNS: &str = "id, name, dir_name, mc_version, state, created_at, last_played_at,      play_time_ms, memory_mode, memory_mb, java_mode, java_path, jvm_args";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
     let state: String = row.get(4)?;
+    let memory_mode: String = row.get(8)?;
+    let java_mode: String = row.get(10)?;
+    let jvm_args: Option<String> = row.get(12)?;
     Ok(Instance {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -68,6 +142,11 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
         created_at: row.get(5)?,
         last_played_at: row.get(6)?,
         play_time_ms: row.get(7)?,
+        memory_mode: MemoryMode::parse(&memory_mode),
+        memory_mb: row.get(9)?,
+        java_mode: JavaMode::parse(&java_mode),
+        java_path: row.get(11)?,
+        jvm_args: jvm_args.unwrap_or_default(),
     })
 }
 
@@ -113,6 +192,11 @@ pub fn create(
             created_at: now_ms,
             last_played_at: None,
             play_time_ms: 0,
+            memory_mode: MemoryMode::Auto,
+            memory_mb: None,
+            java_mode: JavaMode::Auto,
+            java_path: None,
+            jvm_args: String::new(),
         };
         conn.execute(
             "INSERT INTO instances (id, name, dir_name, mc_version, state, created_at)
@@ -202,6 +286,59 @@ pub fn add_play_time(db: &Db, id: &str, ms: i64) -> Result<(), CoreError> {
     )
 }
 
+fn invalid(field: &str) -> CoreError {
+    CoreError::InvalidInstanceSetting {
+        field: field.to_string(),
+    }
+}
+
+/// 設定を検証して保存する。名前を変えてもフォルダ名は変えない。
+/// 自動のときは手動用の値（メモリ量、Java のパス）を捨てる。
+pub fn update_settings(
+    db: &Db,
+    id: &str,
+    settings: &InstanceSettings,
+) -> Result<Instance, CoreError> {
+    let name = settings.name.trim();
+    if name.is_empty() {
+        return Err(invalid("name"));
+    }
+    let memory_mb = match settings.memory_mode {
+        MemoryMode::Auto => None,
+        MemoryMode::Manual => match settings.memory_mb {
+            Some(mb) if (MEMORY_MIN_MB..=MEMORY_MAX_MB).contains(&mb) => Some(mb),
+            _ => return Err(invalid("memoryMb")),
+        },
+    };
+    let java_path = match settings.java_mode {
+        JavaMode::Auto => None,
+        JavaMode::Manual => match settings.java_path.as_deref().map(str::trim) {
+            Some(path) if !path.is_empty() => Some(path.to_string()),
+            _ => return Err(invalid("javaPath")),
+        },
+    };
+    let changed = db.with_conn(|conn| {
+        Ok(conn.execute(
+            "UPDATE instances SET name = ?1, memory_mode = ?2, memory_mb = ?3,
+                 java_mode = ?4, java_path = ?5, jvm_args = ?6
+             WHERE id = ?7",
+            params![
+                name,
+                settings.memory_mode.as_str(),
+                memory_mb,
+                settings.java_mode.as_str(),
+                java_path,
+                settings.jvm_args,
+                id
+            ],
+        )?)
+    })?;
+    if changed == 0 {
+        return Err(not_found(id));
+    }
+    get(db, id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,5 +423,122 @@ mod tests {
                 .code(),
             "instance.not_found"
         );
+    }
+
+    fn settings(name: &str) -> InstanceSettings {
+        InstanceSettings {
+            name: name.to_string(),
+            memory_mode: MemoryMode::Auto,
+            memory_mb: None,
+            java_mode: JavaMode::Auto,
+            java_path: None,
+            jvm_args: String::new(),
+        }
+    }
+
+    fn invalid_field(err: CoreError) -> String {
+        match err {
+            CoreError::InvalidInstanceSetting { field } => field,
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn defaults_after_create() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        assert_eq!(inst.memory_mode, MemoryMode::Auto);
+        assert_eq!(inst.memory_mb, None);
+        assert_eq!(inst.java_mode, JavaMode::Auto);
+        assert_eq!(inst.java_path, None);
+        assert_eq!(inst.jvm_args, "");
+        assert_eq!(get(&db, &inst.id).unwrap(), inst);
+    }
+
+    #[test]
+    fn update_settings_changes_fields_and_keeps_dir_name() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "old", "1.21.5", 1).unwrap();
+        let updated = update_settings(
+            &db,
+            &inst.id,
+            &InstanceSettings {
+                name: "  new name  ".into(),
+                memory_mode: MemoryMode::Manual,
+                memory_mb: Some(4096),
+                java_mode: JavaMode::Manual,
+                java_path: Some(r"C:\java\bin\javaw.exe".into()),
+                jvm_args: "-Dfoo=bar".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "new name");
+        assert_eq!(updated.dir_name, inst.dir_name);
+        assert_eq!(updated.memory_mode, MemoryMode::Manual);
+        assert_eq!(updated.memory_mb, Some(4096));
+        assert_eq!(updated.java_mode, JavaMode::Manual);
+        assert_eq!(updated.java_path.as_deref(), Some(r"C:\java\bin\javaw.exe"));
+        assert_eq!(updated.jvm_args, "-Dfoo=bar");
+        assert_eq!(get(&db, &inst.id).unwrap(), updated);
+    }
+
+    #[test]
+    fn update_settings_auto_clears_manual_values() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let mut s = settings("x");
+        s.memory_mb = Some(2048);
+        s.java_path = Some("java".into());
+        let updated = update_settings(&db, &inst.id, &s).unwrap();
+        assert_eq!(updated.memory_mb, None);
+        assert_eq!(updated.java_path, None);
+    }
+
+    #[test]
+    fn update_settings_rejects_blank_name() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let err = update_settings(&db, &inst.id, &settings("   ")).unwrap_err();
+        assert_eq!(err.code(), "instance.invalid_setting");
+        assert_eq!(invalid_field(err), "name");
+    }
+
+    #[test]
+    fn update_settings_rejects_manual_memory_out_of_range() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        for mb in [None, Some(511), Some(65537)] {
+            let mut s = settings("x");
+            s.memory_mode = MemoryMode::Manual;
+            s.memory_mb = mb;
+            let err = update_settings(&db, &inst.id, &s).unwrap_err();
+            assert_eq!(invalid_field(err), "memoryMb");
+        }
+        for mb in [512, 65536] {
+            let mut s = settings("x");
+            s.memory_mode = MemoryMode::Manual;
+            s.memory_mb = Some(mb);
+            assert!(update_settings(&db, &inst.id, &s).is_ok());
+        }
+    }
+
+    #[test]
+    fn update_settings_rejects_manual_java_without_path() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        for path in [None, Some("   ".to_string())] {
+            let mut s = settings("x");
+            s.java_mode = JavaMode::Manual;
+            s.java_path = path;
+            let err = update_settings(&db, &inst.id, &s).unwrap_err();
+            assert_eq!(invalid_field(err), "javaPath");
+        }
+    }
+
+    #[test]
+    fn update_settings_for_missing_instance_is_not_found() {
+        let (_t, _paths, db) = setup();
+        let err = update_settings(&db, "nope", &settings("x")).unwrap_err();
+        assert_eq!(err.code(), "instance.not_found");
     }
 }

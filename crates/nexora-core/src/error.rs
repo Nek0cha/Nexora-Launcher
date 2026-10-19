@@ -79,6 +79,8 @@ pub enum CoreError {
     PathNotEncodable,
     #[error("instance {instance_id} was not found")]
     InstanceNotFound { instance_id: String },
+    #[error("invalid instance setting: {field}")]
+    InvalidInstanceSetting { field: String },
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
 }
@@ -121,6 +123,7 @@ impl CoreError {
             CoreError::AccountInUse { .. } => "auth.account_in_use",
             CoreError::PathNotEncodable => "launch.path_not_encodable",
             CoreError::InstanceNotFound { .. } => "instance.not_found",
+            CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
     }
@@ -165,6 +168,9 @@ impl CoreError {
                     ParamValue::Num(f64::from(*expected_major)),
                 );
                 params.insert("found".into(), ParamValue::Str(found.clone()));
+            }
+            CoreError::InvalidInstanceSetting { field } => {
+                params.insert("field".into(), ParamValue::Str(field.clone()));
             }
             CoreError::CommandTooLong { length } => {
                 params.insert("length".into(), ParamValue::Num(*length as f64));
@@ -345,6 +351,10 @@ mod tests {
                     instance_id: "i".into(),
                 },
                 "instance.not_found",
+            ),
+            (
+                CoreError::InvalidInstanceSetting { field: "f".into() },
+                "instance.invalid_setting",
             ),
         ];
         for (err, code) in cases {

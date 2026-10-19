@@ -67,7 +67,8 @@
     "account_in_use": "このアカウントはゲームの実行中のため、削除できません"
   },
   "instance": {
-    "not_found": "インスタンスが見つかりません"
+    "not_found": "インスタンスが見つかりません",
+    "invalid_setting": "設定の値が正しくありません"
   },
   "game": {
     "crashed": "ゲームが異常終了しました（終了コード {{exitCode}}）"
