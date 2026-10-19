@@ -32,7 +32,7 @@ import {
   toForm,
   toSettings,
 } from "../features/instances/settingsForm";
-import { SLIDER_STEP_MB, sliderMax, toSliderValue } from "../features/instances/memorySlider";
+import { SLIDER_STEP_MB, sliderMax } from "../features/instances/memorySlider";
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useRunning } from "../features/play/useGameSync";
@@ -252,7 +252,7 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           {form.memoryMode === "manual" && maxMb !== null && (
             <MemorySlider
               label={t("instances.detail.memorySlider")}
-              value={toSliderValue(form.memoryMb, maxMb)}
+              value={form.memoryMb}
               min={MEMORY_MIN_MB}
               max={maxMb}
               step={SLIDER_STEP_MB}

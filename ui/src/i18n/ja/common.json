@@ -177,6 +177,7 @@
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
       "memorySlider": "メモリの量",
+      "memoryAboveRange": "{{value}}（スライダーの範囲を超えています）",
       "memoryRange": "512〜65536 MB の範囲で指定します",
       "java": "Java",
       "javaPath": "Java のパス",

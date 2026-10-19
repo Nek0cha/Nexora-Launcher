@@ -177,6 +177,7 @@
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
       "memorySlider": "Memory amount",
+      "memoryAboveRange": "{{value}}, above the slider range",
       "memoryRange": "From 512 to 65536 MB",
       "java": "Java",
       "javaPath": "Java path",

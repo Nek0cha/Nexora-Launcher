@@ -208,6 +208,9 @@ describe("InstanceDetail", () => {
     const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
     expect(slider.value).toBe("8192");
     expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("32,768");
+    // 表示と読み上げは、右端に置いた値ではなく本当の値にする
+    expect(screen.getByTestId("memory-slider-output").textContent).toMatch(/32,?768\s?MB/);
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/32,?768\s?MB, above the slider range/);
     // 名前だけを変えて保存しても、メモリの値は変わらない
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
     await press(await saveButton());
@@ -223,6 +226,8 @@ describe("InstanceDetail", () => {
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     fireEvent.change(slider, { target: { value: "4352" } });
     expect(slider.getAttribute("aria-valuetext")).toMatch(/4,?352\s?MB/);
+    expect(slider.getAttribute("aria-valuetext")).not.toContain("above");
+    expect(screen.getByTestId("memory-slider-output").textContent).toMatch(/4,?352\s?MB/);
     expect(slider.tabIndex).not.toBe(-1);
   });
 
