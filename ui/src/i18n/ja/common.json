@@ -49,7 +49,8 @@
     "kind": {
       "install": "インストール",
       "launch": "起動",
-      "login": "ログイン"
+      "login": "ログイン",
+      "duplicate": "複製"
     },
     "state": {
       "queued": "待機中",
@@ -131,5 +132,25 @@
       "appNotApproved": "ランチャー側の問題（審査を待っている状態）です。お使いのアカウントの問題ではありません。",
       "denied": "ブラウザのログインの画面で、アクセスを許可すると先に進めます。"
     }
+  },
+  "instances": {
+    "more": "その他",
+    "details": "詳細",
+    "duplicate": "複製",
+    "delete": "削除",
+    "state": {
+      "installing": "準備中",
+      "ready": "使用可能",
+      "broken": "壊れている"
+    },
+    "lastPlayed": "最後に遊んだ日時",
+    "playTime": "プレイ時間",
+    "neverPlayed": "まだ遊んでいません",
+    "duplicatingPercent": "複製中 {{percent}}%",
+    "deleteTitle": "{{name}} を削除しますか？",
+    "deleteBody": "ワールドを含む、このインスタンスのすべてのデータが削除されます。元に戻せません。",
+    "deleteConfirm": "削除",
+    "cancel": "キャンセル",
+    "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。"
   }
 }

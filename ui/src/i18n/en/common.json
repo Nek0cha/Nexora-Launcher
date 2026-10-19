@@ -49,7 +49,8 @@
     "kind": {
       "install": "Install",
       "launch": "Launch",
-      "login": "Sign in"
+      "login": "Sign in",
+      "duplicate": "Duplicate"
     },
     "state": {
       "queued": "Queued",
@@ -131,5 +132,25 @@
       "appNotApproved": "This is a problem on the launcher's side, not with your account.",
       "denied": "Allow access on the sign-in page in your browser to continue."
     }
+  },
+  "instances": {
+    "more": "More",
+    "details": "Details",
+    "duplicate": "Duplicate",
+    "delete": "Delete",
+    "state": {
+      "installing": "Preparing",
+      "ready": "Ready",
+      "broken": "Broken"
+    },
+    "lastPlayed": "Last played",
+    "playTime": "Play time",
+    "neverPlayed": "Not played yet",
+    "duplicatingPercent": "Duplicating {{percent}}%",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteBody": "All data in this instance, including worlds, will be deleted. This can't be undone.",
+    "deleteConfirm": "Delete",
+    "cancel": "Cancel",
+    "deletePartial": "The folder may have been partly removed. Try deleting it again."
   }
 }
