@@ -20,8 +20,35 @@ const SECTIONS: Record<string, NavKey> = {
   settings: "settings",
 };
 
-// ドラッグ領域の中でも、押せる部品の上のダブルクリックは最大化に使わない（Tauri の判定と同じ考え）
-const INTERACTIVE = "button, a, input, select, textarea, label, [role='button'], [role='link'], [tabindex]:not([tabindex='-1'])";
+// Tauri 2.12.4 の drag.js（isClickableElement、isDragRegion）と同じ判定。
+// 押せる部品の上や、ドラッグ領域の外（ポップアップのようにポータルで body に出たもの）は、最大化に使わない。
+const CLICKABLE_TAGS = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "LABEL", "SUMMARY"]);
+const INTERACTIVE_ROLES = new Set(["button", "link", "menuitem", "tab", "checkbox", "radio", "switch", "option"]);
+
+function isClickable(el: HTMLElement): boolean {
+  const editable = el.getAttribute("contenteditable");
+  const tabindex = el.getAttribute("tabindex");
+  return (
+    CLICKABLE_TAGS.has(el.tagName) ||
+    (editable !== null && editable !== "false") ||
+    (tabindex !== null && tabindex !== "-1") ||
+    INTERACTIVE_ROLES.has(el.getAttribute("role") ?? "")
+  );
+}
+
+/** DOM の上での経路（React の木ではない）が、ドラッグ領域の中の押せない部分から来たか */
+export function isDragRegionEvent(path: EventTarget[]): boolean {
+  for (const el of path) {
+    if (!(el instanceof HTMLElement)) continue;
+    const attr = el.getAttribute("data-tauri-drag-region");
+    if (isClickable(el) && attr === null) return false;
+    if (attr === null) continue;
+    if (attr === "false") return false;
+    if (attr === "deep") return true;
+    if (attr === "" || attr === "true") return el === path[0];
+  }
+  return false;
+}
 
 const navButton = [
   "grid size-7 place-items-center rounded-sm text-text-muted",
@@ -75,8 +102,8 @@ export function AppBar({
   // 2 回目の mousedown を document まで届けないことで、Tauri 側と二重に切り替わらないようにする。
   // 1 回目の mousedown（移動の開始）は、そのまま Tauri に任せる。
   const onMouseDown = (e: MouseEvent<HTMLElement>) => {
-    if (e.button !== 0 || e.detail !== 2) return;
-    if (e.target instanceof Element && e.target.closest(INTERACTIVE)) return;
+    // React のイベントはポータルを越えて伝わるため、DOM の経路で判定する
+    if (e.button !== 0 || e.detail !== 2 || !isDragRegionEvent(e.nativeEvent.composedPath())) return;
     e.preventDefault();
     e.stopPropagation();
     getCurrentWindow()
@@ -85,8 +112,7 @@ export function AppBar({
   };
   // macOS の Tauri は mouseup で最大化するので、そちらも止める
   const onMouseUp = (e: MouseEvent<HTMLElement>) => {
-    if (e.button !== 0 || e.detail !== 2) return;
-    if (e.target instanceof Element && e.target.closest(INTERACTIVE)) return;
+    if (e.button !== 0 || e.detail !== 2 || !isDragRegionEvent(e.nativeEvent.composedPath())) return;
     e.stopPropagation();
   };
 

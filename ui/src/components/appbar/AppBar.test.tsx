@@ -7,7 +7,7 @@ import type { Instance } from "../../bindings/Instance";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
 import { TASKS_KEY } from "../../features/tasks/useTasks";
 import i18n from "../../i18n";
-import { AppBar } from "./AppBar";
+import { AppBar, isDragRegionEvent } from "./AppBar";
 
 vi.mock("../../api/commands", () => ({ listInstances: vi.fn(), cancelTask: vi.fn() }));
 
@@ -170,6 +170,46 @@ describe("AppBar", () => {
     // ボタンの上のダブルクリックは、最大化に使わない
     fireEvent.mouseDown(screen.getByRole("button", { name: "Back" }), { button: 0, detail: 2 });
     expect(win.toggleMaximize).toHaveBeenCalledTimes(1);
+  });
+
+  it("double_click_inside_the_task_popover_does_not_toggle_maximize", async () => {
+    mount({ tasks: [task()] });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Tasks, 1 running" }));
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Tasks" });
+    // ポップアップはポータルで body に出ており、バーの DOM の中には無い
+    expect(screen.getByTestId("app-bar").contains(dialog)).toBe(false);
+    const text = screen.getByText("Install");
+    const down = fireEvent.mouseDown(text, { button: 0, detail: 2 });
+    fireEvent.mouseUp(text, { button: 0, detail: 2 });
+    expect(win.toggleMaximize).not.toHaveBeenCalled();
+    // 文字の選択を妨げない
+    expect(down).toBe(true);
+  });
+
+  it("drag_region_rules_match_tauri", () => {
+    const region = document.createElement("div");
+    region.setAttribute("data-tauri-drag-region", "deep");
+    const make = (tag: string, attrs: Record<string, string> = {}) => {
+      const el = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      return el;
+    };
+    expect(isDragRegionEvent([make("span"), region])).toBe(true);
+    for (const el of [
+      make("summary"),
+      make("div", { role: "tab" }),
+      make("div", { role: "menuitem" }),
+      make("div", { role: "switch" }),
+      make("div", { contenteditable: "true" }),
+      make("div", { tabindex: "0" }),
+      make("div", { "data-tauri-drag-region": "false" }),
+    ]) {
+      expect(isDragRegionEvent([el, region])).toBe(false);
+    }
+    expect(isDragRegionEvent([make("div", { tabindex: "-1" }), region])).toBe(true);
+    expect(isDragRegionEvent([make("span"), document.body])).toBe(false);
   });
 
   it("task_button_shows_progress_only_when_tasks_are_active_and_opens_the_list", async () => {
