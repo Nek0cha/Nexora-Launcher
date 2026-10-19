@@ -81,6 +81,8 @@ pub enum CoreError {
     PathNotEncodable,
     #[error("instance {instance_id} was not found")]
     InstanceNotFound { instance_id: String },
+    #[error("instance {instance_id} is busy")]
+    InstanceBusy { instance_id: String },
     #[error("invalid instance setting: {field}")]
     InvalidInstanceSetting { field: String },
     #[error("unexpected error: {message}")]
@@ -126,6 +128,7 @@ impl CoreError {
             CoreError::AccountInUse { .. } => "auth.account_in_use",
             CoreError::PathNotEncodable => "launch.path_not_encodable",
             CoreError::InstanceNotFound { .. } => "instance.not_found",
+            CoreError::InstanceBusy { .. } => "instance.busy",
             CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -357,6 +360,12 @@ mod tests {
                     instance_id: "i".into(),
                 },
                 "instance.not_found",
+            ),
+            (
+                CoreError::InstanceBusy {
+                    instance_id: "i".into(),
+                },
+                "instance.busy",
             ),
             (
                 CoreError::InvalidInstanceSetting { field: "f".into() },

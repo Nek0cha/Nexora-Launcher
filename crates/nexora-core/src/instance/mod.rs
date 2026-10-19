@@ -286,6 +286,48 @@ pub fn add_play_time(db: &Db, id: &str, ms: i64) -> Result<(), CoreError> {
     )
 }
 
+/// 後始末の対象を消す。失敗しても削除自体は続けるため、警告を残すだけにする。
+fn remove_leftover(path: &std::path::Path, is_dir: bool) {
+    let result = if is_dir {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    match result {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => tracing::warn!(path = %path.display(), %err, "could not remove leftover"),
+    }
+}
+
+/// ゲームのディレクトリを消してから行を消す。
+/// ディレクトリを消せなければ行は残し、エラーを返す（行だけが消えて残骸が残る事態を避ける）。
+/// ディレクトリがなければ行だけを消す。共有のファイル（ライブラリ、アセット）には触れない。
+/// 起動中かどうかの確認は呼び出し側で行う。
+pub fn delete(db: &Db, paths: &AppPaths, id: &str) -> Result<(), CoreError> {
+    let instance = get(db, id)?;
+    let dir = game_dir(paths, &instance);
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(CoreError::Io {
+                path: dir.display().to_string(),
+                source,
+            });
+        }
+    }
+    db.with_conn(|conn| {
+        conn.execute("DELETE FROM instances WHERE id = ?1", [id])?;
+        Ok(())
+    })?;
+    // 後始末。行はすでにないため、失敗しても警告にとどめる
+    remove_leftover(&paths.natives_dir().join(id), true);
+    remove_leftover(&paths.argfile(id), false);
+    remove_leftover(&paths.game_logs_dir().join(id), true);
+    Ok(())
+}
+
 fn invalid(field: &str) -> CoreError {
     CoreError::InvalidInstanceSetting {
         field: field.to_string(),
@@ -533,6 +575,70 @@ mod tests {
             let err = update_settings(&db, &inst.id, &s).unwrap_err();
             assert_eq!(invalid_field(err), "javaPath");
         }
+    }
+
+    #[test]
+    fn delete_removes_dir_and_row() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let dir = game_dir(&paths, &inst);
+        std::fs::write(dir.join("options.txt"), "a").unwrap();
+        // 共有のファイルと、後始末の対象を用意する
+        let shared = paths.shared_dir().join("libraries");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("keep.jar"), "a").unwrap();
+        let natives = paths.natives_dir().join(&inst.id);
+        std::fs::create_dir_all(&natives).unwrap();
+        std::fs::create_dir_all(paths.launch_cache_dir()).unwrap();
+        std::fs::write(paths.argfile(&inst.id), "a").unwrap();
+        let logs = paths.game_logs_dir().join(&inst.id);
+        std::fs::create_dir_all(&logs).unwrap();
+        delete(&db, &paths, &inst.id).unwrap();
+        assert!(!dir.exists());
+        assert!(!natives.exists());
+        assert!(!paths.argfile(&inst.id).exists());
+        assert!(!logs.exists());
+        assert!(shared.join("keep.jar").is_file());
+        assert_eq!(get(&db, &inst.id).unwrap_err().code(), "instance.not_found");
+    }
+
+    #[test]
+    fn delete_without_dir_removes_row() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        std::fs::remove_dir_all(game_dir(&paths, &inst)).unwrap();
+        delete(&db, &paths, &inst.id).unwrap();
+        assert_eq!(get(&db, &inst.id).unwrap_err().code(), "instance.not_found");
+    }
+
+    #[test]
+    fn delete_missing_is_not_found() {
+        let (_t, paths, db) = setup();
+        let err = delete(&db, &paths, "nope").unwrap_err();
+        assert_eq!(err.code(), "instance.not_found");
+    }
+
+    /// 親を読み取り専用にして、ディレクトリを消せない状況を作る。
+    /// Windows では読み取り専用の属性が親の中の削除を妨げないため、決まった結果にならない。
+    #[cfg(unix)]
+    #[test]
+    fn delete_keeps_row_when_dir_removal_fails() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let dir = game_dir(&paths, &inst);
+        let parent = paths.instances_dir();
+        let writable = std::fs::metadata(&parent).unwrap().permissions();
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = delete(&db, &paths, &inst.id);
+        std::fs::set_permissions(&parent, writable).unwrap();
+        // root では権限が効かず削除できてしまうため、その場合は確かめられない
+        if !dir.exists() {
+            return;
+        }
+        let err = result.unwrap_err();
+        assert_eq!(err.code(), "io.failed");
+        assert_eq!(get(&db, &inst.id).unwrap(), inst);
     }
 
     #[test]

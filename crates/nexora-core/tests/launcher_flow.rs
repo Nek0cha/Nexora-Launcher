@@ -299,6 +299,71 @@ async fn install_is_refused_while_running() {
 }
 
 #[tokio::test]
+async fn delete_is_refused_while_running() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    insert_running(&h.launcher, id, 1);
+    let err = h.launcher.delete_instance(id).await.unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    assert!(instance::get(h.launcher.db(), id).is_ok());
+}
+
+#[tokio::test]
+async fn delete_is_refused_while_installing() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let id = &created.instance.id;
+    // インストールのタスクが動いている間
+    let err = h.launcher.delete_instance(id).await.unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    wait(&h.tasks, &created.task_id).await;
+    // タスクがなくても state が installing のままなら断る
+    instance::set_state(h.launcher.db(), id, InstanceState::Installing).unwrap();
+    let err = h.launcher.delete_instance(id).await.unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    assert!(instance::get(h.launcher.db(), id).is_ok());
+}
+
+#[tokio::test]
+async fn delete_rechecks_after_taking_the_instance_lock() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = created.instance.id.clone();
+    // 起動の処理がロックを持っている間に削除が待ち、その間にゲームが起動した状況
+    let guard = h.launcher.instance_locks().lock(&id).await;
+    let launcher = h.launcher.clone();
+    let target = id.clone();
+    let deleting = tokio::spawn(async move { launcher.delete_instance(&target).await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!deleting.is_finished());
+    insert_running(&h.launcher, &id, 1);
+    drop(guard);
+    let err = deleting.await.unwrap().unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    assert!(instance::get(h.launcher.db(), &id).is_ok());
+}
+
+#[tokio::test]
+async fn delete_removes_a_ready_instance() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    h.launcher.delete_instance(id).await.unwrap();
+    assert!(h.launcher.list_instances().unwrap().is_empty());
+    // 共有のライブラリとアセットは消さない
+    let paths = AppPaths::from_root(h._temp.path());
+    assert!(paths.libraries_dir().is_dir());
+}
+
+#[tokio::test]
 async fn reattach_runs_only_once() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;

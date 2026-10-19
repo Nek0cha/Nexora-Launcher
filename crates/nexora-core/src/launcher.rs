@@ -180,6 +180,34 @@ impl Launcher {
         Ok(CreatedInstance { instance, task_id })
     }
 
+    /// インスタンスを削除する。起動中、またはインストール中なら `InstanceBusy`。
+    /// 確認は、待たずに断れるようロックの前にも行い、競合を防ぐためロックを取った後にもう一度行う。
+    pub async fn delete_instance(&self, id: &str) -> Result<(), CoreError> {
+        self.ensure_deletable(id)?;
+        let _guard = self.locks.lock(id).await;
+        self.ensure_deletable(id)?;
+        instance::delete(&self.env.db, &self.env.paths, id)
+    }
+
+    fn ensure_deletable(&self, id: &str) -> Result<(), CoreError> {
+        let inst = instance::get(&self.env.db, id)?;
+        if self.processes.is_running(id)?
+            || self.active_task(id).is_some()
+            || inst.state == InstanceState::Installing
+        {
+            return Err(CoreError::InstanceBusy {
+                instance_id: id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// 結合テスト用。インスタンスごとの排他を外から取れるようにする。
+    #[doc(hidden)]
+    pub fn instance_locks(&self) -> &InstanceLocks {
+        &self.locks
+    }
+
     /// state が ready なら起動のタスク、それ以外ならインストールのタスクの ID を返す。
     /// 同じインスタンスにインストールか起動のタスクが動いていれば、新しく作らずにその ID を返す。
     /// `offline` が真なら、通信せずに保存してあるアカウントの情報で起動する（spec 4.7）。

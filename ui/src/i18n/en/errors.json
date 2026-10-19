@@ -69,6 +69,7 @@
   },
   "instance": {
     "not_found": "Instance not found",
+    "busy": "This instance can't be deleted while it is running or installing",
     "invalid_setting": "A setting value is not valid"
   },
   "game": {
