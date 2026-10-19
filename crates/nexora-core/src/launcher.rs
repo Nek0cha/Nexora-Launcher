@@ -341,10 +341,17 @@ impl Launcher {
         kind: FolderKind,
     ) -> Result<PathBuf, CoreError> {
         let inst = instance::get(&self.env.db, instance_id)?;
-        let mut dir = instance::game_dir(&self.env.paths, &inst);
-        if let Some(sub) = kind.subdir() {
-            dir.push(sub);
-        }
+        let dir = match kind {
+            // 起動のときにゲームの出力を書く場所（start_launch の log_path）と同じ
+            FolderKind::Logs => self.env.paths.game_logs_dir().join(&inst.id),
+            _ => {
+                let mut dir = instance::game_dir(&self.env.paths, &inst);
+                if let Some(sub) = kind.subdir() {
+                    dir.push(sub);
+                }
+                dir
+            }
+        };
         std::fs::create_dir_all(&dir).map_err(|source| CoreError::Io {
             path: dir.display().to_string(),
             source,

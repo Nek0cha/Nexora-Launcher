@@ -11,13 +11,16 @@ pub enum FolderKind {
     Mods,
     Screenshots,
     Saves,
+    /// ゲームのログ。ゲームのディレクトリではなく、ランチャーのデータの下（logs/game/<id>）にある。
+    Logs,
 }
 
 impl FolderKind {
     /// ゲームのディレクトリの下の名前。`Game` はディレクトリそのもの。
+    /// `Logs` はゲームのディレクトリの下に無いので None（場所は `Launcher::instance_folder` で決める）。
     pub fn subdir(self) -> Option<&'static str> {
         match self {
-            FolderKind::Game => None,
+            FolderKind::Game | FolderKind::Logs => None,
             FolderKind::Mods => Some("mods"),
             FolderKind::Screenshots => Some("screenshots"),
             FolderKind::Saves => Some("saves"),

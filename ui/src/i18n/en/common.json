@@ -195,7 +195,8 @@
         "game": "Game folder",
         "mods": "Mods folder",
         "screenshots": "Screenshots folder",
-        "saves": "Worlds folder"
+        "saves": "Worlds folder",
+        "logs": "Logs folder"
       }
     }
   },

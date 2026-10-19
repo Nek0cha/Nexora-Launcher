@@ -231,6 +231,20 @@ async fn instance_folder_creates_missing_dirs_under_the_game_dir() {
 }
 
 #[tokio::test]
+async fn instance_folder_logs_is_the_game_log_dir_and_is_created() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    let expected = AppPaths::from_root(h._temp.path()).game_logs_dir().join(id);
+    assert!(!expected.exists());
+    let dir = h.launcher.instance_folder(id, FolderKind::Logs).unwrap();
+    assert_eq!(dir, expected);
+    assert!(dir.is_dir());
+}
+
+#[tokio::test]
 async fn instance_folder_of_missing_instance_is_not_found() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
