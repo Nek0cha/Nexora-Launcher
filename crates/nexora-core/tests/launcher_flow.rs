@@ -312,7 +312,7 @@ async fn delete_is_refused_while_running() {
 }
 
 #[tokio::test]
-async fn delete_is_refused_while_installing() {
+async fn delete_is_refused_while_task_is_live_but_stale_installing_row_is_deletable() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
     let created = h.launcher.create_instance("x", "1.99-test").unwrap();
@@ -445,6 +445,21 @@ async fn duplicate_creates_independent_copy() {
         "world"
     );
     assert_eq!(instance::get(h.launcher.db(), &id).unwrap(), before);
+}
+
+#[tokio::test]
+async fn duplicate_of_a_broken_instance_is_broken_after_the_copy() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    instance::set_state(h.launcher.db(), &id, InstanceState::Broken).unwrap();
+
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    let listed = h.launcher.list_instances().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|i| i.state == InstanceState::Broken));
 }
 
 #[tokio::test]

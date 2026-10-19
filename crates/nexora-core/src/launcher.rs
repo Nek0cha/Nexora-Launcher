@@ -187,7 +187,8 @@ impl Launcher {
         Ok(CreatedInstance { instance, task_id })
     }
 
-    /// インスタンスを削除する。起動中、またはインストール中なら `InstanceBusy`。
+    /// インスタンスを削除する。起動中、またはインストールか起動のタスクが動いていれば `InstanceBusy`。
+    /// state の列が installing でも、タスクが動いていなければ削除できる。
     /// 確認は、待たずに断れるようロックの前にも行い、競合を防ぐためロックを取った後にもう一度行う。
     pub async fn delete_instance(&self, id: &str) -> Result<(), CoreError> {
         self.ensure_idle(id)?;
@@ -236,7 +237,8 @@ impl Launcher {
         ))
     }
 
-    /// 行を作り、ゲームディレクトリをコピーする。失敗か取り消しなら、コピー先と行を消す。
+    /// 行をインストール中として作り、ゲームディレクトリをコピーし、終えたら元と同じ状態にする。
+    /// 失敗か取り消しなら、コピー先と行を消す。
     /// 元のインスタンスの行とディレクトリには書き込まない。
     async fn duplicate(&self, source_id: &str, handle: &TaskHandle) -> Result<(), CoreError> {
         let env = &self.env;
@@ -267,7 +269,9 @@ impl Launcher {
             Err(CoreError::Unexpected {
                 message: e.to_string(),
             })
-        });
+        })
+        // コピーを終えてから元と同じ状態にする（途中で落ちた複製を使える状態に見せない）
+        .and_then(|()| instance::set_state(&env.db, &copy.id, source.state));
         if result.is_err() {
             self.discard_copy(&copy.id, &dst);
         }

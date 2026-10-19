@@ -339,7 +339,9 @@ pub fn delete(db: &Db, paths: &AppPaths, id: &str) -> Result<(), CoreError> {
 
 /// 複製の行を追加する。ディレクトリは作らない（コピーは呼び出し側で行う）。
 /// 新しい `id` と `dir_name` を割り当て、最後に遊んだ日時とプレイ時間は空にする。
-/// 名前、設定、`mc_version`、`state` は元から引き継ぐ。名前の重複は許し、`dir_name` で区別する。
+/// 名前、設定、`mc_version` は元から引き継ぐ。名前の重複は許し、`dir_name` で区別する。
+/// `state` は `installing` で置く。コピーの途中でアプリが落ちても、使える状態に見せないためである。
+/// 元の `state` に戻すのは、コピーを終えた呼び出し側の役目である。
 pub fn duplicate_row(
     db: &Db,
     paths: &AppPaths,
@@ -356,6 +358,7 @@ pub fn duplicate_row(
             created_at: now_ms,
             last_played_at: None,
             play_time_ms: 0,
+            state: InstanceState::Installing,
             ..source
         };
         conn.execute(
@@ -730,7 +733,8 @@ mod tests {
         assert_eq!(copy.dir_name, "World (2)");
         assert_eq!(copy.name, "World");
         assert_eq!(copy.mc_version, "1.21.5");
-        assert_eq!(copy.state, InstanceState::Ready);
+        // コピーが終わるまではインストール中として置く
+        assert_eq!(copy.state, InstanceState::Installing);
         assert_eq!(copy.created_at, 200);
         assert_eq!(copy.last_played_at, None);
         assert_eq!(copy.play_time_ms, 0);
@@ -746,11 +750,20 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_row_keeps_installing_state() {
+    fn duplicate_row_is_installing_whatever_the_source_state() {
         let (_t, paths, db) = setup();
         let src = create(&db, &paths, "x", "1.21.5", 1).unwrap();
-        let copy = duplicate_row(&db, &paths, &src.id, 2).unwrap();
-        assert_eq!(copy.state, InstanceState::Installing);
+        for state in [
+            InstanceState::Installing,
+            InstanceState::Ready,
+            InstanceState::Broken,
+        ] {
+            set_state(&db, &src.id, state).unwrap();
+            let copy = duplicate_row(&db, &paths, &src.id, 2).unwrap();
+            assert_eq!(copy.state, InstanceState::Installing);
+            assert_eq!(get(&db, &copy.id).unwrap().state, InstanceState::Installing);
+            assert_eq!(get(&db, &src.id).unwrap().state, state);
+        }
     }
 
     #[test]
