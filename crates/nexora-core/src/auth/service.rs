@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
@@ -18,7 +18,7 @@ use super::accounts::{self, AccountRow, EntitlementState, ProfileRecord};
 use super::http::AuthHttp;
 use super::login::LoginProgress;
 use super::microsoft::{self, MsTokens};
-use super::minecraft::{self, McToken};
+use super::minecraft::{self, McToken, SkinVariant};
 use super::store::SecretStore;
 use super::{AuthUrls, OFFLINE_GRACE_MS, REFRESH_MARGIN_MS, xbox};
 use crate::db::Db;
@@ -371,7 +371,83 @@ impl AuthService {
         }
     }
 
+    /// Microsoft アカウントのスキンを変更する（spec phase 4 の 4 節）。
+    ///
+    /// 画像を先に検証し、合わなければ通信もトークンの用意もせずに `InvalidSkin` を返す。
+    /// `accounts` にない ID（開発用のオフラインアカウントを含む）は `AccountNotFound`。
+    /// アップロードが 401 なら、トークンを 1 回だけ取り直して 1 回だけ再試行する。
+    /// 成功したらプロフィールを取り直し、`accounts.skin_url` を新しい URL にして知らせる。
+    pub async fn change_skin(
+        &self,
+        id: Uuid,
+        variant: SkinVariant,
+        png: Vec<u8>,
+    ) -> Result<(), CoreError> {
+        minecraft::validate_skin_png(&png)?;
+        accounts::get(&self.db, id)?;
+        let mut mc = self.minecraft_token(id).await?;
+        let first = minecraft::upload_skin(&self.http, &self.urls, &mc, variant, png.clone()).await;
+        match first {
+            Err(e) if unauthorized(&e) => {
+                // minecraft_token の 401 の再試行は連鎖の中だけなので、ここで 1 回だけ取り直す
+                self.forget_mc(id, &mc);
+                mc = self.minecraft_token(id).await?;
+                minecraft::upload_skin(&self.http, &self.urls, &mc, variant, png).await?;
+            }
+            other => other?,
+        }
+        // スキンは変わった。プロフィールを読めなくても、変更は失敗にしない
+        match minecraft::profile(&self.http, &self.urls, &mc).await {
+            Ok(profile) if profile.id == id => self.record_profile(&profile)?,
+            Ok(_) => tracing::warn!("the profile after the skin change belongs to another id"),
+            Err(e) => {
+                tracing::warn!(
+                    code = e.code(),
+                    "could not read the profile after the skin change"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// 使用中のスキンのモデル。プロフィールに書かれていなければ Classic。
+    pub async fn skin_variant(&self, id: Uuid) -> Result<SkinVariant, CoreError> {
+        accounts::get(&self.db, id)?;
+        let mc = self.minecraft_token(id).await?;
+        let profile = minecraft::profile(&self.http, &self.urls, &mc).await?;
+        Ok(profile.skin_variant.unwrap_or(SkinVariant::Classic))
+    }
+
     // ---- 内部 ----
+
+    /// 拒否された Minecraft のトークンを、メモリから外す。待っている間に別の呼び出しが
+    /// 取り直していれば、その新しいトークンは残す。
+    fn forget_mc(&self, id: Uuid, rejected: &McToken) {
+        let mut cache = self.cache.lock().unwrap();
+        if let Some(entry) = cache.get_mut(&id)
+            && entry
+                .mc
+                .as_ref()
+                .is_some_and(|t| t.access.expose_secret() == rejected.access.expose_secret())
+        {
+            entry.mc = None;
+        }
+    }
+
+    /// 取り直したプロフィール（名前とスキン）を `accounts` に書き、知らせる。
+    /// XUID と所有権は、保存してある値をそのまま使う。
+    fn record_profile(&self, profile: &minecraft::Profile) -> Result<(), CoreError> {
+        let row = accounts::get(&self.db, profile.id)?;
+        let record = ProfileRecord {
+            id: profile.id,
+            username: profile.name.clone(),
+            xuid: row.xuid,
+            skin_url: profile.skin_url.clone(),
+        };
+        accounts::save_profile(&self.db, &record, row.entitlement, self.now())?;
+        self.notify_changed();
+        Ok(())
+    }
 
     fn lock_for(&self, id: Uuid) -> Arc<tokio::sync::Mutex<()>> {
         self.locks.lock().unwrap().entry(id).or_default().clone()
@@ -615,5 +691,7 @@ mod tests {
         assert_send(&auth.complete_login(tokens, &|_| {}, &cancel));
         assert_send(&auth.remove(id));
         assert_send(&auth.skin_path(id));
+        assert_send(&auth.change_skin(id, SkinVariant::Classic, Vec::new()));
+        assert_send(&auth.skin_variant(id));
     }
 }

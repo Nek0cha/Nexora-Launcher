@@ -22,7 +22,7 @@ uuid = { version = "1", features = ["v7", "v4", "serde"] }
 
 secrecy = "0.10"
 
-reqwest = { version = "0.13", features = ["stream", "form"] }
+reqwest = { version = "0.13", features = ["stream", "form", "multipart"] }
 futures = "0.3"
 sha1 = "0.11"
 md-5 = "0.11"

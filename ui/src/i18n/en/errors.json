@@ -72,6 +72,9 @@
     "busy": "This instance can't be deleted while it is running or installing",
     "invalid_setting": "A setting value is not valid"
   },
+  "skin": {
+    "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KB or smaller"
+  },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"
   }

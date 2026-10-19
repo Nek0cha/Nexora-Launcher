@@ -108,12 +108,19 @@ pub(crate) fn json_post(
 
 /// 送って本文まで読む。通信の失敗と 5xx、429 は一時的な失敗（Offline）にする。
 pub(crate) async fn send(request: reqwest::RequestBuilder) -> Result<Reply, CoreError> {
+    let reply = send_any_status(request).await?;
+    if status_is_transient(reply.status) {
+        return Err(transient_status(reply.status));
+    }
+    Ok(reply)
+}
+
+/// 送って本文まで読む。通信の失敗だけを Offline にし、ステータスは分類しない。
+/// 429 を一時的な失敗にせず、呼び出し側で扱うときに使う。
+pub(crate) async fn send_any_status(request: reqwest::RequestBuilder) -> Result<Reply, CoreError> {
     let response = request.send().await.map_err(|e| transient(&e))?;
     let status = response.status().as_u16();
     let body = response.bytes().await.map_err(|e| transient(&e))?;
-    if status_is_transient(status) {
-        return Err(transient_status(status));
-    }
     Ok(Reply {
         status,
         body: body.to_vec(),

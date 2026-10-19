@@ -85,6 +85,8 @@ pub enum CoreError {
     InstanceBusy { instance_id: String },
     #[error("invalid instance setting: {field}")]
     InvalidInstanceSetting { field: String },
+    #[error("invalid skin image: {reason}")]
+    InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
 }
@@ -130,6 +132,7 @@ impl CoreError {
             CoreError::InstanceNotFound { .. } => "instance.not_found",
             CoreError::InstanceBusy { .. } => "instance.busy",
             CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
+            CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
     }
@@ -180,6 +183,9 @@ impl CoreError {
             }
             CoreError::InvalidInstanceSetting { field } => {
                 params.insert("field".into(), ParamValue::Str(field.clone()));
+            }
+            CoreError::InvalidSkin { reason } => {
+                params.insert("reason".into(), ParamValue::Str(reason.clone()));
             }
             CoreError::CommandTooLong { length } => {
                 params.insert("length".into(), ParamValue::Num(*length as f64));
@@ -481,6 +487,18 @@ mod tests {
             .to_payload()
             .params
             .is_empty()
+        );
+    }
+
+    #[test]
+    fn phase4_invalid_skin() {
+        let err = CoreError::InvalidSkin {
+            reason: "dimensions".into(),
+        };
+        assert_eq!(err.code(), "skin.invalid");
+        assert_eq!(
+            err.to_payload().params.get("reason"),
+            Some(&ParamValue::Str("dimensions".into()))
         );
     }
 
