@@ -15,10 +15,9 @@ function advance(ms: number) {
 }
 
 // 出ているトースト（消える動きの途中のものは数えない）
-const visible = (text: string) => {
-  const el = screen.queryByText(text);
-  return el && !el.closest("[data-exiting]") ? el : null;
-};
+// 読み上げ用の領域に差し込んだ文は、画面に出ているトーストではないので除く
+const visible = (text: string) =>
+  screen.queryAllByText(text).find((el) => !el.closest("[data-exiting]") && !el.closest('[role="status"]')) ?? null;
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
@@ -55,10 +54,10 @@ describe("ToastRegion", () => {
   it("hover_keeps_the_toast", () => {
     show("success", "Saved");
     advance(1000);
-    fireEvent.mouseEnter(screen.getByText("Saved"));
+    fireEvent.mouseEnter(visible("Saved")!);
     advance(10_000);
     expect(visible("Saved")).toBeTruthy();
-    fireEvent.mouseLeave(screen.getByText("Saved"));
+    fireEvent.mouseLeave(visible("Saved")!);
     // 残りの 4 秒で消える
     advance(3900);
     expect(visible("Saved")).toBeTruthy();
@@ -69,7 +68,7 @@ describe("ToastRegion", () => {
 
   it("focus_keeps_the_toast", () => {
     show("error", "Broke");
-    act(() => screen.getByRole("button", { name: "Close" }).focus());
+    act(() => screen.getByRole("button", { name: "Close notification" }).focus());
     advance(20_000);
     expect(visible("Broke")).toBeTruthy();
   });
@@ -87,19 +86,51 @@ describe("ToastRegion", () => {
   });
 
   it("error_uses_alert_role_and_success_uses_status_role", () => {
+    // 成功と情報の読み上げ用の領域は、トーストが出る前から置いてある
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toBe("");
     show("error", "Broke");
     show("success", "Saved");
-    show("info", "Note");
     expect(screen.getByRole("alert").textContent).toContain("Broke");
-    const statuses = screen.getAllByRole("status").map((el) => el.textContent);
-    expect(statuses).toHaveLength(2);
-    expect(statuses.some((s) => s?.includes("Saved"))).toBe(true);
-    expect(statuses.some((s) => s?.includes("Note"))).toBe(true);
+    expect(screen.getAllByRole("status")).toEqual([status]);
+    expect(status.textContent).toBe("Saved");
+    show("info", "Note");
+    expect(status.textContent).toBe("Note");
+    // 失敗は読み上げ用の領域に入れない（role="alert" で読み上げる）
+    show("error", "Broke again");
+    expect(status.textContent).toBe("Note");
+  });
+
+  it("announcement_clears_when_its_toast_is_gone", () => {
+    show("success", "Saved");
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Saved");
+    fireEvent.click(screen.getByRole("button", { name: "Close notification" }));
+    expect(status.textContent).toBe("");
+  });
+
+  it("closing_a_focused_toast_does_not_keep_others_paused", () => {
+    show("error", "Broke");
+    show("info", "Later");
+    const close = screen.getAllByRole("button", { name: "Close notification" })[0]!;
+    act(() => close.focus());
+    // キーボードで閉じる（マウスはトーストの上に無い）
+    fireEvent.keyDown(close, { key: "Enter" });
+    fireEvent.keyUp(close, { key: "Enter" });
+    // 閉じたトーストは消える動きに入り、フォーカスのあった要素は使えなくなる（blur は届かない）
+    advance(1000);
+    expect(visible("Broke")).toBeNull();
+    show("success", "Next");
+    advance(5100);
+    advance(1000);
+    expect(visible("Later")).toBeNull();
+    expect(visible("Next")).toBeNull();
   });
 
   it("close_button_dismisses", () => {
     show("error", "Broke");
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close notification" }));
     advance(1000);
     expect(visible("Broke")).toBeNull();
   });

@@ -202,7 +202,7 @@
   },
   "toast": {
     "region": "Notifications",
-    "close": "Close"
+    "close": "Close notification"
   },
   "appBar": {
     "back": "Back",

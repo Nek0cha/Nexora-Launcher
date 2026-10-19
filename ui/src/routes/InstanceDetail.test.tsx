@@ -133,7 +133,9 @@ describe("InstanceDetail", () => {
     await act(async () => { await Promise.resolve(); });
     expect(updateInstance).not.toHaveBeenCalled();
     expect(within(toasts()).queryByRole("alert")).toBeNull();
-    expect(within(toasts()).queryByRole("status")).toBeNull();
+    // 成功と情報の読み上げ用の領域はいつも置いてあるので、中身が空で、トーストが 1 つも無いことを見る
+    expect(within(toasts()).getByRole("status").textContent).toBe("");
+    expect(within(toasts()).queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("blank_name_blocks_saving", async () => {
