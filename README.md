@@ -9,8 +9,8 @@ Nexora Launcher installs and launches official Minecraft: Java Edition versions.
 The project is in early development. Building the Microsoft sign-in needs a client ID in the `NEXORA_MS_CLIENT_ID` environment variable; forks must register their own and pass Minecraft API review (aka.ms/mce-reviewappid).
 
 - Done: installing and launching vanilla game versions, including the Java runtime
-- Microsoft sign-in is implemented; waiting for Minecraft API approval
-- Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed (pending Minecraft API approval)
+- Microsoft sign-in is implemented; the Minecraft API review was passed on 2026-10-17
+- Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed
 - Planned: mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
@@ -29,7 +29,7 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
 
 - インスタンスの一覧、作成、複製、削除ができます。
 - インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
-- アカウント画面からスキンを変更できます（Minecraft API の承認が必要です）。
+- アカウント画面からスキンを変更できます（Minecraft API の審査は 2026-10-17 に通っています）。
 
 ## 開発環境
 
