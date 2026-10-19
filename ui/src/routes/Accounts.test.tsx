@@ -5,6 +5,7 @@ import {
   beginLogin,
   cancelTask,
   getSkin,
+  getSkinVariant,
   listAccounts,
   removeAccount,
   setActiveAccount,
@@ -29,6 +30,8 @@ vi.mock("../api/commands", () => ({
   beginLogin: vi.fn(),
   cancelTask: vi.fn(),
   getSkin: vi.fn(),
+  getSkinVariant: vi.fn(),
+  changeSkin: vi.fn(),
   launchInstance: vi.fn(),
 }));
 vi.mock("../api/events", () => ({ onAccountsChanged: vi.fn(), onLoginProgress: vi.fn() }));
@@ -247,5 +250,20 @@ describe("Accounts", () => {
     await row("Alex");
     expect(screen.queryByText("Development offline account")).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("offers_change_only_for_microsoft_accounts", async () => {
+    mount({
+      accounts: [account("a1", "Alex", { isActive: true }), account("a2", "Sam", { needsLogin: true })],
+      devOffline: { username: "Player", active: false },
+    });
+    const alex = within(await row("Alex"));
+    expect((alex.getByRole("button", { name: "Change skin" }) as HTMLButtonElement).disabled).toBe(false);
+    // ログインし直しが必要な行では押せない
+    const sam = within(await row("Sam"));
+    expect((sam.getByRole("button", { name: "Change skin" }) as HTMLButtonElement).disabled).toBe(true);
+    // 開発用のオフラインアカウントの行には出さない
+    const dev = within(await row("Development offline account"));
+    expect(dev.queryByRole("button", { name: "Change skin" })).toBeNull();
   });
 });
