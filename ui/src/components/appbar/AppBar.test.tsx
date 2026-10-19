@@ -100,13 +100,18 @@ describe("AppBar", () => {
     expect(forward().hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(back());
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-    expect(back().hasAttribute("disabled")).toBe(true);
-    expect(forward().hasAttribute("disabled")).toBe(false);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/");
+      expect(back().hasAttribute("disabled")).toBe(true);
+      expect(forward().hasAttribute("disabled")).toBe(false);
+    });
 
     fireEvent.click(forward());
-    await waitFor(() => expect(router.state.location.pathname).toBe("/instances"));
-    expect(forward().hasAttribute("disabled")).toBe(true);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/instances");
+      expect(back().hasAttribute("disabled")).toBe(false);
+      expect(forward().hasAttribute("disabled")).toBe(true);
+    });
   });
 
   it("window_controls_only_when_requested", async () => {

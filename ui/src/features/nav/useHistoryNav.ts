@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router";
 
 export type HistoryNav = {
@@ -21,18 +21,22 @@ function currentIdx(): number {
  * 新しい画面に進んだ（PUSH）ときは、その先の履歴が捨てられるので、最大を今の位置に戻す。
  */
 export function useHistoryNav(): HistoryNav {
-  // 画面が変わるたびに描き直すため、location を購読する
-  useLocation();
+  // 反映済みの location を購読する。idx は location.key と組にして、描画のたびに history を読まない
+  const location = useLocation();
   const type = useNavigationType();
   const navigate = useNavigate();
-  const maxIdx = useRef<number | null>(null);
+  const maxIdx = useRef<{ key: string; max: number } | null>(null);
 
-  const idx = currentIdx();
-  // 同じ画面で何度描いても同じ結果になる（PUSH は今の位置、それ以外は最大を保つ）
-  maxIdx.current = type === "PUSH" || maxIdx.current === null ? idx : Math.max(maxIdx.current, idx);
+  const idx = useMemo(() => currentIdx(), [location.key]);
+  // 位置（key）が変わったときだけ最大を更新する（PUSH は今の位置、それ以外は最大を保つ）
+  if (maxIdx.current === null || maxIdx.current.key !== location.key) {
+    const max = type === "PUSH" || maxIdx.current === null ? idx : Math.max(maxIdx.current.max, idx);
+    maxIdx.current = { key: location.key, max };
+  }
+  const max = maxIdx.current.max;
 
   const back = useCallback(() => void navigate(-1), [navigate]);
   const forward = useCallback(() => void navigate(1), [navigate]);
 
-  return { canGoBack: idx > 0, canGoForward: idx < maxIdx.current, back, forward };
+  return { canGoBack: idx > 0, canGoForward: idx < max, back, forward };
 }

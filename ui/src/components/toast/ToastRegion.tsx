@@ -92,9 +92,9 @@ function useAnnouncement(toasts: ToastItem[]): ToastItem | null {
     if (fresh) {
       lastId.current = fresh.id;
       setCurrent(fresh);
-    } else if (current && !toasts.some((toast) => toast.id === current.id)) {
+    } else {
       // 閉じたトーストの文が、読み上げ用の領域に残らないようにする
-      setCurrent(null);
+      setCurrent((c) => (c && !toasts.some((toast) => toast.id === c.id) ? null : c));
     }
   }, [toasts]);
   return current;
