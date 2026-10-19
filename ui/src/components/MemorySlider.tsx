@@ -53,14 +53,25 @@ export function MemorySlider(props: {
               className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-accent"
               style={{ width: `${state.getThumbPercent(0) * 100}%` }}
             />
+            {/* React Aria はつまみを left と transform: translate(-50%, -50%) で置く。個別の scale はその transform より外側に掛かり、
+                つまみ自身の中心ではなく元の箱の中心を基準に拡大するため、左上へずれる。拡大は内側の円で行う */}
             <SliderThumb
               inputRef={inputRef}
               className={[
-                "top-1/2 size-4 rounded-full border border-line-control bg-text-strong",
-                "data-dragging:scale-110 data-hovered:opacity-90",
+                "group top-1/2 size-4 rounded-full data-hovered:opacity-90",
                 "data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-accent",
               ].join(" ")}
-            />
+            >
+              <span
+                aria-hidden
+                data-testid="memory-slider-disc"
+                className={[
+                  "block size-full rounded-full border border-line-control bg-text-strong",
+                  "transition-[scale] duration-(--duration-fast) ease-out-quint motion-reduce:transition-none",
+                  "group-data-hovered:scale-110 group-data-focus-visible:scale-110 group-data-dragging:scale-110",
+                ].join(" ")}
+              />
+            </SliderThumb>
           </>
         )}
       </SliderTrack>
