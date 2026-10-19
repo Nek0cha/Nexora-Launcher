@@ -14,6 +14,7 @@ use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
 use crate::install::{InstallEnv, Urls, install, kib, now_ms};
+use crate::instance::copy::copy_dir;
 use crate::instance::lock::InstanceLocks;
 use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
 use crate::java::verify::{JavaProbe, SystemProbe};
@@ -35,6 +36,7 @@ use crate::task::{TaskHandle, TaskManager};
 
 pub const INSTALL_KIND: &str = "install";
 pub const LAUNCH_KIND: &str = "launch";
+pub const DUPLICATE_KIND: &str = "duplicate";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -61,6 +63,11 @@ fn already_running(instance_id: &str) -> CoreError {
     CoreError::AlreadyRunning {
         instance_id: instance_id.to_string(),
     }
+}
+
+/// タスクの進捗（u32）に収める。
+fn clamp_u32(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// インスタンスの設定による -Xmx の値（MB）。
@@ -183,21 +190,104 @@ impl Launcher {
     /// インスタンスを削除する。起動中、またはインストール中なら `InstanceBusy`。
     /// 確認は、待たずに断れるようロックの前にも行い、競合を防ぐためロックを取った後にもう一度行う。
     pub async fn delete_instance(&self, id: &str) -> Result<(), CoreError> {
-        self.ensure_deletable(id)?;
+        self.ensure_idle(id)?;
         let _guard = self.locks.lock(id).await;
-        self.ensure_deletable(id)?;
+        self.ensure_idle(id)?;
         instance::delete(&self.env.db, &self.env.paths, id)
     }
 
-    fn ensure_deletable(&self, id: &str) -> Result<(), CoreError> {
+    /// 削除と複製の前の確認。起動中、またはインストールか起動のタスクが動いていれば `InstanceBusy`。
+    fn ensure_idle(&self, id: &str) -> Result<(), CoreError> {
         instance::get(&self.env.db, id)?;
-        // state の列だけでは断らない（インストール中に落ちた行を削除できなくなるため）
+        // state の列だけでは断らない（インストール中に落ちた行を削除や複製できなくなるため）
         if self.processes.is_running(id)? || self.active_task(id).is_some() {
             return Err(CoreError::InstanceBusy {
                 instance_id: id.to_string(),
             });
         }
         Ok(())
+    }
+
+    /// インスタンスを複製するタスクを始め、その ID を返す。タスクの `instance_id` は元のインスタンス。
+    /// 断る条件と確認の順は削除と同じ（ロックの前に一度、ロックを取った後にもう一度）。
+    /// 同じインスタンスの複製が動いていれば、新しく作らずにその ID を返す。
+    pub fn duplicate_instance(&self, id: &str) -> Result<String, CoreError> {
+        self.ensure_idle(id)?;
+        let this = self.clone();
+        let source_id = id.to_string();
+        Ok(self.tasks.spawn_unique(
+            DUPLICATE_KIND,
+            Some(source_id.clone()),
+            move |handle| async move {
+                let _guard = this.locks.lock(&source_id).await;
+                this.ensure_idle(&source_id)?;
+                this.duplicate(&source_id, &handle).await
+            },
+        ))
+    }
+
+    /// 行を作り、ゲームディレクトリをコピーする。失敗か取り消しなら、コピー先と行を消す。
+    /// 元のインスタンスの行とディレクトリには書き込まない。
+    async fn duplicate(&self, source_id: &str, handle: &TaskHandle) -> Result<(), CoreError> {
+        let env = &self.env;
+        let source = instance::get(&env.db, source_id)?;
+        let copy = instance::duplicate_row(&env.db, &env.paths, source_id, now_ms())?;
+        // コピーの途中で、複製の側を起動や削除させない
+        let _copy_guard = self.locks.lock(&copy.id).await;
+        let src = instance::game_dir(&env.paths, &source);
+        let dst = instance::game_dir(&env.paths, &copy);
+        if dst.symlink_metadata().is_ok() {
+            // 行を作った後に同じ名前のものが置かれた。他人のものなので消さない
+            let _ = instance::remove_row(&env.db, &copy.id);
+            return Err(CoreError::Io {
+                path: dst.display().to_string(),
+                source: std::io::ErrorKind::AlreadyExists.into(),
+            });
+        }
+        let token = handle.token().clone();
+        let progress = handle.clone();
+        let target = dst.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            copy_dir(&src, &target, &token, &mut |done, total| {
+                progress.set_progress(clamp_u32(done), clamp_u32(total));
+            })
+        })
+        .await
+        .unwrap_or_else(|e| {
+            Err(CoreError::Unexpected {
+                message: e.to_string(),
+            })
+        });
+        if result.is_err() {
+            self.discard_copy(&copy.id, &dst);
+        }
+        result
+    }
+
+    /// 作りかけの複製を消す。ディレクトリを消せなければ、行は壊れた状態で残す
+    /// （一覧に出して利用者が削除できるようにし、見えない残骸を作らないため）。
+    fn discard_copy(&self, copy_id: &str, dst: &Path) {
+        let db = &self.env.db;
+        let removed = match std::fs::remove_dir_all(dst) {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Err(err) => {
+                tracing::warn!(path = %dst.display(), %err, "could not remove a partial copy");
+                false
+            }
+        };
+        let cleanup = if removed {
+            instance::remove_row(db, copy_id)
+        } else {
+            instance::set_state(db, copy_id, InstanceState::Broken)
+        };
+        if let Err(err) = cleanup {
+            tracing::warn!(
+                instance_id = copy_id,
+                code = err.code(),
+                "could not clean up a partial copy"
+            );
+        }
     }
 
     /// 結合テスト用。インスタンスごとの排他を外から取れるようにする。

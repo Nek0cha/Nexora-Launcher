@@ -1,5 +1,6 @@
 //! インスタンスの作成、取得、設定の更新。
 
+pub mod copy;
 pub mod dir_name;
 pub mod lock;
 
@@ -160,6 +161,22 @@ pub fn game_dir(paths: &AppPaths, instance: &Instance) -> PathBuf {
     paths.instances_dir().join(&instance.dir_name)
 }
 
+/// 行にも、ディスクの上にも使われていないフォルダ名（大文字と小文字は区別しない）。
+fn unused_dir_name(
+    conn: &rusqlite::Connection,
+    instances_dir: &std::path::Path,
+    base: &str,
+) -> Result<String, CoreError> {
+    let mut stmt = conn.prepare("SELECT dir_name FROM instances")?;
+    let used: Vec<String> = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(dir_name::unique(base, |candidate| {
+        used.iter().any(|u| u.eq_ignore_ascii_case(candidate))
+            || instances_dir.join(candidate).exists()
+    }))
+}
+
 /// 行を追加し、ゲームディレクトリを作る。名前が空白だけならバージョン名を使う。
 pub fn create(
     db: &Db,
@@ -175,18 +192,10 @@ pub fn create(
     let base = dir_name::sanitize(&name);
     let instances_dir = paths.instances_dir();
     let instance = db.with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT dir_name FROM instances")?;
-        let used: Vec<String> = stmt
-            .query_map([], |r| r.get(0))?
-            .collect::<Result<_, _>>()?;
-        let dir = dir_name::unique(&base, |candidate| {
-            used.iter().any(|u| u.eq_ignore_ascii_case(candidate))
-                || instances_dir.join(candidate).exists()
-        });
         let instance = Instance {
             id: uuid::Uuid::now_v7().to_string(),
             name,
-            dir_name: dir,
+            dir_name: unused_dir_name(conn, &instances_dir, &base)?,
             mc_version: mc_version.to_string(),
             state: InstanceState::Installing,
             created_at: now_ms,
@@ -326,6 +335,58 @@ pub fn delete(db: &Db, paths: &AppPaths, id: &str) -> Result<(), CoreError> {
     remove_leftover(&paths.argfile(id), false);
     remove_leftover(&paths.game_logs_dir().join(id), true);
     Ok(())
+}
+
+/// 複製の行を追加する。ディレクトリは作らない（コピーは呼び出し側で行う）。
+/// 新しい `id` と `dir_name` を割り当て、最後に遊んだ日時とプレイ時間は空にする。
+/// 名前、設定、`mc_version`、`state` は元から引き継ぐ。名前の重複は許し、`dir_name` で区別する。
+pub fn duplicate_row(
+    db: &Db,
+    paths: &AppPaths,
+    source_id: &str,
+    now_ms: i64,
+) -> Result<Instance, CoreError> {
+    let source = get(db, source_id)?;
+    let base = dir_name::sanitize(&source.name);
+    let instances_dir = paths.instances_dir();
+    db.with_conn(|conn| {
+        let instance = Instance {
+            id: uuid::Uuid::now_v7().to_string(),
+            dir_name: unused_dir_name(conn, &instances_dir, &base)?,
+            created_at: now_ms,
+            last_played_at: None,
+            play_time_ms: 0,
+            ..source
+        };
+        conn.execute(
+            "INSERT INTO instances (id, name, dir_name, mc_version, state, created_at,
+                 last_played_at, play_time_ms, memory_mode, memory_mb, java_mode, java_path,
+                 jvm_args)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                instance.id,
+                instance.name,
+                instance.dir_name,
+                instance.mc_version,
+                instance.state.as_str(),
+                instance.created_at,
+                instance.memory_mode.as_str(),
+                instance.memory_mb,
+                instance.java_mode.as_str(),
+                instance.java_path,
+                instance.jvm_args
+            ],
+        )?;
+        Ok(instance)
+    })
+}
+
+/// 行を消す。複製の後始末に使う（ディレクトリには触れない）。
+pub fn remove_row(db: &Db, id: &str) -> Result<(), CoreError> {
+    db.with_conn(|conn| {
+        conn.execute("DELETE FROM instances WHERE id = ?1", [id])?;
+        Ok(())
+    })
 }
 
 fn invalid(field: &str) -> CoreError {
@@ -639,6 +700,64 @@ mod tests {
         let err = result.unwrap_err();
         assert_eq!(err.code(), "io.failed");
         assert_eq!(get(&db, &inst.id).unwrap(), inst);
+    }
+
+    #[test]
+    fn duplicate_row_copies_settings_and_resets_play_stats() {
+        let (_t, paths, db) = setup();
+        let src = create(&db, &paths, "World", "1.21.5", 1).unwrap();
+        update_settings(
+            &db,
+            &src.id,
+            &InstanceSettings {
+                name: "World".into(),
+                memory_mode: MemoryMode::Manual,
+                memory_mb: Some(4096),
+                java_mode: JavaMode::Manual,
+                java_path: Some("/opt/java/bin/java".into()),
+                jvm_args: "-Dfoo=bar".into(),
+            },
+        )
+        .unwrap();
+        set_state(&db, &src.id, InstanceState::Ready).unwrap();
+        record_launch(&db, &src.id, 50).unwrap();
+        add_play_time(&db, &src.id, 1000).unwrap();
+        let before = get(&db, &src.id).unwrap();
+
+        let copy = duplicate_row(&db, &paths, &src.id, 200).unwrap();
+        assert_ne!(copy.id, src.id);
+        assert_ne!(copy.dir_name, src.dir_name);
+        assert_eq!(copy.dir_name, "World (2)");
+        assert_eq!(copy.name, "World");
+        assert_eq!(copy.mc_version, "1.21.5");
+        assert_eq!(copy.state, InstanceState::Ready);
+        assert_eq!(copy.created_at, 200);
+        assert_eq!(copy.last_played_at, None);
+        assert_eq!(copy.play_time_ms, 0);
+        assert_eq!(copy.memory_mode, MemoryMode::Manual);
+        assert_eq!(copy.memory_mb, Some(4096));
+        assert_eq!(copy.java_mode, JavaMode::Manual);
+        assert_eq!(copy.java_path.as_deref(), Some("/opt/java/bin/java"));
+        assert_eq!(copy.jvm_args, "-Dfoo=bar");
+        assert_eq!(get(&db, &copy.id).unwrap(), copy);
+        // ディレクトリは作らず、元は変わらない
+        assert!(!game_dir(&paths, &copy).exists());
+        assert_eq!(get(&db, &src.id).unwrap(), before);
+    }
+
+    #[test]
+    fn duplicate_row_keeps_installing_state() {
+        let (_t, paths, db) = setup();
+        let src = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let copy = duplicate_row(&db, &paths, &src.id, 2).unwrap();
+        assert_eq!(copy.state, InstanceState::Installing);
+    }
+
+    #[test]
+    fn duplicate_row_of_missing_is_not_found() {
+        let (_t, paths, db) = setup();
+        let err = duplicate_row(&db, &paths, "nope", 1).unwrap_err();
+        assert_eq!(err.code(), "instance.not_found");
     }
 
     #[test]

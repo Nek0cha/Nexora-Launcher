@@ -14,7 +14,7 @@ use nexora_core::db::Db;
 use nexora_core::error::ParamValue;
 use nexora_core::install::{Urls, now_ms};
 use nexora_core::instance::{self, InstanceSettings, InstanceState, JavaMode, MemoryMode};
-use nexora_core::launcher::{INSTALL_KIND, LAUNCH_KIND, Launcher};
+use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::paths::AppPaths;
 use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
 use secrecy::SecretString;
@@ -361,6 +361,219 @@ async fn delete_removes_a_ready_instance() {
     // 共有のライブラリとアセットは消さない
     let paths = AppPaths::from_root(h._temp.path());
     assert!(paths.libraries_dir().is_dir());
+}
+
+/// instances/ の下にあるディレクトリの名前。
+fn instance_dirs(h: &Harness) -> Vec<String> {
+    let paths = AppPaths::from_root(h._temp.path());
+    let mut names: Vec<String> = std::fs::read_dir(paths.instances_dir())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn source_dir(h: &Harness, id: &str) -> std::path::PathBuf {
+    let paths = AppPaths::from_root(h._temp.path());
+    instance::game_dir(&paths, &instance::get(h.launcher.db(), id).unwrap())
+}
+
+/// 複製が失敗か取り消しで終わり、元の行とディレクトリだけが残っていること。
+fn assert_nothing_left(h: &Harness, source: &instance::Instance, dirs_before: &[String]) {
+    let listed = h.launcher.list_instances().unwrap();
+    assert_eq!(listed, vec![source.clone()]);
+    assert_eq!(instance_dirs(h), dirs_before);
+}
+
+#[tokio::test]
+async fn duplicate_creates_independent_copy() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let src_dir = source_dir(&h, &id);
+    std::fs::create_dir_all(src_dir.join("saves/world")).unwrap();
+    std::fs::write(src_dir.join("saves/world/level.dat"), "world").unwrap();
+    instance::record_launch(h.launcher.db(), &id, 50).unwrap();
+    let before = instance::get(h.launcher.db(), &id).unwrap();
+
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    assert_eq!(snap.kind, DUPLICATE_KIND);
+    assert_eq!(snap.instance_id.as_deref(), Some(id.as_str()));
+    assert_eq!(snap.progress.current, snap.progress.total);
+
+    let listed = h.launcher.list_instances().unwrap();
+    assert_eq!(listed.len(), 2);
+    let copy = listed.iter().find(|i| i.id != id).unwrap();
+    assert_eq!(copy.name, before.name);
+    assert_eq!(copy.state, InstanceState::Ready);
+    assert_eq!(copy.last_played_at, None);
+    let copy_dir = source_dir(&h, &copy.id);
+    assert_ne!(copy_dir, src_dir);
+    assert_eq!(
+        std::fs::read_to_string(copy_dir.join("saves/world/level.dat")).unwrap(),
+        "world"
+    );
+    // 複製の側を変えても元は変わらない
+    std::fs::write(copy_dir.join("saves/world/level.dat"), "changed").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(src_dir.join("saves/world/level.dat")).unwrap(),
+        "world"
+    );
+    assert_eq!(instance::get(h.launcher.db(), &id).unwrap(), before);
+}
+
+#[tokio::test]
+async fn duplicate_failure_leaves_no_row_or_dir() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    // 元のディレクトリがないとコピーは失敗する（コピー先を作った後で）
+    std::fs::remove_dir_all(source_dir(&h, &id)).unwrap();
+    let source = instance::get(h.launcher.db(), &id).unwrap();
+    let dirs_before = instance_dirs(&h);
+
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "io.failed");
+    assert_nothing_left(&h, &source, &dirs_before);
+}
+
+/// コピーの途中で読めないファイルに当たる。Windows では共有なしで開いておく。
+#[cfg(windows)]
+#[tokio::test]
+async fn duplicate_failure_in_the_middle_leaves_no_row_or_dir() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let src_dir = source_dir(&h, &id);
+    std::fs::write(src_dir.join("a.txt"), "a").unwrap();
+    std::fs::create_dir_all(src_dir.join("saves")).unwrap();
+    std::fs::write(src_dir.join("saves/locked.dat"), "x").unwrap();
+    let _locked = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(src_dir.join("saves/locked.dat"))
+        .unwrap();
+    let source = instance::get(h.launcher.db(), &id).unwrap();
+    let dirs_before = instance_dirs(&h);
+
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "io.failed");
+    assert_nothing_left(&h, &source, &dirs_before);
+    assert_eq!(std::fs::read_to_string(src_dir.join("a.txt")).unwrap(), "a");
+}
+
+/// コピーの途中で読めないファイルに当たる。Unix では権限を外す（root では確かめられない）。
+#[cfg(unix)]
+#[tokio::test]
+async fn duplicate_failure_in_the_middle_leaves_no_row_or_dir() {
+    use std::os::unix::fs::PermissionsExt;
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let src_dir = source_dir(&h, &id);
+    std::fs::write(src_dir.join("a.txt"), "a").unwrap();
+    std::fs::create_dir_all(src_dir.join("saves")).unwrap();
+    let locked = src_dir.join("saves/locked.dat");
+    std::fs::write(&locked, "x").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&locked).is_ok() {
+        return;
+    }
+    let source = instance::get(h.launcher.db(), &id).unwrap();
+    let dirs_before = instance_dirs(&h);
+
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "io.failed");
+    assert_nothing_left(&h, &source, &dirs_before);
+}
+
+#[tokio::test]
+async fn duplicate_cancel_leaves_no_row_or_dir() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    std::fs::write(source_dir(&h, &id).join("options.txt"), "a").unwrap();
+    let source = instance::get(h.launcher.db(), &id).unwrap();
+    let dirs_before = instance_dirs(&h);
+    // ロックを待っている間に取り消す。コピーは始まった直後に取り消しに気づく
+    let guard = h.launcher.instance_locks().lock(&id).await;
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    h.tasks.cancel(&task_id).unwrap();
+    drop(guard);
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Cancelled);
+    assert_nothing_left(&h, &source, &dirs_before);
+}
+
+#[tokio::test]
+async fn duplicate_is_refused_while_running() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    insert_running(&h.launcher, &id, 1);
+    let err = h.launcher.duplicate_instance(&id).unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    assert_eq!(kinds_for(&h.tasks, &id), vec![INSTALL_KIND]);
+    assert_eq!(h.launcher.list_instances().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn duplicate_rechecks_after_taking_the_instance_lock() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let source = instance::get(h.launcher.db(), &id).unwrap();
+    let dirs_before = instance_dirs(&h);
+    // 起動の処理がロックを持っている間に複製が待ち、その間にゲームが起動した状況
+    let guard = h.launcher.instance_locks().lock(&id).await;
+    let task_id = h.launcher.duplicate_instance(&id).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!h.tasks.get(&task_id).unwrap().state.is_terminal());
+    insert_running(&h.launcher, &id, 1);
+    drop(guard);
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "instance.busy");
+    assert_nothing_left(&h, &source, &dirs_before);
+}
+
+#[tokio::test]
+async fn duplicate_is_refused_while_installing_but_not_for_a_stale_row() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let id = &created.instance.id;
+    // インストールのタスクが動いている間
+    let err = h.launcher.duplicate_instance(id).unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    wait(&h.tasks, &created.task_id).await;
+    // 途中で落ちて state が installing のまま、タスクもない行は複製できる
+    instance::set_state(h.launcher.db(), id, InstanceState::Installing).unwrap();
+    let task_id = h.launcher.duplicate_instance(id).unwrap();
+    let snap = wait(&h.tasks, &task_id).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    let listed = h.launcher.list_instances().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|i| i.state == InstanceState::Installing));
+}
+
+#[tokio::test]
+async fn duplicate_of_missing_instance_is_not_found() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let err = h.launcher.duplicate_instance("nope").unwrap_err();
+    assert_eq!(err.code(), "instance.not_found");
 }
 
 #[tokio::test]
