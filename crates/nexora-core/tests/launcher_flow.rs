@@ -321,11 +321,11 @@ async fn delete_is_refused_while_installing() {
     let err = h.launcher.delete_instance(id).await.unwrap_err();
     assert_eq!(err.code(), "instance.busy");
     wait(&h.tasks, &created.task_id).await;
-    // タスクがなくても state が installing のままなら断る
-    instance::set_state(h.launcher.db(), id, InstanceState::Installing).unwrap();
-    let err = h.launcher.delete_instance(id).await.unwrap_err();
-    assert_eq!(err.code(), "instance.busy");
     assert!(instance::get(h.launcher.db(), id).is_ok());
+    // 途中で落ちて state が installing のまま、タスクもない行は削除できる
+    instance::set_state(h.launcher.db(), id, InstanceState::Installing).unwrap();
+    h.launcher.delete_instance(id).await.unwrap();
+    assert!(h.launcher.list_instances().unwrap().is_empty());
 }
 
 #[tokio::test]

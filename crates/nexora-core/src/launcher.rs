@@ -190,11 +190,9 @@ impl Launcher {
     }
 
     fn ensure_deletable(&self, id: &str) -> Result<(), CoreError> {
-        let inst = instance::get(&self.env.db, id)?;
-        if self.processes.is_running(id)?
-            || self.active_task(id).is_some()
-            || inst.state == InstanceState::Installing
-        {
+        instance::get(&self.env.db, id)?;
+        // state の列だけでは断らない（インストール中に落ちた行を削除できなくなるため）
+        if self.processes.is_running(id)? || self.active_task(id).is_some() {
             return Err(CoreError::InstanceBusy {
                 instance_id: id.to_string(),
             });
