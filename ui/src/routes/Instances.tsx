@@ -130,13 +130,15 @@ export default function Instances() {
       <ul className="flex flex-col divide-y divide-line border-y border-line">
         {data.map((instance) => {
           const task = activeDuplicate(tasks, instance.id);
-          // コマンドの応答を待つ間も、タスクが表に届くまでの間の分として、同じく操作を止める
+          // コマンドの応答を待つ間も、タスクが表に届くまでの間の分として、操作は止める。
+          // ただし進捗（複製中 0%）は出さない。コマンドが断られる（起動中など）こともあり、受け付けられてタスクが届いてから出す
           const sending = duplicate.isPending && duplicate.variables === instance.id;
           return (
             <InstanceRow
               key={instance.id}
               instance={instance}
-              duplicating={task ? duplicatePercent(task) : sending ? 0 : null}
+              duplicating={task ? duplicatePercent(task) : null}
+              sending={sending}
               onDuplicate={() => onDuplicate(instance)}
               onOpenFolder={() => onOpenFolder(instance)}
               onDelete={() => onDelete(instance)}
@@ -183,6 +185,7 @@ function StateLabel({ state }: { state: Instance["state"] }) {
 function InstanceRow({
   instance,
   duplicating,
+  sending,
   onDuplicate,
   onOpenFolder,
   onDelete,
@@ -190,6 +193,8 @@ function InstanceRow({
   instance: Instance;
   /** 複製の進捗（%）。複製していなければ null */
   duplicating: number | null;
+  /** 複製のコマンドの応答待ち。操作は止めるが、進捗は出さない */
+  sending: boolean;
   onDuplicate: () => void;
   onOpenFolder: () => void;
   onDelete: () => void;
@@ -197,7 +202,8 @@ function InstanceRow({
   const { t } = useTranslation();
   const nameId = useId();
   const format = useFormatters();
-  const busy = duplicating !== null;
+  const progressing = duplicating !== null;
+  const busy = progressing || sending;
   const dot = <span aria-hidden className="text-text-faint">·</span>;
 
   return (
@@ -227,7 +233,7 @@ function InstanceRow({
             </>
           )}
         </span>
-        {busy && (
+        {progressing && (
           <span className="text-sm text-text">
             <span className="tabular">{t("instances.duplicatingPercent", { percent: duplicating })}</span>
           </span>
@@ -262,7 +268,7 @@ function InstanceRow({
         </MenuTrigger>
       </div>
       {/* 複製の進捗は行の下端の細い線でも示す。読み上げは上の文で行う */}
-      {busy && (
+      {progressing && (
         <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden">
           <span
             className="block h-full origin-left bg-accent transition-transform duration-(--duration-slow) ease-out-quint"

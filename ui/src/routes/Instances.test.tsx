@@ -180,6 +180,22 @@ describe("Instances", () => {
     expect(duplicateInstance).toHaveBeenCalledWith("i1");
   });
 
+  it("duplicate_refused_while_sending_never_shows_progress", async () => {
+    let refuse: (e: unknown) => void = () => {};
+    vi.mocked(duplicateInstance).mockReturnValue(new Promise((_, reject) => (refuse = reject)));
+    mount([instance("i1", "World")]);
+    const menu = await openMenu("World");
+    await press(within(menu).getByRole("menuitem", { name: "Duplicate" }));
+    const world = await row("World");
+    // 応答待ちの間は操作を止めるが、複製中の表示は出さない
+    await waitFor(() => expect((within(world).getByRole("button", { name: "More" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(within(world).queryByText(/Duplicating/)).toBeNull();
+    await act(async () => refuse(new IpcError({ code: "instance.busy", params: {}, detail: null })));
+    await within(toasts()).findByRole("alert");
+    expect(within(world).queryByText(/Duplicating/)).toBeNull();
+    expect((within(world).getByRole("button", { name: "More" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("refetches_the_list_when_a_duplicate_task_starts_and_finishes", async () => {
     mount([instance("i1", "World")]);
     await row("World");
