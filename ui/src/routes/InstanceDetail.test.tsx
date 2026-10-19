@@ -255,6 +255,17 @@ describe("InstanceDetail", () => {
     expect(openInstanceFolder).toHaveBeenCalledTimes(4);
   });
 
+  it("folder_buttons_show_their_name_in_a_tooltip", async () => {
+    mount([instance()]);
+    const button = await screen.findByRole("button", { name: "Mods folder" });
+    // キーボードでフォーカスすると、待たずにツールチップが出る
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => button.focus());
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toBe("Mods folder");
+    expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
+  });
+
   it("folder_open_failure_is_a_toast", async () => {
     vi.mocked(openInstanceFolder).mockRejectedValue(new IpcError({ code: "instance.busy", params: {}, detail: null }));
     mount([instance()]);

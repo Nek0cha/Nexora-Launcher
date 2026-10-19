@@ -1,6 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { Button, Input, Label, Tab, TabList, TabPanel, Tabs, Text, TextField } from "react-aria-components";
+import {
+  Button,
+  Input,
+  Label,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  Text,
+  TextField,
+  Tooltip,
+  TooltipTrigger,
+} from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
@@ -21,6 +33,7 @@ import { MemorySlider } from "../components/MemorySlider";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
 import { useToast } from "../components/toast/useToast";
+import { tooltipClass } from "../components/tooltip";
 import {
   hasMemoryFlag,
   isDirty,
@@ -131,17 +144,22 @@ export default function InstanceDetail() {
           <span className="tabular text-sm text-text-muted">{instance.mcVersion}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {/* アイコンだけのボタンなので、名前をツールチップでも見せる */}
           {folderButtons.map(({ kind, icon: Icon }) => (
-            <Button
-              key={kind}
-              aria-label={t(`instances.detail.folders.${kind}`)}
-              onPress={() => {
-                openInstanceFolder(instance.id, kind).catch(toast.showError);
-              }}
-              className={iconButton}
-            >
-              <Icon aria-hidden className="size-4" />
-            </Button>
+            <TooltipTrigger key={kind} delay={500}>
+              <Button
+                aria-label={t(`instances.detail.folders.${kind}`)}
+                onPress={() => {
+                  openInstanceFolder(instance.id, kind).catch(toast.showError);
+                }}
+                className={iconButton}
+              >
+                <Icon aria-hidden className="size-4" />
+              </Button>
+              <Tooltip offset={6} className={tooltipClass}>
+                {t(`instances.detail.folders.${kind}`)}
+              </Tooltip>
+            </TooltipTrigger>
           ))}
           <Link to="/instances" className={quietLink}>
             <IconBack aria-hidden className="size-4" />
