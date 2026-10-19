@@ -105,6 +105,12 @@ describe("InstanceDetail", () => {
     });
   });
 
+  it("name_input_is_limited_to_64_characters", async () => {
+    mount([instance()]);
+    await saveButton();
+    expect((nameInput() as HTMLInputElement).maxLength).toBe(64);
+  });
+
   it("blank_name_blocks_saving", async () => {
     mount([instance()]);
     await saveButton();

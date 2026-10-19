@@ -193,6 +193,7 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           <TextField
             value={form.name}
             onChange={(name) => change({ name })}
+            maxLength={64}
             className="flex items-center justify-between gap-4"
           >
             <Label className="text-text">{t("instances.detail.name")}</Label>

@@ -115,4 +115,23 @@ describe("ChangeSkinDialog", () => {
     await screen.findByRole("alert");
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
+
+  it("oversized_file_is_rejected_without_calling_the_command", async () => {
+    mount();
+    await openDialog();
+    const big = new File([new Uint8Array(64 * 1024 + 1)], "big.png", { type: "image/png" });
+    const input = screen.getByLabelText("Skin image (PNG)") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [big] } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Change" }));
+      await Promise.resolve();
+    });
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("64 KiB");
+    expect(changeSkin).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
 });

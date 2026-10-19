@@ -3,13 +3,16 @@ import { useId, useState } from "react";
 import { Button, Dialog, DialogTrigger, Heading, Label, Modal, ModalOverlay, Radio, RadioGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { changeSkin, getSkinVariant } from "../../api/commands";
-import { toErrorPayload } from "../../api/ipc";
+import { IpcError, toErrorPayload } from "../../api/ipc";
 import type { SkinVariant } from "../../bindings/SkinVariant";
 import { FailureNotice } from "../../components/FailureNotice";
 import { modalClass, overlayClass } from "../../components/modal";
 import { ACCOUNTS_KEY, SKIN_KEY } from "./useAccounts";
 
-const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+/** スキンの PNG の上限（バックエンドと同じ 64 KiB）。 */
+const MAX_SKIN_BYTES = 64 * 1024;
+
+const ring ="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const rowButton = [
   "inline-flex h-8 items-center rounded-md px-2.5 text-sm text-text-muted",
@@ -79,6 +82,8 @@ function ChangeSkinContent({ accountId, close }: { accountId: string; close: () 
   const submit = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("no file");
+      // 大きすぎるファイルは読まずに断る。表示はバックエンドが断るときと同じにする
+      if (file.size > MAX_SKIN_BYTES) throw new IpcError({ code: "skin.invalid", params: {}, detail: null });
       const buf = await file.arrayBuffer();
       await changeSkin(accountId, variant, Array.from(new Uint8Array(buf)));
     },
