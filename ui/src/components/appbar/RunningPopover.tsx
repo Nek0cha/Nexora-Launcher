@@ -10,38 +10,46 @@ export type RunningEntry = { id: string; name: string; stop: StopState };
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-/** 動いているゲームの印。色はトークンの success。 */
+/** 動いているゲームの印。色はトークンの running（緑）。 */
 export function RunningDot({ className = "" }: { className?: string }) {
-  return <span aria-hidden className={`block size-2 shrink-0 rounded-full bg-success ${className}`} />;
+  return <span aria-hidden className={`block size-2 shrink-0 rounded-full bg-running ${className}`} />;
 }
 
 /**
  * 停止のボタン（赤）。待っている間は「終了を待っています」と出して押下を無視し、
  * 確認のダイアログを閉じた後（forceReady）は「強制終了」に変わる。
+ * 待っている間もボタンのまま残す（押した直後に要素が入れ替わると、フォーカスが body に落ちる）。
  */
 export function StopButton({ entry, flow }: { entry: RunningEntry; flow: StopFlow }) {
   const { t } = useTranslation();
-  if (entry.stop === "waiting") {
-    return (
-      <span className="inline-flex h-6 shrink-0 items-center px-2 text-xs whitespace-nowrap text-text-muted">
-        {t("play.waitingExit")}
-      </span>
-    );
-  }
+  const waiting = entry.stop === "waiting";
   const force = entry.stop === "forceReady";
-  const label = force ? t("play.forceStop") : t("play.stop");
+  const label = waiting ? t("play.waitingExit") : force ? t("play.forceStop") : t("play.stop");
   return (
     <Button
-      aria-label={force ? t("running.forceStop", { name: entry.name }) : t("running.stop", { name: entry.name })}
-      onPress={() => (force ? flow.forceStop(entry.id) : flow.requestStop(entry.id))}
+      aria-label={
+        waiting
+          ? t("running.waiting", { name: entry.name })
+          : force
+            ? t("running.forceStop", { name: entry.name })
+            : t("running.stop", { name: entry.name })
+      }
+      aria-disabled={waiting || undefined}
+      onPress={() => {
+        if (waiting) return;
+        if (force) flow.forceStop(entry.id);
+        else flow.requestStop(entry.id);
+      }}
       className={[
-        "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-xs font-medium whitespace-nowrap text-danger",
+        "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-xs whitespace-nowrap",
         "transition-colors duration-(--duration-fast) ease-out-quint",
-        "data-hovered:bg-danger data-hovered:text-danger-ink data-pressed:bg-danger data-pressed:text-danger-ink",
+        waiting
+          ? "cursor-default text-text-muted"
+          : "font-medium text-danger data-hovered:bg-danger data-hovered:text-danger-ink data-pressed:bg-danger data-pressed:text-danger-ink",
         ring,
       ].join(" ")}
     >
-      <IconStop aria-hidden className="size-3" />
+      {!waiting && <IconStop aria-hidden className="size-3" />}
       <span>{label}</span>
     </Button>
   );

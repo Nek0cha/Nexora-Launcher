@@ -41,7 +41,10 @@ afterEach(() => {
 
 function setup() {
   const client = new QueryClient();
-  client.setQueryData(RUNNING_KEY, [{ instanceId: "i1", pid: 1, launchedAt: 0 }]);
+  client.setQueryData(RUNNING_KEY, [
+    { instanceId: "i1", pid: 1, launchedAt: 0 },
+    { instanceId: "i2", pid: 2, launchedAt: 0 },
+  ]);
   vi.spyOn(client, "invalidateQueries").mockResolvedValue();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -128,6 +131,32 @@ describe("useStopFlow", () => {
     expect(flow().confirmingFor).toBeNull();
     expect(flow().stateOf("i1")).toBe("idle");
     expect(stopInstance).not.toHaveBeenCalledWith("i1", true);
+  });
+
+  it("two instances reaching 10s together are asked one after the other, each once", async () => {
+    const { flow } = setup();
+    await run(() => flow().requestStop("i1"));
+    await run(() => flow().requestStop("i2"));
+    await advance(STOP_WAIT_MS);
+    expect(flow().confirmingFor).toBe("i1");
+    await run(() => flow().keepWaiting());
+    expect(flow().confirmingFor).toBe("i2");
+    expect(flow().stateOf("i1")).toBe("forceReady");
+    await run(() => flow().keepWaiting());
+    expect(flow().confirmingFor).toBeNull();
+    await advance(STOP_WAIT_MS * 3);
+    expect(flow().confirmingFor).toBeNull();
+    expect(stopInstance).not.toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it("a late failure of the graceful request does not undo a force stop", async () => {
+    let reject!: (e: unknown) => void;
+    vi.mocked(stopInstance).mockReturnValueOnce(new Promise((_, no) => (reject = no)));
+    const { flow } = setup();
+    await run(() => flow().requestStop("i1"));
+    await run(() => flow().forceStop("i1"));
+    await run(() => reject(new IpcError({ code: "unknown", params: {}, detail: null })));
+    expect(flow().stateOf("i1")).toBe("forceReady");
   });
 
   it("game exit before 10s cancels the confirmation", async () => {

@@ -101,10 +101,12 @@ export function useStopFlow(): StopFlow {
   const table = data ?? EMPTY;
 
   return useMemo<StopFlow>(() => {
-    const failed = (instanceId: string) => (error: unknown) => {
+    // set はこの呼び出しが付けた状態。応答が遅れて届く間に別の操作（強制終了など）で変わっていれば、戻さない
+    const failed = (instanceId: string, set: Exclude<StopState, "idle">) => (error: unknown) => {
+      toast.showError(error);
+      if (client.getQueryData<StopTable>(STOP_KEY)?.states[instanceId] !== set) return;
       // 頼めなかったので、もう一度押せるように戻す
       clearStop(client, instanceId);
-      toast.showError(error);
     };
 
     return {
@@ -130,7 +132,7 @@ export function useStopFlow(): StopFlow {
             );
           }, STOP_WAIT_MS),
         );
-        stopInstance(instanceId, false).catch(failed(instanceId));
+        stopInstance(instanceId, false).catch(failed(instanceId, "waiting"));
       },
       forceStop: (instanceId) => {
         clearTimer(client, instanceId);
@@ -138,7 +140,7 @@ export function useStopFlow(): StopFlow {
           states: { ...prev.states, [instanceId]: "forceReady" },
           confirm: prev.confirm.filter((id) => id !== instanceId),
         }));
-        stopInstance(instanceId, true).catch(failed(instanceId));
+        stopInstance(instanceId, true).catch(failed(instanceId, "forceReady"));
       },
       confirmingFor: table.confirm[0] ?? null,
       keepWaiting: () => {

@@ -99,8 +99,31 @@ describe("RunningPill", () => {
     mount([], { a: "waiting" });
     const pill = screen.getByTestId("running-pill");
     expect(within(pill).getByText("Alpha")).toBeTruthy();
-    expect(within(pill).getByText("Waiting for the game to close")).toBeTruthy();
+    // 押した後もボタンのまま残し、フォーカスを失わない
+    const waiting = within(pill).getByRole("button", { name: "Waiting for Alpha to close" });
+    expect(within(waiting).getByText("Waiting for the game to close")).toBeTruthy();
+    expect(waiting.getAttribute("aria-disabled")).toBe("true");
     expect(within(pill).queryByRole("button", { name: "Stop Alpha" })).toBeNull();
+  });
+
+  it("keyboard stop keeps focus on the same button while waiting", async () => {
+    mount(["a"]);
+    const stop = screen.getByRole("button", { name: "Stop Alpha" });
+    await act(async () => {
+      stop.focus();
+      fireEvent.click(stop);
+    });
+    const waiting = await screen.findByRole("button", { name: "Waiting for Alpha to close" });
+    expect(document.activeElement).toBe(waiting);
+    await act(async () => {
+      fireEvent.click(waiting);
+    });
+    expect(stopInstance).toHaveBeenCalledTimes(1);
+  });
+
+  it("multi pill shows the waiting label for force ready too", () => {
+    mount(["a", "b"], { b: "forceReady" });
+    expect(within(screen.getByTestId("running-pill")).getByText("Waiting for the game to close")).toBeTruthy();
   });
 
   it("force ready shows force stop", async () => {

@@ -49,7 +49,8 @@ export function RunningPill() {
     stop: flow.stateOf(id),
   }));
   const single = entries.length === 1 ? entries[0] : undefined;
-  const anyWaiting = entries.some((entry) => entry.stop === "waiting");
+  // 確認の後（forceReady）も、終了を待っていることに変わりはない
+  const anyWaiting = entries.some((entry) => entry.stop !== "idle");
   const hidden = entries.length - MAX_DOTS;
 
   return (

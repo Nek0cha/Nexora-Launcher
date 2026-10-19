@@ -213,10 +213,12 @@
     "stop": "{{name}} を停止",
     "forceStop": "{{name}} を強制終了",
     "openLog": "{{name}} のログを開く",
-    "openDetail": "{{name}} の詳細を開く"
+    "openDetail": "{{name}} の詳細を開く",
+    "waiting": "{{name}} の終了を待っています"
   },
   "forceStop": {
     "title": "ゲームが閉じません",
+    "instance": "対象：{{name}}",
     "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
     "wait": "待つ",
     "confirm": "強制終了"

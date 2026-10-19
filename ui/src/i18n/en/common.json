@@ -213,10 +213,12 @@
     "stop": "Stop {{name}}",
     "forceStop": "Force stop {{name}}",
     "openLog": "Open logs for {{name}}",
-    "openDetail": "Open details for {{name}}"
+    "openDetail": "Open details for {{name}}",
+    "waiting": "Waiting for {{name}} to close"
   },
   "forceStop": {
     "title": "The game is not closing",
+    "instance": "Instance: {{name}}",
     "body": "Force stopping may lose any progress since the last save.",
     "wait": "Wait",
     "confirm": "Force stop"

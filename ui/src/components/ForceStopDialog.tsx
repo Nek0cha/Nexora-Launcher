@@ -1,6 +1,7 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { useTranslation } from "react-i18next";
+import { useInstances } from "../features/instances/useInstances";
 import { useStopFlow } from "../features/play/useStopFlow";
 import { centeredOverlayClass, modalClass } from "./modal";
 
@@ -28,7 +29,13 @@ export function ForceStopDialog() {
   const { t } = useTranslation();
   const flow = useStopFlow();
   const bodyId = useId();
+  const { data: instances } = useInstances();
   const instanceId = flow.confirmingFor;
+  // 閉じる動きの間も、最後に聞いたインスタンスの名前を出し続ける
+  const shown = useRef<string | null>(null);
+  if (instanceId !== null) shown.current = instanceId;
+  const shownId = shown.current;
+  const name = instances?.find((instance) => instance.id === shownId)?.name ?? shownId ?? "";
 
   return (
     <ModalOverlay
@@ -40,10 +47,12 @@ export function ForceStopDialog() {
       className={centeredOverlayClass}
     >
       <Modal className={`${modalClass} max-w-md`}>
-        <Dialog role="alertdialog" aria-describedby={bodyId} className="flex flex-col gap-4 p-5 outline-hidden">
+        {/* 2 つ続けて聞くときも、インスタンスごとに作り直して、最初のフォーカスを「待つ」に戻す（Modal ごと作り直すと、新しい方が aria-hidden のまま残る） */}
+        <Dialog key={shownId ?? ""} role="alertdialog" aria-describedby={bodyId} className="flex flex-col gap-4 p-5 outline-hidden">
           <Heading slot="title" className="font-display text-lg font-semibold text-text-strong">
             {t("forceStop.title")}
           </Heading>
+          <p className="-mt-2 truncate text-sm text-text-muted">{t("forceStop.instance", { name })}</p>
           <p id={bodyId} className="text-sm text-text">
             {t("forceStop.body")}
           </p>
