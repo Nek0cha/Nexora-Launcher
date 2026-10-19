@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Outlet } from "react-router";
 import { appInfo } from "../api/commands";
 import { AppBar } from "../components/appbar/AppBar";
+import { RunningPill } from "../components/appbar/RunningPill";
 import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
 import { ToastRegion } from "../components/toast/ToastRegion";
@@ -65,7 +66,7 @@ export function App() {
       <MotionConfig reducedMotion="user">
         <div className="flex h-screen flex-col">
           {/* Windows では OS のタイトルバーの代わり、macOS と Linux では OS のタイトルバーの下に置く */}
-          <AppBar showWindowControls={info?.os === "windows"} materialOn={materialOn} />
+          <AppBar showWindowControls={info?.os === "windows"} materialOn={materialOn} slot={<RunningPill />} />
           <div className="flex min-h-0 flex-1">
             <Sidebar materialOn={materialOn} />
             <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">

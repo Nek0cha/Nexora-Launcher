@@ -30,7 +30,10 @@
       "crashed": "The game crashed"
     },
     "install": "Install",
-    "launchingPercent": "Launching {{percent}}%"
+    "launchingPercent": "Launching {{percent}}%",
+    "stop": "Stop",
+    "forceStop": "Force stop",
+    "waitingExit": "Waiting for the game to close"
   },
   "create": {
     "open": "Create instance",
@@ -202,5 +205,20 @@
     "maximize": "Maximize",
     "restore": "Restore down",
     "close": "Close"
+  },
+  "running": {
+    "title": "Running games",
+    "label": "{{count}} running games",
+    "more": "+{{count}}",
+    "stop": "Stop {{name}}",
+    "forceStop": "Force stop {{name}}",
+    "openLog": "Open logs for {{name}}",
+    "openDetail": "Open details for {{name}}"
+  },
+  "forceStop": {
+    "title": "The game is not closing",
+    "body": "Force stopping may lose any progress since the last save.",
+    "wait": "Wait",
+    "confirm": "Force stop"
   }
 }

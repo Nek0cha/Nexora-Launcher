@@ -30,7 +30,10 @@
       "crashed": "ゲームが異常終了しました"
     },
     "install": "インストール",
-    "launchingPercent": "起動中 {{percent}}%"
+    "launchingPercent": "起動中 {{percent}}%",
+    "stop": "停止",
+    "forceStop": "強制終了",
+    "waitingExit": "終了を待っています"
   },
   "create": {
     "open": "インスタンスを作成",
@@ -202,5 +205,20 @@
     "maximize": "最大化",
     "restore": "元に戻す",
     "close": "閉じる"
+  },
+  "running": {
+    "title": "実行中のゲーム",
+    "label": "実行中のゲーム {{count}} 件",
+    "more": "+{{count}}",
+    "stop": "{{name}} を停止",
+    "forceStop": "{{name}} を強制終了",
+    "openLog": "{{name}} のログを開く",
+    "openDetail": "{{name}} の詳細を開く"
+  },
+  "forceStop": {
+    "title": "ゲームが閉じません",
+    "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
+    "wait": "待つ",
+    "confirm": "強制終了"
   }
 }

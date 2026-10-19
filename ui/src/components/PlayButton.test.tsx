@@ -1,12 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelTask, launchInstance, listAccounts, listRunning } from "../api/commands";
+import { cancelTask, launchInstance, listAccounts, listRunning, stopInstance } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { LAST_EXIT_KEY, RUNNING_KEY, type LastExit } from "../features/play/useGameSync";
+import { STOP_KEY } from "../features/play/useStopFlow";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
 import { PlayButton } from "./PlayButton";
@@ -14,6 +15,7 @@ import { PlayButton } from "./PlayButton";
 vi.mock("../api/commands", () => ({
   launchInstance: vi.fn(),
   cancelTask: vi.fn(),
+  stopInstance: vi.fn(),
   listRunning: vi.fn().mockResolvedValue([]),
   listAccounts: vi.fn(),
   getSkin: vi.fn().mockResolvedValue(null),
@@ -37,13 +39,15 @@ type MountOptions = {
   sessions?: RunningSession[];
   lastExit?: LastExit;
   instance?: Instance;
+  stop?: Record<string, "waiting" | "forceReady">;
 };
 
-function mount({ tasks = [], sessions = [], lastExit, instance: inst = instance }: MountOptions = {}) {
+function mount({ tasks = [], sessions = [], lastExit, instance: inst = instance, stop = {} }: MountOptions = {}) {
   client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   client.setQueryData(RUNNING_KEY, sessions);
   client.setQueryData(LAST_EXIT_KEY, lastExit ? { [lastExit.instanceId]: lastExit } : {});
+  client.setQueryData(STOP_KEY, { states: stop, confirm: [] });
   // 取り直しでも同じ内容が返るようにする
   vi.mocked(listRunning).mockResolvedValue(sessions);
   return render(
@@ -82,6 +86,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(launchInstance).mockReset();
   vi.mocked(cancelTask).mockReset();
+  vi.mocked(stopInstance).mockReset();
 });
 
 describe("PlayButton", () => {
@@ -152,12 +157,50 @@ describe("PlayButton", () => {
     expect(screen.getByText("Launching 40%")).toBeTruthy();
   });
 
-  it("shows playing with elapsed time and ignores presses", async () => {
+  it("shows playing with elapsed time and does not launch again", async () => {
+    vi.mocked(stopInstance).mockResolvedValue(null);
     mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() - 65_000 }] });
-    expect(await screen.findByRole("button", { name: "Playing" })).toBeTruthy();
+    const button = await screen.findByRole("button", { name: "Stop" });
+    expect(button.getAttribute("aria-describedby")).toBeTruthy();
+    expect(screen.getByText("Playing", { selector: "[aria-hidden] span" })).toBeTruthy();
     expect(screen.getByText("1:05")).toBeTruthy();
-    await press("Playing");
+    await press("Stop");
     expect(launchInstance).not.toHaveBeenCalled();
+  });
+
+  it("playing_button_shows_stop_on_hover_and_calls_request_stop", async () => {
+    vi.mocked(stopInstance).mockResolvedValue(null);
+    mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() }] });
+    const button = await screen.findByRole("button", { name: "Stop" });
+    expect(within(button).queryByText("Stop")).toBeNull();
+    await act(async () => {
+      fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    });
+    expect(within(button).getByText("Stop")).toBeTruthy();
+    expect(button.className).toContain("bg-danger");
+    await press("Stop");
+    expect(stopInstance).toHaveBeenCalledWith("i1", false);
+    expect(await screen.findByRole("button", { name: "Waiting for the game to close" })).toBeTruthy();
+  });
+
+  it("waiting_shows_waiting_label", async () => {
+    mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() }], stop: { i1: "waiting" } });
+    const button = await screen.findByRole("button", { name: "Waiting for the game to close" });
+    expect(within(button).getByText("Waiting for the game to close")).toBeTruthy();
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    });
+    expect(button.className).not.toContain("bg-danger");
+    await press("Waiting for the game to close");
+    expect(stopInstance).not.toHaveBeenCalled();
+  });
+
+  it("after the confirmation is dismissed, pressing force stops", async () => {
+    vi.mocked(stopInstance).mockResolvedValue(null);
+    mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() }], stop: { i1: "forceReady" } });
+    await press("Force stop");
+    expect(stopInstance).toHaveBeenCalledWith("i1", true);
   });
 
   it("shows a crash notice until Play is pressed again", async () => {
