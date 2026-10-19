@@ -1,6 +1,6 @@
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import IconTray from "~icons/ph/tray";
+import IconDownload from "~icons/ph/download-simple";
 import { activeCount, isTerminal } from "../../features/tasks/taskTable";
 import { useTasks } from "../../features/tasks/useTasks";
 import { percentOf, TaskList } from "../TaskList";
@@ -13,7 +13,9 @@ const popoverClass = [
   "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
 ].join(" ");
 
-const RADIUS = 9;
+// ボタンは 32px（size-8）。viewBox も 32 にして 1 単位 = 1px とし、輪の線が画素に揃うようにする。
+// 輪は半径 13・線幅 2 で外縁が 14。アイコンは 16px（Phosphor は 16px で線が 1px になる）で、輪とは同心で触れない。
+const RADIUS = 13;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /**
@@ -27,13 +29,13 @@ function ProgressRing({ percent }: { percent: number | null }) {
     <svg
       aria-hidden
       data-testid="task-ring"
-      viewBox="0 0 24 24"
+      viewBox="0 0 32 32"
       className={`absolute inset-0 size-full -rotate-90 ${indeterminate ? "motion-safe:animate-spin" : ""}`}
     >
-      <circle cx="12" cy="12" r={RADIUS} fill="none" strokeWidth="2" className="stroke-surface-3" />
+      <circle cx="16" cy="16" r={RADIUS} fill="none" strokeWidth="2" className="stroke-surface-3" />
       <circle
-        cx="12"
-        cy="12"
+        cx="16"
+        cy="16"
         r={RADIUS}
         fill="none"
         strokeWidth="2"
@@ -68,7 +70,7 @@ export function TaskButton() {
         ].join(" ")}
       >
         {count > 0 && <ProgressRing percent={percent} />}
-        <IconTray aria-hidden className="size-4" />
+        <IconDownload aria-hidden className="size-4" />
       </Button>
       <Popover placement="bottom end" offset={6} className={popoverClass}>
         <Dialog aria-label={t("tasks.title")} className="outline-hidden">
