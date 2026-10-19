@@ -24,6 +24,8 @@ pub struct ArgInputs<'a> {
     /// `${path}` を置き換え済みのログ設定の引数。
     pub logging_argument: Option<&'a str>,
     pub memory_mb: u32,
+    /// 利用者の JVM 引数（`jvm_args::split` と `strip_memory` を通したもの）。`-Xmx` の直後に入れる。
+    pub extra_jvm_args: &'a [String],
     pub launcher_version: &'a str,
 }
 
@@ -161,8 +163,12 @@ pub fn build_args(inputs: &ArgInputs) -> LaunchArgs {
         (None, None) => {}
     }
     let vars = variables(inputs);
+    let mut jvm: Vec<String> = raw.iter().map(|a| substitute(a, &vars)).collect();
+    // 利用者の引数は置き換えない（${auth_access_token} などを argfile に書かないため）。
+    // -Xmx の直後に入れ、argfile へは他の JVM 引数と同じ経路で渡る
+    jvm.splice(1..1, inputs.extra_jvm_args.iter().cloned());
     LaunchArgs {
-        jvm: raw.iter().map(|a| substitute(a, &vars)).collect(),
+        jvm,
         game: game.iter().map(|a| substitute(a, &vars)).collect(),
     }
 }
@@ -257,6 +263,15 @@ mod tests {
     }
 
     fn launch_args_for(name: &str, os: OsName, session: &LaunchSession) -> LaunchArgs {
+        launch_args_with(name, os, session, &[])
+    }
+
+    fn launch_args_with(
+        name: &str,
+        os: OsName,
+        session: &LaunchSession,
+        extra_jvm_args: &[String],
+    ) -> LaunchArgs {
         let version = fixture(name);
         let env = RuleEnv {
             os,
@@ -275,6 +290,7 @@ mod tests {
             classpath: &classpath,
             logging_argument: Some("-Dlog4j.configurationFile=/assets/log_configs/client.xml"),
             memory_mb: 2048,
+            extra_jvm_args,
             launcher_version: "0.1.0",
         })
     }
@@ -315,6 +331,55 @@ mod tests {
         assert!(!args.contains(&"--width".to_string()));
         assert!(!args.iter().any(|a| a.starts_with("--quickPlay")));
         assert!(args.contains(&"/lib/a.jar;/v/client.jar".to_string()));
+    }
+
+    #[test]
+    fn extra_jvm_args_follow_xmx_and_precede_the_classpath() {
+        let extra = vec!["-XX:+UseG1GC".to_string(), "-Dnexora.test=a b".to_string()];
+        let args = launch_args_with("1.21.5", OsName::Windows, &player_session(), &extra);
+        insta::assert_json_snapshot!(args.jvm);
+        assert_eq!(args.jvm[0], "-Xmx2048M");
+        assert_eq!(&args.jvm[1..3], extra.as_slice());
+        let cp = args.jvm.iter().position(|a| a == "-cp").unwrap();
+        assert!(cp > 2);
+        let legacy = launch_args_with("1.8.9", OsName::Windows, &player_session(), &extra);
+        assert_eq!(&legacy.jvm[1..3], extra.as_slice());
+        let cp = legacy.jvm.iter().position(|a| a == "-cp").unwrap();
+        assert!(cp > 2);
+    }
+
+    #[test]
+    fn extra_jvm_args_are_not_substituted() {
+        // 利用者の引数に ${...} があっても置き換えない（トークンが argfile に入らないように）
+        let extra = vec!["-Dx=${auth_access_token}".to_string()];
+        let mut session = player_session();
+        session.access_token = SecretString::from("secret-token-value".to_string());
+        let args = launch_args_with("1.21.5", OsName::Windows, &session, &extra);
+        assert_eq!(args.jvm[1], "-Dx=${auth_access_token}");
+        assert!(args.jvm.iter().all(|a| !a.contains("secret-token-value")));
+    }
+
+    #[test]
+    fn user_jvm_args_never_produce_a_second_xmx() {
+        use crate::launch::jvm_args::{split, strip_memory};
+        for input in [
+            "",
+            "\"",
+            "-Xmx8G",
+            r#"-Xss1M "-Xmx1G"#,
+            r#"-Dfoo="a b -Xmx4G"#,
+        ] {
+            let (extra, _) = strip_memory(split(input));
+            let args = launch_args_with("1.21.5", OsName::Windows, &player_session(), &extra);
+            let xmx: Vec<_> = args.jvm.iter().filter(|a| a.starts_with("-Xmx")).collect();
+            assert_eq!(xmx, vec!["-Xmx2048M"], "{input:?}");
+            assert!(args.jvm.iter().all(|a| !a.is_empty()), "{input:?}");
+            assert_eq!(
+                args.jvm.last().map(String::as_str),
+                Some("net.minecraft.client.main.Main"),
+                "{input:?}"
+            );
+        }
     }
 
     #[test]

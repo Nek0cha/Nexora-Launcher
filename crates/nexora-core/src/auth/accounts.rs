@@ -186,6 +186,25 @@ pub fn save_profile(
     })
 }
 
+/// 取り直したプロフィールの名前とスキン、取得時刻だけを書く。所有権の状態と確認の時刻、
+/// `verified_at`、`needs_login`、XUID は変えない（所有権を確かめていない更新に使う）。
+pub fn update_profile(
+    db: &Db,
+    id: Uuid,
+    username: &str,
+    skin_url: Option<&str>,
+    now: i64,
+) -> Result<(), CoreError> {
+    db.with_conn(|conn| {
+        let changed = conn.execute(
+            "UPDATE accounts SET username = ?2, skin_url = ?3, profile_fetched_at = ?4
+             WHERE id = ?1",
+            params![key(id), username, skin_url, now],
+        )?;
+        ensure_changed(changed, id)
+    })
+}
+
 /// 所有権の確認結果を記録する。`verified_at` は `Verified` のときだけ更新する。
 pub fn record_entitlement(
     db: &Db,
@@ -317,6 +336,32 @@ mod tests {
         assert_eq!(rows[0].added_at, 1);
         assert_eq!(rows[0].profile_fetched_at, Some(5));
         assert_eq!(rows[0].verified_at, Some(5));
+    }
+
+    #[test]
+    fn update_profile_writes_only_name_skin_and_fetch_time() {
+        let db = Db::open_in_memory().unwrap();
+        let id = add(&db, 1, "Steve", 1);
+        set_needs_login(&db, id, true).unwrap();
+        let before = get(&db, id).unwrap();
+        update_profile(&db, id, "Alex", Some("https://example.invalid/new.png"), 9).unwrap();
+        let after = get(&db, id).unwrap();
+        assert_eq!(after.username, "Alex");
+        assert_eq!(
+            after.skin_url.as_deref(),
+            Some("https://example.invalid/new.png")
+        );
+        assert_eq!(after.profile_fetched_at, Some(9));
+        // 所有権の確認、検証の時刻、ログインし直しの印、XUID は変えない
+        assert_eq!(after.entitlement, before.entitlement);
+        assert_eq!(after.entitlement_checked_at, before.entitlement_checked_at);
+        assert_eq!(after.verified_at, Some(1));
+        assert!(after.needs_login);
+        assert_eq!(after.xuid, before.xuid);
+        update_profile(&db, id, "Alex", None, 10).unwrap();
+        assert_eq!(get(&db, id).unwrap().skin_url, None);
+        let err = update_profile(&db, Uuid::from_u128(9), "X", None, 1).unwrap_err();
+        assert_eq!(err.code(), "auth.account_not_found");
     }
 
     #[test]

@@ -718,6 +718,35 @@ async fn profile_reads_the_active_skin() {
         p.skin_url.as_deref(),
         Some("https://textures.minecraft.net/texture/new")
     );
+    // variant がなければ None
+    assert_eq!(p.skin_variant, None);
+}
+
+#[tokio::test]
+async fn profile_reads_the_variant_of_the_active_skin() {
+    use nexora_core::auth::minecraft::SkinVariant;
+    for (variant, expected) in [
+        ("SLIM", Some(SkinVariant::Slim)),
+        ("CLASSIC", Some(SkinVariant::Classic)),
+        ("slim", Some(SkinVariant::Slim)),
+        ("WIDE", None),
+    ] {
+        let server = MockServer::start().await;
+        mount_profile(
+            &server,
+            200,
+            &format!(
+                r#"{{"id":"069a79f444e94726a5befca90e38aaf5","name":"N","skins":[
+                {{"state":"INACTIVE","url":"https://textures.minecraft.net/texture/old","variant":"CLASSIC"}},
+                {{"state":"ACTIVE","url":"https://textures.minecraft.net/texture/new","variant":"{variant}"}}]}}"#
+            ),
+        )
+        .await;
+        let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+            .await
+            .unwrap();
+        assert_eq!(p.skin_variant, expected, "{variant}");
+    }
 }
 
 #[tokio::test]
@@ -1527,6 +1556,251 @@ async fn service_errors_do_not_contain_tokens() {
             assert!(!debug.contains(s), "{debug} contains {s}");
         }
     }
+}
+
+// ---- スキンの変更 ----
+
+use nexora_core::auth::minecraft::SkinVariant;
+
+const NEW_SKIN_URL: &str = "https://textures.minecraft.net/texture/new-skin";
+
+/// 署名と IHDR だけの PNG（幅 w、高さ h）。
+fn skin_png(w: u32, h: u32) -> Vec<u8> {
+    let mut v = b"\x89PNG\r\n\x1a\n".to_vec();
+    v.extend_from_slice(&13u32.to_be_bytes());
+    v.extend_from_slice(b"IHDR");
+    v.extend_from_slice(&w.to_be_bytes());
+    v.extend_from_slice(&h.to_be_bytes());
+    v.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    v
+}
+
+/// スキンの変更の後に読むプロフィール（新しいスキン、variant）。既定のプロフィールより優先する。
+async fn mount_profile_with_new_skin(server: &MockServer, variant: &str) {
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[{{"state":"ACTIVE","url":"http://textures.minecraft.net/texture/new-skin","variant":"{variant}"}}]}}"#
+        )))
+        .with_priority(1)
+        .mount(server)
+        .await;
+}
+
+async fn mount_skins(server: &MockServer, status: u16, times: Option<u64>) {
+    let mock = Mock::given(method("POST"))
+        .and(path("/mc/profile/skins"))
+        .respond_with(ResponseTemplate::new(status).set_body_string(MC_TOKEN));
+    match times {
+        Some(n) => mock.up_to_n_times(n).with_priority(1).mount(server).await,
+        None => mock.mount(server).await,
+    }
+}
+
+#[tokio::test]
+async fn change_skin_posts_multipart_and_refreshes_skin_url() {
+    use std::sync::atomic::AtomicUsize;
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    assert_eq!(e.row().skin_url, None);
+    let changes = Arc::new(AtomicUsize::new(0));
+    let c = changes.clone();
+    let auth = e.auth.clone().with_on_change(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    // 本文は PNG のバイト列を含み UTF-8 ではないため、バイト列のまま探す
+    fn body_has(needle: &'static str) -> impl Fn(&wiremock::Request) -> bool {
+        move |r| r.body.windows(needle.len()).any(|w| w == needle.as_bytes())
+    }
+    Mock::given(method("POST"))
+        .and(path("/mc/profile/skins"))
+        .and(header(
+            "Authorization",
+            format!("Bearer {MC_TOKEN}").as_str(),
+        ))
+        .and(body_has("name=\"variant\"\r\n\r\nslim\r\n"))
+        .and(body_has("name=\"file\"; filename=\"skin.png\""))
+        .and(body_has("Content-Type: image/png"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .expect(1)
+        .mount(&e.server)
+        .await;
+    mount_profile_with_new_skin(&e.server, "SLIM").await;
+    let png = skin_png(64, 64);
+    auth.change_skin(id, SkinVariant::Slim, png.clone())
+        .await
+        .unwrap();
+    e.server.verify().await;
+    // multipart の本文に、画像のバイト列がそのまま入っている
+    let requests = e.server.received_requests().await.unwrap();
+    let upload = requests
+        .iter()
+        .find(|r| r.url.path() == "/mc/profile/skins")
+        .unwrap();
+    let content_type = upload
+        .headers
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.starts_with("multipart/form-data"),
+        "{content_type}"
+    );
+    assert!(upload.body.windows(png.len()).any(|w| w == png.as_slice()));
+    // 取り直したプロフィールのスキンの URL が accounts に入る
+    assert_eq!(e.row().skin_url.as_deref(), Some(NEW_SKIN_URL));
+    assert!(e.auth.list().unwrap().accounts[0].has_skin);
+    assert!(changes.load(Ordering::SeqCst) >= 1);
+    // 有効なトークンを使い回し、取り直さない
+    assert_eq!(hits_on(&e.server, "/token").await, 0);
+    assert_eq!(auth.skin_variant(id).await.unwrap(), SkinVariant::Slim);
+}
+
+#[tokio::test]
+async fn change_skin_does_not_move_the_ownership_check_times() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    let before = e.row();
+    assert_eq!(before.verified_at, Some(T0));
+    // スキンの変更は所有権を確かめない。時刻が進んでも、検証の時刻は動かない
+    e.advance(60_000);
+    mount_skins(&e.server, 200, None).await;
+    mount_profile_with_new_skin(&e.server, "CLASSIC").await;
+    e.auth
+        .change_skin(id, SkinVariant::Classic, skin_png(64, 64))
+        .await
+        .unwrap();
+    let after = e.row();
+    assert_eq!(after.skin_url.as_deref(), Some(NEW_SKIN_URL));
+    assert_eq!(after.verified_at, before.verified_at);
+    assert_eq!(after.entitlement_checked_at, before.entitlement_checked_at);
+    assert_eq!(after.entitlement, before.entitlement);
+    assert_eq!(after.profile_fetched_at, Some(T0 + 60_000));
+}
+
+#[tokio::test]
+async fn change_skin_with_invalid_png_makes_no_request() {
+    let e = env().await;
+    // メモリにトークンがないため、検証より先に通信すれば /token への要求が残る
+    let id = e.seed(EntitlementState::Verified, T0);
+    mount_refresh(&e.server, None, None).await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    mount_skins(&e.server, 200, None).await;
+    let mut huge = skin_png(64, 64);
+    huge.resize(64 * 1024 + 1, 0);
+    for png in [
+        b"<html>not a png</html>".to_vec(),
+        Vec::new(),
+        skin_png(32, 32),
+        skin_png(128, 128),
+        huge,
+    ] {
+        let err = e
+            .auth
+            .change_skin(id, SkinVariant::Classic, png)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CoreError::InvalidSkin { .. }), "{err:?}");
+        assert_eq!(err.code(), "skin.invalid");
+    }
+    assert_eq!(e.requests().await, 0);
+    assert_eq!(e.row().skin_url, None);
+}
+
+#[tokio::test]
+async fn change_skin_maps_429() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    mount_skins(&e.server, 429, None).await;
+    let err = e
+        .auth
+        .change_skin(id, SkinVariant::Classic, skin_png(64, 32))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, CoreError::HttpStatus { status: 429, .. }),
+        "{err:?}"
+    );
+    // 再試行しない
+    assert_eq!(hits_on(&e.server, "/mc/profile/skins").await, 1);
+    let json = serde_json::to_string(&err.to_payload()).unwrap();
+    let debug = format!("{err:?}");
+    for s in ALL_SECRETS {
+        assert!(!json.contains(s) && !debug.contains(s), "{json} {debug}");
+    }
+    assert_eq!(e.row().skin_url, None);
+    assert!(!e.row().needs_login);
+}
+
+#[tokio::test]
+async fn change_skin_401_renews_the_token_once_and_retries() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    mount_refresh(&e.server, None, None).await;
+    mount_skins(&e.server, 401, Some(1)).await;
+    mount_skins(&e.server, 200, None).await;
+    mount_profile_with_new_skin(&e.server, "CLASSIC").await;
+    e.auth
+        .change_skin(id, SkinVariant::Classic, skin_png(64, 64))
+        .await
+        .unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 1);
+    assert_eq!(hits_on(&e.server, "/mc/profile/skins").await, 2);
+    assert_eq!(e.row().skin_url.as_deref(), Some(NEW_SKIN_URL));
+}
+
+#[tokio::test]
+async fn change_skin_401_twice_does_not_loop() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    mount_refresh(&e.server, None, None).await;
+    mount_skins(&e.server, 401, None).await;
+    let err = e
+        .auth
+        .change_skin(id, SkinVariant::Classic, skin_png(64, 64))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, CoreError::HttpStatus { status: 401, .. }),
+        "{err:?}"
+    );
+    assert_eq!(hits_on(&e.server, "/token").await, 1);
+    assert_eq!(hits_on(&e.server, "/mc/profile/skins").await, 2);
+    let debug = format!("{err:?}");
+    for s in ALL_SECRETS {
+        assert!(!debug.contains(s), "{debug}");
+    }
+}
+
+#[tokio::test]
+async fn change_skin_of_an_unknown_account_is_account_not_found() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    mount_skins(&e.server, 200, None).await;
+    let err = e
+        .auth
+        .change_skin(Uuid::from_u128(5), SkinVariant::Classic, skin_png(64, 64))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "auth.account_not_found");
+    let err = e.auth.skin_variant(Uuid::from_u128(5)).await.unwrap_err();
+    assert_eq!(err.code(), "auth.account_not_found");
+    assert_eq!(e.requests().await, 0);
+}
+
+#[tokio::test]
+async fn skin_variant_defaults_to_classic() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    // 既定のプロフィールにはスキンがない
+    assert_eq!(e.auth.skin_variant(id).await.unwrap(), SkinVariant::Classic);
 }
 
 // ---- ログインのタスク ----

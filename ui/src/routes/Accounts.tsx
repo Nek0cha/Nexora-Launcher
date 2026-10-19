@@ -14,6 +14,7 @@ import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
 import { modalClass, overlayClass } from "../components/modal";
 import { accountStatus } from "../features/accounts/accountState";
+import { ChangeSkinDialog } from "../features/accounts/ChangeSkinDialog";
 import { SkinFace } from "../features/accounts/SkinFace";
 import { ACCOUNTS_KEY, useAccounts } from "../features/accounts/useAccounts";
 import { LoginDialog } from "../features/login/LoginDialog";
@@ -226,6 +227,8 @@ function AccountRow({
             {t("accounts.use")}
           </Button>
         )}
+        {/* スキンの変更は Microsoft アカウントの行だけに置く。ログインし直しが必要な間は押せない */}
+        <ChangeSkinDialog accountId={account.id} isDisabled={account.needsLogin} />
         <Button onPress={onRemove} className={rowButton}>
           {t("accounts.remove")}
         </Button>

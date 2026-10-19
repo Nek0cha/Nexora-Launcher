@@ -19,6 +19,7 @@ vi.mock("../api/commands", () => ({
 const world: Instance = {
   id: "i1", name: "World", dirName: "World", mcVersion: "1.21.5", state: "ready",
   createdAt: 0, lastPlayedAt: null, playTimeMs: 0,
+  memoryMode: "auto", memoryMb: null, javaMode: "auto", javaPath: null, jvmArgs: "",
 };
 
 function mount() {
@@ -47,12 +48,12 @@ describe("Home", () => {
     expect(screen.getByRole("button", { name: "Create instance" })).toBeTruthy();
   });
 
-  it("shows the instance with its version, the play button and a quiet create action", async () => {
-    vi.mocked(listInstances).mockResolvedValue([world]);
+  it("shows the first instance with its version and the play button, without a create button", async () => {
+    vi.mocked(listInstances).mockResolvedValue([world, { ...world, id: "i2", name: "Other" }]);
     mount();
     expect(await screen.findByRole("heading", { name: "World" })).toBeTruthy();
     expect(screen.getByText("1.21.5")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create instance" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create instance" })).toBeNull();
     expect(await screen.findByRole("button", { name: "Play" })).toBeTruthy();
   });
 

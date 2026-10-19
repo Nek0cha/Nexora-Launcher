@@ -9,8 +9,9 @@ Nexora Launcher installs and launches official Minecraft: Java Edition versions.
 The project is in early development. Building the Microsoft sign-in needs a client ID in the `NEXORA_MS_CLIENT_ID` environment variable; forks must register their own and pass Minecraft API review (aka.ms/mce-reviewappid).
 
 - Done: installing and launching vanilla game versions, including the Java runtime
-- Microsoft sign-in is implemented; waiting for Minecraft API approval
-- Planned: skin changes, mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
+- Microsoft sign-in is implemented; the Minecraft API review was passed on 2026-10-17
+- Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed
+- Planned: mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
 
@@ -24,7 +25,11 @@ Nexora Launcher is not an official Minecraft product and is not approved by or a
 
 ## 概要（日本語）
 
-Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 3：Microsoft 認証とアカウント管理）。
+Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 4：インスタンス管理の UI とスキンの変更）。
+
+- インスタンスの一覧、作成、複製、削除ができます。
+- インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
+- アカウント画面からスキンを変更できます（Minecraft API の審査は 2026-10-17 に通っています）。
 
 ## 開発環境
 
@@ -93,6 +98,7 @@ pnpm --filter ui typecheck
 
 - 全体設計：`docs/specs/2026-10-15-nexora-architecture-design.md`
 - フェーズ 1 の設計：`docs/specs/2026-10-15-phase1-foundation-design.md`
+- フェーズ 4 の設計：`docs/specs/2026-10-19-phase4-instance-ui-design.md`
 - 調査資料：`docs/research/`
 
 ## ライセンス

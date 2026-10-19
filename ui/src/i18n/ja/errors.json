@@ -34,7 +34,8 @@
   },
   "java": {
     "no_compatible_runtime": "この PC で使える Java（{{component}}）がありません",
-    "verify_failed": "導入した Java を確認できませんでした"
+    "verify_failed": "導入した Java を確認できませんでした",
+    "path_missing": "このインスタンスに設定した Java が見つかりません：{{path}}"
   },
   "launch": {
     "already_running": "このインスタンスはすでに起動しています",
@@ -67,7 +68,12 @@
     "account_in_use": "このアカウントはゲームの実行中のため、削除できません"
   },
   "instance": {
-    "not_found": "インスタンスが見つかりません"
+    "not_found": "インスタンスが見つかりません",
+    "busy": "このインスタンスは起動中かインストール中です。終わってからもう一度お試しください。",
+    "invalid_setting": "設定の値が正しくありません"
+  },
+  "skin": {
+    "invalid": "スキンには、64×64 か 64×32 ピクセルで、64 KiB 以下の PNG の画像を選んでください"
   },
   "game": {
     "crashed": "ゲームが異常終了しました（終了コード {{exitCode}}）"

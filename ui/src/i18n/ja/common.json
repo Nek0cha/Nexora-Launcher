@@ -49,7 +49,8 @@
     "kind": {
       "install": "インストール",
       "launch": "起動",
-      "login": "ログイン"
+      "login": "ログイン",
+      "duplicate": "複製"
     },
     "state": {
       "queued": "待機中",
@@ -85,6 +86,14 @@
     "removeTitle": "{{name}} を削除しますか？",
     "removeBody": "このパソコンからログインの情報を消します。Microsoft 側で発行済みのトークンが無効になるわけではありません。",
     "removeConfirm": "削除",
+    "changeSkin": "スキンを変更",
+    "skinTitle": "スキンを変更",
+    "skinFile": "スキンの画像（PNG）",
+    "skinFileHint": "64×64 または 64×32、64 KiB まで。",
+    "skinModel": "モデル",
+    "skinClassic": "Classic",
+    "skinSlim": "Slim",
+    "skinSubmit": "変更する",
     "cancel": "キャンセル"
   },
   "sidebar": {
@@ -130,6 +139,46 @@
     "hint": {
       "appNotApproved": "ランチャー側の問題（審査を待っている状態）です。お使いのアカウントの問題ではありません。",
       "denied": "ブラウザのログインの画面で、アクセスを許可すると先に進めます。"
+    }
+  },
+  "instances": {
+    "more": "その他",
+    "details": "詳細",
+    "duplicate": "複製",
+    "delete": "削除",
+    "state": {
+      "installing": "準備中",
+      "ready": "使用可能",
+      "broken": "壊れている"
+    },
+    "lastPlayed": "最後に遊んだ日時",
+    "playTime": "プレイ時間",
+    "neverPlayed": "まだ遊んでいません",
+    "duplicatingPercent": "複製中 {{percent}}%",
+    "deleteTitle": "{{name}} を削除しますか？",
+    "deleteBody": "ワールドを含む、このインスタンスのすべてのデータが削除されます。元に戻せません。",
+    "deleteConfirm": "削除",
+    "cancel": "キャンセル",
+    "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。",
+    "detail": {
+      "tabSettings": "設定",
+      "name": "名前",
+      "memory": "メモリ",
+      "memoryMb": "最大メモリ（MB）",
+      "memoryRange": "512〜65536 MB の範囲で指定します",
+      "java": "Java",
+      "javaPath": "Java のパス",
+      "javaPathHint": "java.exe または javaw.exe のパス",
+      "modeAuto": "自動",
+      "modeManual": "手動",
+      "jvmArgs": "JVM 引数",
+      "jvmArgsHelp": "空白で区切ります。空白を含む値は二重引用符（\"）で囲みます。二重引用符そのものは渡せません。Nexora の引数はこの後に続くため、最後の値を使うオプションは上書きされることがあります。",
+      "xmxWarning": "-Xmx は無視され、メモリの設定が使われます。",
+      "nextLaunch": "設定は次の起動から反映されます。",
+      "notFound": "このインスタンスは見つかりません。",
+      "backToList": "インスタンスの一覧に戻る",
+      "save": "保存",
+      "saved": "保存しました"
     }
   }
 }

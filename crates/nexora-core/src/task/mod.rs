@@ -39,7 +39,8 @@ pub struct TaskManager {
     notifier: Arc<dyn TaskNotifier>,
 }
 
-/// タスクの処理に渡すハンドル。
+/// タスクの処理に渡すハンドル。`spawn_blocking` の中へ渡せるよう複製できる。
+#[derive(Clone)]
 pub struct TaskHandle {
     id: String,
     token: CancellationToken,

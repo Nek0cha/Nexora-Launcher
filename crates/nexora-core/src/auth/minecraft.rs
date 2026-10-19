@@ -3,15 +3,17 @@
 use std::path::PathBuf;
 
 use secrecy::{ExposeSecret, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use super::AuthUrls;
 use super::accounts::EntitlementState;
 use super::http::{
-    AuthHttp, http_status, json_post, send, status_is_transient, transient, transient_status,
+    AuthHttp, http_status, json_post, send, send_any_status, status_is_transient, transient,
+    transient_status,
 };
 use super::xbox::XstsToken;
 use crate::error::CoreError;
@@ -25,6 +27,10 @@ const SKIN_HOST: &str = "textures.minecraft.net";
 /// スキンの画像の上限。
 const MAX_SKIN_BYTES: usize = 1024 * 1024;
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
+/// 変更に使うスキンの画像の上限。
+pub const SKIN_MAX_BYTES: usize = 64 * 1024;
+/// 受け付けるスキンの寸法（幅、高さ）。
+const SKIN_SIZES: [(u32, u32); 2] = [(64, 64), (64, 32)];
 
 /// Minecraft のアクセストークン。
 #[derive(Debug, Clone)]
@@ -126,12 +132,43 @@ pub async fn entitlement(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Enti
     judge_entitlement(store.as_deref(), license.as_deref())
 }
 
+/// スキンのモデル。値は Minecraft Services の API と同じ（`classic`、`slim`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum SkinVariant {
+    Classic,
+    Slim,
+}
+
+impl SkinVariant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SkinVariant::Classic => "classic",
+            SkinVariant::Slim => "slim",
+        }
+    }
+
+    /// プロフィールの `variant`（`CLASSIC`、`SLIM`）を読む。大文字と小文字は区別しない。
+    fn parse(s: &str) -> Option<SkinVariant> {
+        if s.eq_ignore_ascii_case("classic") {
+            Some(SkinVariant::Classic)
+        } else if s.eq_ignore_ascii_case("slim") {
+            Some(SkinVariant::Slim)
+        } else {
+            None
+        }
+    }
+}
+
 /// Minecraft のプロフィール。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     pub id: Uuid,
     pub name: String,
     pub skin_url: Option<String>,
+    /// 使用中のスキンのモデル。プロフィールに書かれていなければ None。
+    pub skin_variant: Option<SkinVariant>,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +183,7 @@ struct ProfileBody {
 struct SkinBody {
     state: Option<String>,
     url: Option<String>,
+    variant: Option<String>,
 }
 
 /// `textures.minecraft.net` の https（ポートの指定なし）だけを受け付ける。
@@ -178,17 +216,89 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
     let id = Uuid::parse_str(&b.id).map_err(|_| CoreError::Unexpected {
         message: "invalid Minecraft profile id".into(),
     })?;
-    let skin_url = b
+    let active = b
         .skins
         .into_iter()
-        .find(|s| s.state.as_deref() == Some("ACTIVE"))
+        .find(|s| s.state.as_deref() == Some("ACTIVE"));
+    let skin_variant = active
+        .as_ref()
+        .and_then(|s| s.variant.as_deref())
+        .and_then(SkinVariant::parse);
+    let skin_url = active
         .and_then(|s| s.url)
         .and_then(|u| skin_url_from_profile(&u));
     Ok(Profile {
         id,
         name: b.name,
         skin_url,
+        skin_variant,
     })
+}
+
+fn invalid_skin(reason: &str) -> CoreError {
+    CoreError::InvalidSkin {
+        reason: reason.into(),
+    }
+}
+
+/// 変更に使うスキンの画像を、通信の前に確かめる。PNG の署名、最初のチャンクが IHDR であること、
+/// IHDR の寸法（64×64 か 64×32）、大きさ（`SKIN_MAX_BYTES` 以下）を見る。CRC と画素は見ない
+/// （最終的な判定は Minecraft Services が行う）。
+pub fn validate_skin_png(bytes: &[u8]) -> Result<(), CoreError> {
+    if bytes.len() > SKIN_MAX_BYTES {
+        return Err(invalid_skin("too_large"));
+    }
+    if !bytes.starts_with(PNG_MAGIC) {
+        return Err(invalid_skin("not_png"));
+    }
+    // 署名（8 バイト）の直後に、長さ（4）、種類（4）、幅（4）、高さ（4）が続く
+    let header = bytes.get(8..24).ok_or_else(|| invalid_skin("not_png"))?;
+    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    if be(&header[0..4]) != 13 || &header[4..8] != b"IHDR" {
+        return Err(invalid_skin("not_png"));
+    }
+    let size = (be(&header[8..12]), be(&header[12..16]));
+    if !SKIN_SIZES.contains(&size) {
+        return Err(invalid_skin("dimensions"));
+    }
+    Ok(())
+}
+
+/// スキンを変更する（`POST {mc_skins}`、multipart の `variant` と `file`）。
+/// 画像は呼び出し側が `validate_skin_png` で確かめておく。
+///
+/// 429 は一時的な失敗（Offline）にせず `HttpStatus { status: 429 }` として返し、画面に
+/// レート制限であることを出せるようにする。5xx と通信の失敗は Offline。本文はエラーに入れない。
+pub async fn upload_skin(
+    http: &AuthHttp,
+    urls: &AuthUrls,
+    mc: &McToken,
+    variant: SkinVariant,
+    png: Vec<u8>,
+) -> Result<(), CoreError> {
+    let file = reqwest::multipart::Part::bytes(png)
+        .file_name("skin.png")
+        .mime_str("image/png")
+        .map_err(|_| CoreError::Unexpected {
+            message: "could not build the skin upload".into(),
+        })?;
+    let form = reqwest::multipart::Form::new()
+        .text("variant", variant.as_str())
+        .part("file", file);
+    let request = http
+        .client()
+        .post(&urls.mc_skins)
+        .header("Accept", "application/json")
+        .bearer_auth(mc.access.expose_secret())
+        .multipart(form);
+    let reply = send_any_status(request).await?;
+    if reply.status >= 500 {
+        return Err(transient_status(reply.status));
+    }
+    if !reply.is_success() {
+        return Err(http_status(reply.status, &urls.mc_skins));
+    }
+    Ok(())
 }
 
 /// スキンの画像を取得して `cache/skins/<URL の SHA-256>.png` に保存する。あればそれを返す。
@@ -402,6 +512,70 @@ mod tests {
         let result = fetch_skin(&paths, &url, |u| u.port() == Some(port)).await;
         assert!(result.is_err());
         assert!(!paths.skins_dir().exists());
+    }
+
+    /// 署名と IHDR だけの PNG（幅 w、高さ h）。CRC と後続のチャンクは検証しないため省く。
+    fn skin_png(w: u32, h: u32) -> Vec<u8> {
+        let mut v = PNG_MAGIC.to_vec();
+        v.extend_from_slice(&13u32.to_be_bytes());
+        v.extend_from_slice(b"IHDR");
+        v.extend_from_slice(&w.to_be_bytes());
+        v.extend_from_slice(&h.to_be_bytes());
+        v.extend_from_slice(&[8, 6, 0, 0, 0]);
+        v.extend_from_slice(&[0, 0, 0, 0]);
+        v
+    }
+
+    fn invalid(bytes: &[u8]) -> bool {
+        matches!(validate_skin_png(bytes), Err(CoreError::InvalidSkin { .. }))
+    }
+
+    #[test]
+    fn validate_skin_png_accepts_64x64_and_64x32() {
+        validate_skin_png(&skin_png(64, 64)).unwrap();
+        validate_skin_png(&skin_png(64, 32)).unwrap();
+        // ちょうど上限の大きさは受け付ける
+        let mut max = skin_png(64, 64);
+        max.resize(SKIN_MAX_BYTES, 0);
+        validate_skin_png(&max).unwrap();
+    }
+
+    #[test]
+    fn validate_skin_png_rejects_other_sizes_non_png_and_huge() {
+        assert_eq!(SKIN_MAX_BYTES, 64 * 1024);
+        for (w, h) in [(32, 32), (128, 128), (32, 64), (64, 65), (0, 0)] {
+            assert!(invalid(&skin_png(w, h)), "{w}x{h}");
+        }
+        assert!(invalid(b""));
+        assert!(invalid(b"<html>not a png</html>"));
+        assert!(invalid(PNG_MAGIC));
+        // IHDR が最初のチャンクでない
+        let mut wrong_chunk = skin_png(64, 64);
+        wrong_chunk[12..16].copy_from_slice(b"IDAT");
+        assert!(invalid(&wrong_chunk));
+        // IHDR の長さが 13 でない
+        let mut wrong_len = skin_png(64, 64);
+        wrong_len[8..12].copy_from_slice(&12u32.to_be_bytes());
+        assert!(invalid(&wrong_len));
+        let mut huge = skin_png(64, 64);
+        huge.resize(SKIN_MAX_BYTES + 1, 0);
+        assert!(invalid(&huge));
+        let err = validate_skin_png(&huge).unwrap_err();
+        assert_eq!(err.code(), "skin.invalid");
+    }
+
+    #[test]
+    fn skin_variant_uses_the_api_values() {
+        assert_eq!(SkinVariant::Classic.as_str(), "classic");
+        assert_eq!(SkinVariant::Slim.as_str(), "slim");
+        assert_eq!(
+            serde_json::to_string(&SkinVariant::Slim).unwrap(),
+            r#""slim""#
+        );
+        assert_eq!(
+            serde_json::from_str::<SkinVariant>(r#""classic""#).unwrap(),
+            SkinVariant::Classic
+        );
     }
 
     #[test]

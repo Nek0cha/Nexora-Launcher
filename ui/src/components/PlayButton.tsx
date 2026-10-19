@@ -73,7 +73,18 @@ function PreparingLabel({ percent, labelKey }: { percent: number; labelKey: "pla
 
 const phaseLabelKey = (phase: Phase) => (phase === "install" ? "play.preparingPercent" : "play.launchingPercent");
 
-export function PlayButton({ instance }: { instance: Instance }) {
+export function PlayButton({
+  instance,
+  size = "hero",
+  isDisabled = false,
+}: {
+  instance: Instance;
+  /** hero はホームの大きなボタン、row は一覧の行に収まる小さなボタン */
+  size?: "hero" | "row";
+  /** 複製の最中など、このインスタンスを操作できない間に押せなくする */
+  isDisabled?: boolean;
+}) {
+  const row = size === "row";
   const { t } = useTranslation();
   const tasks = useTasks();
   const snapshot = latestInstanceTask(tasks, instance.id);
@@ -163,20 +174,22 @@ export function PlayButton({ instance }: { instance: Instance }) {
   const fillScale = active ? percent / 100 : view.kind === "playing" ? 1 : 0;
 
   return (
-    <div className="flex flex-col items-start gap-3">
+    <div className={`flex flex-col gap-3 ${row ? "items-end" : "items-start"}`}>
       {/* 失敗の説明はボタンの上に出す。画面の下端に揃えているため、下に足すとボタンが押し上げられ、再試行しようとした位置からずれる */}
       {failure && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
       <Button
         ref={buttonRef}
         onPress={onPress}
         isPending={starting}
+        isDisabled={isDisabled}
         aria-disabled={inert || undefined}
         aria-label={name}
         aria-describedby={view.kind === "preparing" ? describedBy : undefined}
         className={[
-          "play-press relative h-14 w-72 overflow-hidden rounded-lg font-display text-lg font-semibold",
+          "play-press relative overflow-hidden font-display font-semibold",
+          row ? "h-9 w-36 rounded-md text-sm" : "h-14 w-72 rounded-lg text-lg",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          "data-pending:cursor-progress",
+          "data-pending:cursor-progress data-disabled:opacity-50",
           view.kind === "playing" ? "bg-surface-3 text-text-strong" : "bg-text-strong text-surface-0",
           view.kind === "playing" || view.kind === "cancelling" ? "" : "data-hovered:opacity-90",
           inert ? "cursor-default" : "",
@@ -198,17 +211,17 @@ export function PlayButton({ instance }: { instance: Instance }) {
               >
                 {revealCancel ? (
                   <>
-                    <IconStop className="size-5" />
+                    <IconStop className={row ? "size-4" : "size-5"} />
                     <span>{name}</span>
                   </>
                 ) : view.kind === "preparing" ? (
                   <PreparingLabel percent={percent} labelKey={phaseLabelKey(view.phase)} />
                 ) : (
                   <>
-                    {Icon && <Icon className="size-5" />}
+                    {Icon && <Icon className={row ? "size-4" : "size-5"} />}
                     <span>{name}</span>
                     {view.kind === "playing" && (
-                      <span className="tabular text-sm font-normal text-text-muted">
+                      <span className={`tabular font-normal text-text-muted ${row ? "text-xs" : "text-sm"}`}>
                         {formatElapsed(now - view.launchedAt)}
                       </span>
                     )}

@@ -17,6 +17,8 @@ export function NumberField(props: {
   min: number;
   max: number;
   onChange: (value: number) => void;
+  /** 入力欄の幅のクラス。既定は 2 桁向けの w-10 である */
+  inputWidth?: string;
 }) {
   return (
     <AriaNumberField
@@ -45,7 +47,7 @@ export function NumberField(props: {
         <Button slot="decrement" className={stepButton}>
           <IconMinus aria-hidden className="size-4" />
         </Button>
-        <Input className="tabular w-10 min-w-0 bg-transparent text-center text-text outline-none" />
+        <Input className={`tabular ${props.inputWidth ?? "w-10"} min-w-0 bg-transparent text-center text-text outline-none`} />
         <Button slot="increment" className={stepButton}>
           <IconPlus aria-hidden className="size-4" />
         </Button>

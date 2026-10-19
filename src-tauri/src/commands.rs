@@ -6,9 +6,10 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
+use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
 use nexora_core::error::{CoreError, ErrorPayload};
-use nexora_core::instance::Instance;
+use nexora_core::instance::{Instance, InstanceSettings};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::CreatedInstance;
 use nexora_core::meta::mojang::manifest::VersionEntry;
@@ -145,6 +146,45 @@ pub async fn create_instance(
     services
         .launcher
         .create_instance(&name, &mc_version)
+        .map_err(ErrorPayload::from)
+}
+
+/// 設定を更新する。ゲームの起動中でも更新でき、反映は次の起動から。
+#[tauri::command]
+pub async fn update_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    settings: InstanceSettings,
+) -> CmdResult<Instance> {
+    let services = state.services()?;
+    services
+        .launcher
+        .update_instance(&instance_id, &settings)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// インスタンスを削除する。起動中かインストール中なら `instance.busy`。
+#[tauri::command]
+pub async fn delete_instance(state: State<'_, AppState>, instance_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .delete_instance(&instance_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 複製のタスクを始め、その ID を返す。
+#[tauri::command]
+pub async fn duplicate_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    services
+        .launcher
+        .duplicate_instance(&instance_id)
         .map_err(ErrorPayload::from)
 }
 
@@ -288,4 +328,38 @@ pub fn get_dev_offline_username() -> CmdResult<String> {
 #[tauri::command]
 pub fn set_dev_offline_username(_name: String) -> CmdResult<String> {
     Err(ErrorPayload::new("app.dev_only"))
+}
+
+/// アカウントの現在のスキンの型（classic か slim）を返す。
+#[tauri::command]
+pub async fn get_skin_variant(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<SkinVariant> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .auth()
+        .skin_variant(id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// スキンを変更する。`png` は IPC の `number[]` で受ける。
+#[tauri::command]
+pub async fn change_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+    variant: SkinVariant,
+    png: Vec<u8>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .auth()
+        .change_skin(id, variant, png)
+        .await
+        .map_err(ErrorPayload::from)
 }

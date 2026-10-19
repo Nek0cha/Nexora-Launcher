@@ -34,7 +34,8 @@
   },
   "java": {
     "no_compatible_runtime": "No Java ({{component}}) is available for this computer",
-    "verify_failed": "Couldn't verify the installed Java"
+    "verify_failed": "Couldn't verify the installed Java",
+    "path_missing": "The Java set for this instance was not found: {{path}}"
   },
   "launch": {
     "already_running": "This instance is already running",
@@ -67,7 +68,12 @@
     "account_in_use": "This account can't be removed while a game is running"
   },
   "instance": {
-    "not_found": "Instance not found"
+    "not_found": "Instance not found",
+    "busy": "This instance is running or being installed. Try again after it finishes.",
+    "invalid_setting": "A setting value is not valid"
+  },
+  "skin": {
+    "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"
   },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"

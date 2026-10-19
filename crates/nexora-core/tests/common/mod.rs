@@ -353,6 +353,7 @@ pub fn auth_urls(server: &MockServer) -> nexora_core::auth::AuthUrls {
         mc_store: format!("{u}/mc/store"),
         mc_license: format!("{u}/mc/license"),
         mc_profile: format!("{u}/mc/profile"),
+        mc_skins: format!("{u}/mc/profile/skins"),
     }
 }
 

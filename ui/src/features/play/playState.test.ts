@@ -6,6 +6,7 @@ import { announcement, latestInstanceTask, playStateFrom, type PlayInputs } from
 const instance: Instance = {
   id: "i1", name: "World", dirName: "World", mcVersion: "1.21.5", state: "ready",
   createdAt: 0, lastPlayedAt: null, playTimeMs: 0,
+  memoryMode: "auto", memoryMb: null, javaMode: "auto", javaPath: null, jvmArgs: "",
 };
 
 function task(state: TaskSnapshot["state"], extra: Partial<TaskSnapshot> = {}): TaskSnapshot {
