@@ -9,6 +9,7 @@ use nexora_core::auth::login::LoginMethod;
 use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
 use nexora_core::error::{CoreError, ErrorPayload};
+use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{Instance, InstanceSettings};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::CreatedInstance;
@@ -16,6 +17,7 @@ use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::task::TaskSnapshot;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::events::{TauriLoginNotifier, TauriUrlOpener};
 use crate::state::AppState;
@@ -362,4 +364,41 @@ pub async fn change_skin(
         .change_skin(id, variant, png)
         .await
         .map_err(ErrorPayload::from)
+}
+
+/// 動いているゲームを止める。強制終了は外部プロセスを呼ぶことがあるため、別スレッドで動かす。
+#[tauri::command]
+pub async fn stop_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    force: bool,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    blocking(move || services.launcher.stop_instance(&instance_id, force)).await
+}
+
+/// インスタンスのフォルダをファイルマネージャで開く。パスは Rust 側で決める。
+#[tauri::command]
+pub async fn open_instance_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    instance_id: String,
+    kind: FolderKind,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let path = blocking(move || services.launcher.instance_folder(&instance_id, kind)).await?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|err| {
+            tracing::warn!(%err, "failed to open the instance folder");
+            CoreError::Unexpected {
+                message: "failed to open the folder".to_string(),
+            }
+            .to_payload()
+        })
+}
+
+#[tauri::command]
+pub fn system_memory_mb() -> u32 {
+    nexora_core::system::total_memory_mb()
 }

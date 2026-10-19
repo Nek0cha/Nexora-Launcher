@@ -2,6 +2,7 @@
 
 pub mod copy;
 pub mod dir_name;
+pub mod folder;
 pub mod lock;
 
 use std::path::PathBuf;

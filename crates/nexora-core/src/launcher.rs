@@ -15,6 +15,7 @@ use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
 use crate::install::{InstallEnv, Urls, install, kib, now_ms};
 use crate::instance::copy::copy_dir;
+use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
 use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
 use crate::java::verify::{JavaProbe, SystemProbe};
@@ -331,6 +332,24 @@ impl Launcher {
     pub fn stop_instance(&self, instance_id: &str, force: bool) -> Result<(), CoreError> {
         instance::get(&self.env.db, instance_id)?;
         self.processes.stop(instance_id, force)
+    }
+
+    /// インスタンスのフォルダの場所。無ければ作る。
+    pub fn instance_folder(
+        &self,
+        instance_id: &str,
+        kind: FolderKind,
+    ) -> Result<PathBuf, CoreError> {
+        let inst = instance::get(&self.env.db, instance_id)?;
+        let mut dir = instance::game_dir(&self.env.paths, &inst);
+        if let Some(sub) = kind.subdir() {
+            dir.push(sub);
+        }
+        std::fs::create_dir_all(&dir).map_err(|source| CoreError::Io {
+            path: dir.display().to_string(),
+            source,
+        })?;
+        Ok(dir)
     }
 
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {
