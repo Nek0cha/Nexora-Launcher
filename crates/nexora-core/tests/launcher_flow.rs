@@ -202,6 +202,14 @@ async fn lists_supported_versions() {
 }
 
 #[tokio::test]
+async fn stop_instance_of_missing_instance_is_not_found() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let err = h.launcher.stop_instance("missing", false).unwrap_err();
+    assert_eq!(err.code(), "instance.not_found");
+}
+
+#[tokio::test]
 async fn create_installs_and_play_during_install_reuses_the_task() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;

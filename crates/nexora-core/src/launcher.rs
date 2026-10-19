@@ -327,6 +327,12 @@ impl Launcher {
         })
     }
 
+    /// 動いているゲームを止める（spec 3.1）。終了は待たず、終了後の記録は終了の検知に任せる。
+    pub fn stop_instance(&self, instance_id: &str, force: bool) -> Result<(), CoreError> {
+        instance::get(&self.env.db, instance_id)?;
+        self.processes.stop(instance_id, force)
+    }
+
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {
         self.processes.list()
     }
