@@ -69,7 +69,7 @@
   },
   "instance": {
     "not_found": "Instance not found",
-    "busy": "This instance can't be deleted while it is running or installing",
+    "busy": "This instance is running or being installed. Try again after it finishes.",
     "invalid_setting": "A setting value is not valid"
   },
   "skin": {

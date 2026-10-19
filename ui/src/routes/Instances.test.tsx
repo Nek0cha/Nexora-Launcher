@@ -190,7 +190,7 @@ describe("Instances", () => {
     await press(within(menu).getByRole("menuitem", { name: "Delete" }));
     await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
     const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("This instance can't be deleted while it is running or installing")).toBeTruthy();
+    expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
   });
 
   it("delete_io_failure_says_the_folder_may_be_partly_removed", async () => {
