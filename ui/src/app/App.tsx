@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { MotionConfig } from "motion/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { I18nProvider } from "react-aria-components";
 import { useTranslation } from "react-i18next";
@@ -7,6 +8,7 @@ import { appInfo } from "../api/commands";
 import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
 import { TaskTray } from "../components/TaskTray";
+import { ToastRegion } from "../components/toast/ToastRegion";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
@@ -59,13 +61,17 @@ export function App() {
   return (
     // React Aria の部品（数値の書式、増減ボタンの読み上げ名）もアプリの言語に合わせる
     <I18nProvider locale={i18n.language}>
-      <div className="flex h-screen">
-        <Sidebar materialOn={materialOn} footer={<TaskTray />} />
-        <main className="min-w-0 flex-1 overflow-auto bg-surface-0">
-          <Outlet />
-        </main>
-        <CommandPalette />
-      </div>
+      {/* Motion の動きは、OS の「視差効果を減らす」に従う */}
+      <MotionConfig reducedMotion="user">
+        <div className="flex h-screen">
+          <Sidebar materialOn={materialOn} footer={<TaskTray />} />
+          <main className="min-w-0 flex-1 overflow-auto bg-surface-0">
+            <Outlet />
+          </main>
+          <CommandPalette />
+        </div>
+        <ToastRegion />
+      </MotionConfig>
     </I18nProvider>
   );
 }

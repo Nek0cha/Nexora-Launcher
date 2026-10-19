@@ -6,13 +6,13 @@ import IconBack from "~icons/ph/arrow-left";
 import IconInfo from "~icons/ph/info";
 import IconWarning from "~icons/ph/warning";
 import { toErrorPayload } from "../api/ipc";
-import type { ErrorPayload } from "../bindings/ErrorPayload";
 import type { Instance } from "../bindings/Instance";
 import type { JavaMode } from "../bindings/JavaMode";
 import type { MemoryMode } from "../bindings/MemoryMode";
 import { FailureNotice } from "../components/FailureNotice";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
+import { useToast } from "../components/toast/useToast";
 import {
   hasMemoryFlag,
   isDirty,
@@ -146,8 +146,8 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   // 保存済みの値。保存に成功したら、一覧の取り直しを待たずに差し替える
   const [base, setBase] = useState<SettingsForm>(() => toForm(instance));
   const [form, setForm] = useState<SettingsForm>(base);
-  const [failure, setFailure] = useState<ErrorPayload | null>(null);
-  const [saved, setSaved] = useState(false);
+  // 保存の結果はトーストで出す
+  const toast = useToast();
 
   const dirty = isDirty(base, form);
   const canSave = dirty && isValid(form) && !update.isPending;
@@ -158,13 +158,10 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
 
   const change = (patch: Partial<SettingsForm>) => {
     setForm((f) => ({ ...f, ...patch }));
-    setSaved(false);
   };
 
   const save = () => {
     if (!canSave) return;
-    setFailure(null);
-    setSaved(false);
     update.mutate(
       { instanceId: instance.id, settings: toSettings(form) },
       {
@@ -172,9 +169,9 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           const next = toForm(updated);
           setBase(next);
           setForm(next);
-          setSaved(true);
+          toast.show({ kind: "success", message: t("instances.detail.saved") });
         },
-        onError: (e) => setFailure(toErrorPayload(e)),
+        onError: toast.showError,
       },
     );
   };
@@ -250,18 +247,10 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           {hasMemoryFlag(form.jvmArgs) && <Notice tone="warning">{t("instances.detail.xmxWarning")}</Notice>}
         </Row>
       </div>
-      {failure && (
-        <div role="alert">
-          <FailureNotice error={failure} />
-        </div>
-      )}
       <div className="flex items-center gap-3">
         <Button type="submit" isDisabled={!canSave} isPending={update.isPending} className={saveButton}>
           {t("instances.detail.save")}
         </Button>
-        <span role="status" className="text-sm text-text-muted">
-          {saved && !dirty ? t("instances.detail.saved") : ""}
-        </span>
       </div>
     </form>
   );

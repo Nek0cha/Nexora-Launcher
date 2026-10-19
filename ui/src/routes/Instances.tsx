@@ -5,17 +5,19 @@ import { Link } from "react-router";
 import IconMore from "~icons/ph/dots-three-bold";
 import IconEmpty from "~icons/ph/stack";
 import { toErrorPayload } from "../api/ipc";
-import type { ErrorPayload } from "../bindings/ErrorPayload";
 import type { Instance } from "../bindings/Instance";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
 import { PlayButton } from "../components/PlayButton";
+import { useToast } from "../components/toast/useToast";
+import { errorSentence } from "../features/errors/errorText";
 import { activeDuplicate, duplicatePercent, useDuplicateRefresh } from "../features/instances/duplicateState";
 import { useDeleteInstance, useDuplicateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useTasks } from "../features/tasks/useTasks";
+import i18n from "../i18n";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -41,8 +43,6 @@ const popoverClass = [
 const menuItemClass =
   "flex h-9 cursor-default items-center rounded-sm px-2 text-sm outline-none hover:bg-surface-3 focused:bg-surface-3";
 
-type Failure = { error: ErrorPayload; partial: boolean };
-
 export default function Instances() {
   const { t } = useTranslation();
   const { data, error } = useInstances();
@@ -50,8 +50,8 @@ export default function Instances() {
   useDuplicateRefresh();
   const remove = useDeleteInstance();
   const duplicate = useDuplicateInstance();
-  // 行の操作の失敗。次の操作を始めたら消す
-  const [failure, setFailure] = useState<Failure | null>(null);
+  // 行の操作の失敗はトーストで出す。一覧の並びを動かさない
+  const toast = useToast();
   // 削除の確認。閉じる動きの間も名前を残すため、対象と開閉を分けて持つ
   const [deleting, setDeleting] = useState<Instance | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -74,14 +74,10 @@ export default function Instances() {
   if (!data) return null;
 
   const onDuplicate = (instance: Instance) => {
-    setFailure(null);
-    duplicate.mutate(instance.id, {
-      onError: (e) => setFailure({ error: toErrorPayload(e), partial: false }),
-    });
+    duplicate.mutate(instance.id, { onError: toast.showError });
   };
 
   const onDelete = (instance: Instance) => {
-    setFailure(null);
     setDeleting(instance);
     setDeleteOpen(true);
   };
@@ -91,8 +87,10 @@ export default function Instances() {
     remove.mutate(deleting.id, {
       onError: (e) => {
         const payload = toErrorPayload(e);
-        // ディレクトリの削除の途中で失敗すると、一部のファイルだけが消えていることがある
-        setFailure({ error: payload, partial: payload.code === "io.failed" });
+        // ディレクトリの削除の途中で失敗すると、一部のファイルだけが消えていることがある。同じトーストに続けて書く
+        if (payload.code !== "io.failed") return toast.showError(payload);
+        const sentence = errorSentence(payload, (key, options) => t(key as never, options), (key) => i18n.exists(key));
+        toast.show({ kind: "error", message: `${sentence} ${t("instances.deletePartial")}` });
       },
       onSettled: () => setDeleteOpen(false),
     });
@@ -124,12 +122,6 @@ export default function Instances() {
         {title}
         <CreateInstanceDialog trigger="quiet" />
       </header>
-      {failure && (
-        <div role="alert" className="flex flex-col gap-1">
-          <FailureNotice error={failure.error} />
-          {failure.partial && <p className="pl-6 text-sm text-text">{t("instances.deletePartial")}</p>}
-        </div>
-      )}
       <ul className="flex flex-col divide-y divide-line border-y border-line">
         {data.map((instance) => {
           const task = activeDuplicate(tasks, instance.id);

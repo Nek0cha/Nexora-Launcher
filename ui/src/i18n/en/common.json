@@ -180,5 +180,9 @@
       "save": "Save",
       "saved": "Saved"
     }
+  },
+  "toast": {
+    "region": "Notifications",
+    "close": "Close"
   }
 }

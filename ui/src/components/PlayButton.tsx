@@ -24,6 +24,7 @@ import { useLastExits, useRunning } from "../features/play/useGameSync";
 import { usePlay } from "../features/play/usePlay";
 import { useTasks } from "../features/tasks/useTasks";
 import { FailureNotice } from "./FailureNotice";
+import { useToast } from "./toast/useToast";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -94,7 +95,7 @@ export function PlayButton({
   const state = playStateFrom({ instance, task: snapshot, running, runningLoaded: sessions !== undefined, lastExit });
   const now = useNow(state.kind === "playing" ? Number.POSITIVE_INFINITY : 0);
   const play = usePlay(instance.id);
-  const { press, starting, error: startError } = play;
+  const { press, starting, error: startError, errorId: startErrorId } = play;
   // ログインのダイアログはここに置く（ホームが出ている間は、コマンドパレットからの起動の分も）
   usePlayDialogHost(instance.id);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -125,16 +126,32 @@ export function PlayButton({
       ? startError
       : null;
   const cancelError = cancel.error ? toErrorPayload(cancel.error) : null;
-  const failure: { error: ErrorPayload | null } | null = shownStartError
-    ? { error: shownStartError }
+  // id は失敗ごとに変わる印。一覧の行では、変わったときだけトーストで知らせる
+  const failure: { error: ErrorPayload | null; id: string } | null = shownStartError
+    ? { error: shownStartError, id: startErrorId ?? "start" }
     : cancelError
-      ? { error: cancelError }
+      ? { error: cancelError, id: `cancel:${cancel.submittedAt}` }
       // ログインのダイアログで扱う失敗は、ボタンのそばには出さない
       : view.kind === "failed" && !loginPrompt(view.error)
-        ? { error: view.error }
+        ? { error: view.error, id: `task:${snapshot?.id}` }
         : view.kind === "crashed"
-          ? { error: crashPayload(view.exitCode) }
+          ? { error: crashPayload(view.exitCode), id: `exit:${lastExit?.at}` }
           : null;
+
+  // 一覧の行では、失敗をその場に出すと行の高さが変わるため、トーストで出す。
+  // 画面を開いた時点ですでにある失敗は知らせ直さない（undefined はまだ見ていない印）
+  const toast = useToast();
+  const toasted = useRef<string | null | undefined>(undefined);
+  const failureId = failure?.id ?? null;
+  useEffect(() => {
+    if (!row || view.kind === "checking") return;
+    if (toasted.current === undefined || toasted.current === failureId) {
+      toasted.current = failureId;
+      return;
+    }
+    toasted.current = failureId;
+    if (failure) toast.showError(failure.error ?? { code: "unknown", params: {}, detail: null });
+  }, [row, failureId, view.kind]);
 
   const onPress = () => {
     if (view.kind === "preparing") {
@@ -176,7 +193,7 @@ export function PlayButton({
   return (
     <div className={`flex flex-col gap-3 ${row ? "items-end" : "items-start"}`}>
       {/* 失敗の説明はボタンの上に出す。画面の下端に揃えているため、下に足すとボタンが押し上げられ、再試行しようとした位置からずれる */}
-      {failure && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
+      {failure && !row && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
       <Button
         ref={buttonRef}
         onPress={onPress}

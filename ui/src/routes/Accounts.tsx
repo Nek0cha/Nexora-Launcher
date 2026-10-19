@@ -9,10 +9,10 @@ import { removeAccount, setActiveAccount, setDevOfflineActive, setDevOfflineUser
 import { toErrorPayload } from "../api/ipc";
 import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
-import type { ErrorPayload } from "../bindings/ErrorPayload";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
 import { modalClass, overlayClass } from "../components/modal";
+import { useToast } from "../components/toast/useToast";
 import { accountStatus } from "../features/accounts/accountState";
 import { ChangeSkinDialog } from "../features/accounts/ChangeSkinDialog";
 import { SkinFace } from "../features/accounts/SkinFace";
@@ -57,8 +57,8 @@ export default function Accounts() {
   const { t } = useTranslation();
   const { data, error } = useAccounts();
   const client = useQueryClient();
-  // 行の操作の失敗。次の操作を始めたら消す
-  const [actionError, setActionError] = useState<ErrorPayload | null>(null);
+  // 行の操作の失敗はトーストで出す。一覧の並びを動かさない
+  const toast = useToast();
   // ログインのダイアログ。閉じる動きの間も中身を残すため、対象と開閉を分けて持つ
   const [login, setLogin] = useState<LoginTarget>({ mode: "add" });
   const [loginOpen, setLoginOpen] = useState(false);
@@ -68,13 +68,12 @@ export default function Accounts() {
   // 一覧は accounts://changed でも取り直されるが、届く前に古い表示が残らないよう、成功したらすぐ取り直す
   const refresh = () => void client.invalidateQueries({ queryKey: ACCOUNTS_KEY });
   const action = {
-    onMutate: () => setActionError(null),
     onSuccess: refresh,
-    onError: (e: unknown) => setActionError(toErrorPayload(e)),
+    onError: (e: unknown) => toast.showError(e),
   };
   const activate = useMutation({ mutationFn: (id: string) => setActiveAccount(id), ...action });
   const activateDev = useMutation({ mutationFn: () => setDevOfflineActive(true), ...action });
-  // 削除の失敗（ゲームの実行中の auth.account_in_use など）も、画面の上の失敗の表示に出す
+  // 削除の失敗（ゲームの実行中の auth.account_in_use など）も、トーストで出す
   const remove = useMutation({ mutationFn: (id: string) => removeAccount(id), ...action });
 
   const openLogin = (target: LoginTarget) => {
@@ -130,11 +129,6 @@ export default function Accounts() {
     ) : (
       <div className="flex max-w-2xl flex-col gap-6 p-10">
         {title}
-        {actionError && (
-          <div role="alert">
-            <FailureNotice error={actionError} />
-          </div>
-        )}
         <ul className="flex flex-col divide-y divide-line border-y border-line">
           {data.accounts.map((account) => (
             <AccountRow

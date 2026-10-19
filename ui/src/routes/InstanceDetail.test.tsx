@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listInstances, listRunning, updateInstance } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
+import { ToastRegion } from "../components/toast/ToastRegion";
+import { clearToasts } from "../components/toast/useToast";
 import { RUNNING_KEY } from "../features/play/useGameSync";
 import i18n from "../i18n";
 import InstanceDetail from "./InstanceDetail";
@@ -36,10 +38,12 @@ function mount(list: Instance[], { id = "i1", running = [] as RunningSession[] }
           <Route path="/instances" element={<p>list page</p>} />
         </Routes>
       </MemoryRouter>
+      <ToastRegion />
     </QueryClientProvider>,
   );
 }
 
+const toasts = () => screen.getByRole("region", { name: "Notifications" });
 const saveButton = () => screen.findByRole("button", { name: "Save" }) as Promise<HTMLButtonElement>;
 const nameInput = () => screen.getByRole("textbox", { name: "Name" });
 const jvmInput = () => screen.getByRole("textbox", { name: "JVM arguments" });
@@ -61,6 +65,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  act(() => clearToasts());
   cleanup();
   vi.resetAllMocks();
 });
@@ -103,12 +108,27 @@ describe("InstanceDetail", () => {
       javaPath: "C:\\Program Files\\Java\\bin\\javaw.exe",
       jvmArgs: "-Xss1M",
     });
+    // 保存の成功はトーストで知らせる
+    const status = await within(toasts()).findByRole("status");
+    expect(status.textContent).toContain("Saved");
   });
 
   it("name_input_is_limited_to_64_characters", async () => {
     mount([instance()]);
     await saveButton();
     expect((nameInput() as HTMLInputElement).maxLength).toBe(64);
+  });
+
+  it("form_errors_stay_inline_and_are_not_toasts", async () => {
+    mount([instance()]);
+    await saveButton();
+    fireEvent.change(nameInput(), { target: { value: "   " } });
+    fireEvent.submit(nameInput().closest("form")!);
+    expect((await saveButton()).disabled).toBe(true);
+    await act(async () => { await Promise.resolve(); });
+    expect(updateInstance).not.toHaveBeenCalled();
+    expect(within(toasts()).queryByRole("alert")).toBeNull();
+    expect(within(toasts()).queryByRole("status")).toBeNull();
   });
 
   it("blank_name_blocks_saving", async () => {
@@ -152,7 +172,7 @@ describe("InstanceDetail", () => {
     expect(await screen.findByText("list page")).toBeTruthy();
   });
 
-  it("save_failure_shows_failure_notice", async () => {
+  it("save_failure_is_a_toast", async () => {
     vi.mocked(updateInstance).mockRejectedValue(
       new IpcError({ code: "instance.invalid_setting", params: {}, detail: null }),
     );
@@ -160,7 +180,8 @@ describe("InstanceDetail", () => {
     await saveButton();
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
     await press(await saveButton());
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByText("A setting value is not valid")).toBeTruthy();
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("A setting value is not valid")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 });
