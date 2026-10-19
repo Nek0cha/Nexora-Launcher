@@ -192,6 +192,12 @@ impl GameProcesses {
                 .optional()?)
         })?;
         let Some((pid, started_at)) = row else {
+            tracing::info!(
+                instance_id,
+                force,
+                found = false,
+                "stop: no running session"
+            );
             return Ok(());
         };
         if force {
@@ -203,14 +209,43 @@ impl GameProcesses {
                 true,
                 ProcessRefreshKind::nothing(),
             );
-            if let Some(process) = sys.process(sys_pid)
-                && process.start_time() as i64 * 1000 == started_at
+            let matched = sys
+                .process(sys_pid)
+                .is_some_and(|p| p.start_time() as i64 * 1000 == started_at);
+            tracing::info!(
+                instance_id,
+                pid,
+                force,
+                found = true,
+                matched,
+                "stop: force"
+            );
+            if matched
+                && let Some(process) = sys.process(sys_pid)
                 && !process.kill()
             {
                 tracing::warn!(instance_id, pid, "failed to kill the game");
             }
-        } else if is_alive(pid, started_at) {
-            super::stop::request_close(pid);
+        } else {
+            let matched = is_alive(pid, started_at);
+            tracing::info!(
+                instance_id,
+                pid,
+                force,
+                found = true,
+                matched,
+                "stop: close request"
+            );
+            if matched {
+                let windows = super::stop::request_close(pid);
+                tracing::info!(instance_id, pid, windows, "stop: close request sent");
+            } else {
+                tracing::warn!(
+                    instance_id,
+                    pid,
+                    "stop: the process is gone or its pid was reused; nothing sent"
+                );
+            }
         }
         Ok(())
     }
