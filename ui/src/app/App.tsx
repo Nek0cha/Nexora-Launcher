@@ -14,6 +14,7 @@ import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
+import { useIsWindows } from "./platform";
 import { applyTheme } from "./theme";
 
 const FORCED_COLORS = "(forced-colors: active)";
@@ -36,6 +37,8 @@ export function App() {
   const { data: settings } = useSettings();
   const update = useUpdateSetting();
   const { data: info } = useQuery({ queryKey: ["appInfo"], queryFn: appInfo });
+  // app_info が失敗しても、Windows ではウィンドウボタンを出す
+  const isWindows = useIsWindows();
 
   useEffect(() => {
     if (!settings) return;
@@ -66,7 +69,7 @@ export function App() {
       <MotionConfig reducedMotion="user">
         <div className="flex h-screen flex-col">
           {/* Windows では OS のタイトルバーの代わり、macOS と Linux では OS のタイトルバーの下に置く */}
-          <AppBar showWindowControls={info?.os === "windows"} materialOn={materialOn} slot={<RunningPill />} />
+          <AppBar showWindowControls={isWindows} materialOn={materialOn} slot={<RunningPill />} />
           <div className="flex min-h-0 flex-1">
             <Sidebar materialOn={materialOn} />
             <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">

@@ -72,7 +72,7 @@ function usePageName(): string {
 }
 
 /** ロゴの形（favicon と同じ）。色はテーマのトークンに合わせる。 */
-function Logo() {
+export function Logo() {
   return (
     <svg aria-hidden viewBox="0 0 32 32" className="size-4 shrink-0">
       <rect x="3.5" y="6.5" width="25" height="19" rx="4.5" fill="none" strokeWidth="3" className="stroke-text-strong" />

@@ -105,6 +105,11 @@
     "login": "Sign in",
     "accountNeedsLogin": "{{name}} (sign-in needed)"
   },
+  "routeError": {
+    "title": "This screen could not be shown",
+    "body": "Something went wrong while showing this screen. Reload to try again, and include the details below when reporting it.",
+    "reload": "Reload"
+  },
   "startup": {
     "title": "Nexora could not start",
     "body": "A problem occurred while loading data. Please include the details below when reporting it."
