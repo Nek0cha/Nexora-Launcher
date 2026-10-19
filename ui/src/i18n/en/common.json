@@ -151,6 +151,26 @@
     "deleteBody": "All data in this instance, including worlds, will be deleted. This can't be undone.",
     "deleteConfirm": "Delete",
     "cancel": "Cancel",
-    "deletePartial": "The folder may have been partly removed. Try deleting it again."
+    "deletePartial": "The folder may have been partly removed. Try deleting it again.",
+    "detail": {
+      "tabSettings": "Settings",
+      "name": "Name",
+      "memory": "Memory",
+      "memoryMb": "Maximum memory (MB)",
+      "memoryRange": "From 512 to 65536 MB",
+      "java": "Java",
+      "javaPath": "Java path",
+      "javaPathHint": "Path to java.exe or javaw.exe",
+      "modeAuto": "Auto",
+      "modeManual": "Manual",
+      "jvmArgs": "JVM arguments",
+      "jvmArgsHelp": "Separate arguments with spaces. Wrap a value that contains spaces in double quotes (\"). A double quote itself can't be passed. Nexora's own arguments come after yours, so an option that keeps the last value may be overridden.",
+      "xmxWarning": "-Xmx is ignored. The memory setting is used instead.",
+      "nextLaunch": "Changes take effect the next time the game starts.",
+      "notFound": "This instance doesn't exist.",
+      "backToList": "Back to instances",
+      "save": "Save",
+      "saved": "Saved"
+    }
   }
 }

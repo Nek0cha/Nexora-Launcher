@@ -151,6 +151,26 @@
     "deleteBody": "ワールドを含む、このインスタンスのすべてのデータが削除されます。元に戻せません。",
     "deleteConfirm": "削除",
     "cancel": "キャンセル",
-    "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。"
+    "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。",
+    "detail": {
+      "tabSettings": "設定",
+      "name": "名前",
+      "memory": "メモリ",
+      "memoryMb": "最大メモリ（MB）",
+      "memoryRange": "512〜65536 MB の範囲で指定します",
+      "java": "Java",
+      "javaPath": "Java のパス",
+      "javaPathHint": "java.exe または javaw.exe のパス",
+      "modeAuto": "自動",
+      "modeManual": "手動",
+      "jvmArgs": "JVM 引数",
+      "jvmArgsHelp": "空白で区切ります。空白を含む値は二重引用符（\"）で囲みます。二重引用符そのものは渡せません。Nexora の引数はこの後に続くため、最後の値を使うオプションは上書きされることがあります。",
+      "xmxWarning": "-Xmx は無視され、メモリの設定が使われます。",
+      "nextLaunch": "設定は次の起動から反映されます。",
+      "notFound": "このインスタンスは見つかりません。",
+      "backToList": "インスタンスの一覧に戻る",
+      "save": "保存",
+      "saved": "保存しました"
+    }
   }
 }
