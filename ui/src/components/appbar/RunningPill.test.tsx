@@ -78,7 +78,7 @@ describe("RunningPill", () => {
     await act(async () => {
       fireEvent.click(within(pill).getByRole("button", { name: "Open logs for Alpha" }));
     });
-    expect(openInstanceFolder).toHaveBeenCalledWith("a", "game");
+    expect(openInstanceFolder).toHaveBeenCalledWith("a", "logs");
   });
 
   it("two_games_show_two_dots", () => {
@@ -142,7 +142,10 @@ describe("RunningPill", () => {
     const dialog = await screen.findByRole("dialog", { name: "Running games" });
     expect(within(dialog).getByRole("button", { name: "Stop Alpha" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Force stop Beta" })).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "Open logs for Beta" })).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Open logs for Beta" }));
+    });
+    expect(openInstanceFolder).toHaveBeenLastCalledWith("b", "logs");
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Open details for Beta" }));
     });

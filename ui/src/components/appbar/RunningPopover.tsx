@@ -56,8 +56,8 @@ export function StopButton({ entry, flow }: { entry: RunningEntry; flow: StopFlo
 }
 
 /**
- * ログを開くボタン。ゲームのログは、ゲームのフォルダの logs に Minecraft が書くため、
- * ゲームのフォルダを開く（ログだけのフォルダを開く command はまだない）。
+ * ログを開くボタン。ランチャーがゲームの出力を書くフォルダ（logs/game/<id>）を開く。
+ * 場所は Rust 側で決める（UI から任意のパスは開かない）。
  */
 export function LogButton({ entry }: { entry: RunningEntry }) {
   const { t } = useTranslation();
@@ -66,7 +66,7 @@ export function LogButton({ entry }: { entry: RunningEntry }) {
     <Button
       aria-label={t("running.openLog", { name: entry.name })}
       onPress={() => {
-        openInstanceFolder(entry.id, "game").catch(toast.showError);
+        openInstanceFolder(entry.id, "logs").catch(toast.showError);
       }}
       className={[
         "grid size-6 shrink-0 place-items-center rounded-full text-text-muted",
