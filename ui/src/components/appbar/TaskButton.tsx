@@ -1,9 +1,9 @@
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconTray from "~icons/ph/tray";
-import { isTerminal } from "../../features/tasks/taskTable";
+import { activeCount, isTerminal } from "../../features/tasks/taskTable";
 import { useTasks } from "../../features/tasks/useTasks";
-import { percentOf, TaskList } from "../TaskTray";
+import { percentOf, TaskList } from "../TaskList";
 
 const popoverClass = [
   "scroll-thin max-h-[28rem] w-80 overflow-auto rounded-lg border border-line bg-surface-2 p-2 shadow-float",
@@ -49,11 +49,12 @@ function ProgressRing({ percent }: { percent: number | null }) {
 /** タスクの丸いボタン。進行中のタスクがあるときだけ進捗の輪を出し、押すと一覧を開く。 */
 export function TaskButton() {
   const { t } = useTranslation();
-  const active = Object.values(useTasks()).filter((task) => !isTerminal(task));
-  const known = active.filter((task) => task.progress.total > 0);
+  const tasks = useTasks();
+  const count = activeCount(tasks);
+  const known = Object.values(tasks).filter((task) => !isTerminal(task) && task.progress.total > 0);
   const percent =
     known.length > 0 ? Math.floor(known.reduce((sum, task) => sum + percentOf(task), 0) / known.length) : null;
-  const label = active.length > 0 ? t("tasks.runningLabel", { count: active.length }) : t("tasks.title");
+  const label = count > 0 ? t("tasks.runningLabel", { count }) : t("tasks.title");
 
   return (
     <DialogTrigger>
@@ -61,12 +62,12 @@ export function TaskButton() {
         aria-label={label}
         className={[
           "relative grid size-8 shrink-0 place-items-center rounded-full",
-          active.length > 0 ? "text-text" : "text-text-muted",
+          count > 0 ? "text-text" : "text-text-muted",
           "transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-2 data-hovered:text-text data-pressed:bg-surface-3",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         ].join(" ")}
       >
-        {active.length > 0 && <ProgressRing percent={percent} />}
+        {count > 0 && <ProgressRing percent={percent} />}
         <IconTray aria-hidden className="size-4" />
       </Button>
       <Popover placement="bottom end" offset={6} className={popoverClass}>

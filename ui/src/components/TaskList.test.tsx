@@ -6,7 +6,7 @@ import { IpcError } from "../api/ipc";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
-import { TaskList } from "./TaskTray";
+import { TaskList } from "./TaskList";
 
 vi.mock("../api/commands", () => ({ cancelTask: vi.fn() }));
 

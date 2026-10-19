@@ -47,7 +47,6 @@
   },
   "tasks": {
     "title": "タスク",
-    "running": "実行中 {{count}} 件",
     "cancel": "キャンセル",
     "kind": {
       "install": "インストール",

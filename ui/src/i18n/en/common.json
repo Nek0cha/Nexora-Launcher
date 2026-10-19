@@ -47,7 +47,6 @@
   },
   "tasks": {
     "title": "Tasks",
-    "running": "{{count}} running",
     "cancel": "Cancel",
     "kind": {
       "install": "Install",
