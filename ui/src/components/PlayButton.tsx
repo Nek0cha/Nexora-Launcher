@@ -74,6 +74,10 @@ function PreparingLabel({ percent, labelKey }: { percent: number; labelKey: "pla
   );
 }
 
+// 重ねた層。同じマスに置き、不透明度を既存の長さとイージングで切り替える
+const layer =
+  "col-start-1 row-start-1 transition-opacity duration-(--duration-fast) ease-out-quint motion-reduce:transition-none";
+
 const phaseLabelKey = (phase: Phase) => (phase === "install" ? "play.preparingPercent" : "play.launchingPercent");
 
 export function PlayButton({
@@ -257,24 +261,43 @@ export function PlayButton({
                     <IconStop className={row ? "size-4" : "size-5"} />
                     <span>{name}</span>
                   </>
-                ) : revealStop ? (
-                  <>
-                    <IconStopGame className={row ? "size-4" : "size-5"} />
-                    <span>{name}</span>
-                  </>
-                ) : view.kind === "playing" && stop !== "idle" ? (
-                  <span className={row ? "text-xs" : "text-base"}>{t("play.waitingExit")}</span>
+                ) : view.kind === "playing" ? (
+                  // プレイ中は「プレイ中」と赤い「停止」を同じ場所に重ね、不透明度だけを切り替えて交差させる（面の色は親の transition で変わる）
+                  <span className="grid place-items-center">
+                    <span
+                      data-testid="play-layer-playing"
+                      data-active={!revealStop || undefined}
+                      className={`${layer} flex items-center justify-center gap-2 ${revealStop ? "opacity-0" : ""}`}
+                    >
+                      {stop !== "idle" ? (
+                        <span className={row ? "text-xs" : "text-base"}>{t("play.waitingExit")}</span>
+                      ) : (
+                        <>
+                          <span>{t("play.playing")}</span>
+                          <span className={`tabular font-normal text-text-muted ${row ? "text-xs" : "text-sm"}`}>
+                            {formatElapsed(now - view.launchedAt)}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    {/* 待っている間は停止の層を出さない（名前が重複するため。待っている間は赤くならない） */}
+                    {stop !== "waiting" && (
+                      <span
+                        data-testid="play-layer-stop"
+                        data-active={revealStop || undefined}
+                        className={`${layer} flex items-center justify-center gap-2 ${revealStop ? "" : "opacity-0"}`}
+                      >
+                        <IconStopGame className={row ? "size-4" : "size-5"} />
+                        <span>{name}</span>
+                      </span>
+                    )}
+                  </span>
                 ) : view.kind === "preparing" ? (
                   <PreparingLabel percent={percent} labelKey={phaseLabelKey(view.phase)} />
                 ) : (
                   <>
                     {Icon && <Icon className={row ? "size-4" : "size-5"} />}
-                    <span>{view.kind === "playing" ? t("play.playing") : name}</span>
-                    {view.kind === "playing" && (
-                      <span className={`tabular font-normal text-text-muted ${row ? "text-xs" : "text-sm"}`}>
-                        {formatElapsed(now - view.launchedAt)}
-                      </span>
-                    )}
+                    <span>{name}</span>
                   </>
                 )}
               </span>

@@ -56,6 +56,8 @@ html[data-material="on"] {
   transition:
     transform var(--duration-slow) var(--ease-spring),
     background-color var(--duration-fast) var(--ease-out-quint),
+    border-color var(--duration-fast) var(--ease-out-quint),
+    color var(--duration-fast) var(--ease-out-quint),
     opacity var(--duration-fast) var(--ease-out-quint);
 }
 /* 押しても何も起きない状態（aria-disabled）では縮めない */

@@ -172,12 +172,19 @@ describe("PlayButton", () => {
     vi.mocked(stopInstance).mockResolvedValue(null);
     mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() }] });
     const button = await screen.findByRole("button", { name: "Stop" });
-    expect(within(button).queryByText("Stop")).toBeNull();
+    // 二つの層は常に同じ要素の中にあり、表示は不透明度で切り替わる
+    const stopLayer = within(button).getByTestId("play-layer-stop");
+    const playingLayer = within(button).getByTestId("play-layer-playing");
+    expect(stopLayer.className).toContain("opacity-0");
+    expect(playingLayer.className).not.toContain("opacity-0");
+    expect(button.className).not.toContain("bg-danger");
     await act(async () => {
       fireEvent.pointerEnter(button, { pointerType: "mouse" });
     });
-    expect(within(button).getByText("Stop")).toBeTruthy();
+    expect(within(button).getByTestId("play-layer-stop").className).not.toContain("opacity-0");
+    expect(within(button).getByTestId("play-layer-playing").className).toContain("opacity-0");
     expect(button.className).toContain("bg-danger");
+    expect(button.className).toContain("transition-colors");
     await press("Stop");
     expect(stopInstance).toHaveBeenCalledWith("i1", false);
     expect(await screen.findByRole("button", { name: "Waiting for the game to close" })).toBeTruthy();
