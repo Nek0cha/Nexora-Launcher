@@ -1659,6 +1659,29 @@ async fn change_skin_posts_multipart_and_refreshes_skin_url() {
 }
 
 #[tokio::test]
+async fn change_skin_does_not_move_the_ownership_check_times() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    let before = e.row();
+    assert_eq!(before.verified_at, Some(T0));
+    // スキンの変更は所有権を確かめない。時刻が進んでも、検証の時刻は動かない
+    e.advance(60_000);
+    mount_skins(&e.server, 200, None).await;
+    mount_profile_with_new_skin(&e.server, "CLASSIC").await;
+    e.auth
+        .change_skin(id, SkinVariant::Classic, skin_png(64, 64))
+        .await
+        .unwrap();
+    let after = e.row();
+    assert_eq!(after.skin_url.as_deref(), Some(NEW_SKIN_URL));
+    assert_eq!(after.verified_at, before.verified_at);
+    assert_eq!(after.entitlement_checked_at, before.entitlement_checked_at);
+    assert_eq!(after.entitlement, before.entitlement);
+    assert_eq!(after.profile_fetched_at, Some(T0 + 60_000));
+}
+
+#[tokio::test]
 async fn change_skin_with_invalid_png_makes_no_request() {
     let e = env().await;
     // メモリにトークンがないため、検証より先に通信すれば /token への要求が残る

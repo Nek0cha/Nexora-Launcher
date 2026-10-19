@@ -435,16 +435,15 @@ impl AuthService {
     }
 
     /// 取り直したプロフィール（名前とスキン）を `accounts` に書き、知らせる。
-    /// XUID と所有権は、保存してある値をそのまま使う。
+    /// 所有権は確かめていないため、`verified_at` などの所有権の時刻は動かさない。
     fn record_profile(&self, profile: &minecraft::Profile) -> Result<(), CoreError> {
-        let row = accounts::get(&self.db, profile.id)?;
-        let record = ProfileRecord {
-            id: profile.id,
-            username: profile.name.clone(),
-            xuid: row.xuid,
-            skin_url: profile.skin_url.clone(),
-        };
-        accounts::save_profile(&self.db, &record, row.entitlement, self.now())?;
+        accounts::update_profile(
+            &self.db,
+            profile.id,
+            &profile.name,
+            profile.skin_url.as_deref(),
+            self.now(),
+        )?;
         self.notify_changed();
         Ok(())
     }
