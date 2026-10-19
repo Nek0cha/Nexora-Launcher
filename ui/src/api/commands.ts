@@ -1,5 +1,7 @@
 import type { CreatedInstance } from "../bindings/CreatedInstance";
 import type { Instance } from "../bindings/Instance";
+import type { InstanceSettings } from "../bindings/InstanceSettings";
+import type { SkinVariant } from "../bindings/SkinVariant";
 import type { RunningSession } from "../bindings/RunningSession";
 import type { VersionEntry } from "../bindings/VersionEntry";
 import type { AppInfo } from "../bindings/AppInfo";
@@ -23,6 +25,10 @@ export const listVersions = () => call<VersionEntry[]>("list_versions");
 export const listInstances = () => call<Instance[]>("list_instances");
 export const createInstance = (name: string, mcVersion: string) =>
   call<CreatedInstance>("create_instance", { name, mcVersion });
+export const updateInstance = (instanceId: string, settings: InstanceSettings) =>
+  call<Instance>("update_instance", { instanceId, settings });
+export const deleteInstance = (instanceId: string) => call<null>("delete_instance", { instanceId });
+export const duplicateInstance = (instanceId: string) => call<string>("duplicate_instance", { instanceId });
 export const launchInstance = (instanceId: string, offline = false) =>
   call<string>("launch_instance", { instanceId, offline });
 export const listRunning = () => call<RunningSession[]>("list_running");
@@ -35,3 +41,6 @@ export const setDevOfflineActive = (active: boolean) => call<null>("set_dev_offl
 export const removeAccount = (accountId: string) => call<null>("remove_account", { accountId });
 export const beginLogin = (method: LoginMethod) => call<string>("begin_login", { method });
 export const getSkin = (accountId: string) => call<string | null>("get_skin", { accountId });
+export const getSkinVariant = (accountId: string) => call<SkinVariant>("get_skin_variant", { accountId });
+export const changeSkin = (accountId: string, variant: SkinVariant, png: number[]) =>
+  call<null>("change_skin", { accountId, variant, png });

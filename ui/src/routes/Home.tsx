@@ -10,7 +10,7 @@ import { useHomeInstance, useInstances } from "../features/instances/useInstance
 export default function Home() {
   const { t } = useTranslation();
   const { data, error } = useInstances();
-  // コマンドパレットの起動の項目と同じインスタンス（作成した直後はそのインスタンス）
+  // コマンドパレットの起動の項目と同じインスタンス（一覧の先頭）
   const instance = useHomeInstance();
   if (error)
     return (
@@ -32,12 +32,9 @@ export default function Home() {
   return (
     <div className="flex h-full flex-col justify-end gap-6 p-10">
       <header className="flex flex-col gap-1">
-        <div className="flex items-center gap-3">
-          <h1 className="min-w-0 truncate font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">
-            {instance.name}
-          </h1>
-          <CreateInstanceDialog trigger="quiet" />
-        </div>
+        <h1 className="min-w-0 truncate font-display text-xl font-semibold tracking-[-0.01em] text-text-strong">
+          {instance.name}
+        </h1>
         <p className="text-sm text-text-muted">{instance.mcVersion}</p>
       </header>
       <section aria-label={t("play.play")}>
