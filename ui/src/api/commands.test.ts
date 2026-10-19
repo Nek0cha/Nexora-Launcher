@@ -7,6 +7,8 @@ import {
   duplicateInstance,
   getSkinVariant,
   launchInstance,
+  openInstanceFolder,
+  stopInstance,
   updateInstance,
 } from "./commands";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
@@ -21,6 +23,20 @@ describe("launchInstance", () => {
     expect(invoke).toHaveBeenLastCalledWith("launch_instance", { instanceId: "i1", offline: false });
     await launchInstance("i1", true);
     expect(invoke).toHaveBeenLastCalledWith("launch_instance", { instanceId: "i1", offline: true });
+  });
+});
+
+describe("stopInstance", () => {
+  it("passes instanceId and force", async () => {
+    await stopInstance("i1", true);
+    expect(invoke).toHaveBeenLastCalledWith("stop_instance", { instanceId: "i1", force: true });
+  });
+});
+
+describe("openInstanceFolder", () => {
+  it("passes instanceId and kind", async () => {
+    await openInstanceFolder("i1", "saves");
+    expect(invoke).toHaveBeenLastCalledWith("open_instance_folder", { instanceId: "i1", kind: "saves" });
   });
 });
 

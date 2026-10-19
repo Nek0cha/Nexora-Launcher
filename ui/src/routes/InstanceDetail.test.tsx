@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listInstances, listRunning, systemMemoryMb, updateInstance } from "../api/commands";
+import { listInstances, listRunning, openInstanceFolder, systemMemoryMb, updateInstance } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
@@ -17,6 +17,7 @@ vi.mock("../api/commands", () => ({
   listRunning: vi.fn(),
   updateInstance: vi.fn(),
   systemMemoryMb: vi.fn(),
+  openInstanceFolder: vi.fn(),
 }));
 
 const instance = (patch: Partial<Instance> = {}): Instance => ({
@@ -229,5 +230,29 @@ describe("InstanceDetail", () => {
     mount([instance({ memoryMode: "manual", memoryMb: 4096 })], { totalMb: null });
     expect(await screen.findByRole("textbox", { name: "Maximum memory (MB)" })).toBeTruthy();
     expect(screen.queryByRole("slider")).toBeNull();
+  });
+
+  it("folder_buttons_call_the_command_with_each_kind", async () => {
+    vi.mocked(openInstanceFolder).mockResolvedValue(null);
+    mount([instance()]);
+    const cases = [
+      ["Game folder", "game"],
+      ["Mods folder", "mods"],
+      ["Screenshots folder", "screenshots"],
+      ["Worlds folder", "saves"],
+    ] as const;
+    for (const [name, kind] of cases) {
+      await press(await screen.findByRole("button", { name }));
+      expect(openInstanceFolder).toHaveBeenLastCalledWith("i1", kind);
+    }
+    expect(openInstanceFolder).toHaveBeenCalledTimes(4);
+  });
+
+  it("folder_open_failure_is_a_toast", async () => {
+    vi.mocked(openInstanceFolder).mockRejectedValue(new IpcError({ code: "instance.busy", params: {}, detail: null }));
+    mount([instance()]);
+    await press(await screen.findByRole("button", { name: "Game folder" }));
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
   });
 });

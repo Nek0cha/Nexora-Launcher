@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import IconMore from "~icons/ph/dots-three-bold";
 import IconEmpty from "~icons/ph/stack";
+import { openInstanceFolder } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
@@ -77,6 +78,10 @@ export default function Instances() {
     duplicate.mutate(instance.id, { onError: toast.showError });
   };
 
+  const onOpenFolder = (instance: Instance) => {
+    openInstanceFolder(instance.id, "game").catch(toast.showError);
+  };
+
   const onDelete = (instance: Instance) => {
     setDeleting(instance);
     setDeleteOpen(true);
@@ -133,6 +138,7 @@ export default function Instances() {
               instance={instance}
               duplicating={task ? duplicatePercent(task) : sending ? 0 : null}
               onDuplicate={() => onDuplicate(instance)}
+              onOpenFolder={() => onOpenFolder(instance)}
               onDelete={() => onDelete(instance)}
             />
           );
@@ -178,12 +184,14 @@ function InstanceRow({
   instance,
   duplicating,
   onDuplicate,
+  onOpenFolder,
   onDelete,
 }: {
   instance: Instance;
   /** 複製の進捗（%）。複製していなければ null */
   duplicating: number | null;
   onDuplicate: () => void;
+  onOpenFolder: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -238,10 +246,13 @@ function InstanceRow({
             <Menu
               aria-label={t("instances.more")}
               className="outline-none"
-              onAction={(key) => (key === "duplicate" ? onDuplicate() : onDelete())}
+              onAction={(key) => (key === "duplicate" ? onDuplicate() : key === "openFolder" ? onOpenFolder() : onDelete())}
             >
               <MenuItem id="duplicate" className={`${menuItemClass} text-text`}>
                 {t("instances.duplicate")}
+              </MenuItem>
+              <MenuItem id="openFolder" className={`${menuItemClass} text-text`}>
+                {t("instances.openFolder")}
               </MenuItem>
               <MenuItem id="delete" className={`${menuItemClass} text-danger`}>
                 {t("instances.delete")}

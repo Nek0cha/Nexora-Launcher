@@ -146,6 +146,7 @@
     "details": "詳細",
     "duplicate": "複製",
     "delete": "削除",
+    "openFolder": "フォルダを開く",
     "state": {
       "installing": "準備中",
       "ready": "使用可能",
@@ -179,7 +180,13 @@
       "notFound": "このインスタンスは見つかりません。",
       "backToList": "インスタンスの一覧に戻る",
       "save": "保存",
-      "saved": "保存しました"
+      "saved": "保存しました",
+      "folders": {
+        "game": "ゲームのフォルダ",
+        "mods": "mods のフォルダ",
+        "screenshots": "スクリーンショットのフォルダ",
+        "saves": "ワールドのフォルダ"
+      }
     }
   },
   "toast": {

@@ -4,10 +4,15 @@ import { Button, Input, Label, Tab, TabList, TabPanel, Tabs, Text, TextField } f
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
+import IconGame from "~icons/ph/folder-open";
+import IconScreenshots from "~icons/ph/image";
 import IconInfo from "~icons/ph/info";
+import IconMods from "~icons/ph/puzzle-piece";
+import IconWorlds from "~icons/ph/globe-hemisphere-west";
 import IconWarning from "~icons/ph/warning";
-import { systemMemoryMb } from "../api/commands";
+import { openInstanceFolder, systemMemoryMb } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
+import type { FolderKind } from "../bindings/FolderKind";
 import type { Instance } from "../bindings/Instance";
 import type { JavaMode } from "../bindings/JavaMode";
 import type { MemoryMode } from "../bindings/MemoryMode";
@@ -67,6 +72,21 @@ const tabClass = [
   "focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 ].join(" ");
 
+// 詳細の見出しの横に並べるフォルダのボタン
+const folderButtons: { kind: FolderKind; icon: typeof IconGame }[] = [
+  { kind: "game", icon: IconGame },
+  { kind: "mods", icon: IconMods },
+  { kind: "screenshots", icon: IconScreenshots },
+  { kind: "saves", icon: IconWorlds },
+];
+
+const iconButton = [
+  "inline-flex size-8 items-center justify-center rounded-md text-text-muted",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
+  ring,
+].join(" ");
+
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
 export default function InstanceDetail() {
@@ -74,6 +94,8 @@ export default function InstanceDetail() {
   const { id } = useParams();
   const { data, error } = useInstances();
   const running = useRunning();
+  // フォルダを開けなかったときはトーストで出す
+  const toast = useToast();
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)
@@ -108,10 +130,24 @@ export default function InstanceDetail() {
           <h1 className={`${title} truncate`}>{instance.name}</h1>
           <span className="tabular text-sm text-text-muted">{instance.mcVersion}</span>
         </div>
-        <Link to="/instances" className={`${quietLink} shrink-0`}>
-          <IconBack aria-hidden className="size-4" />
-          <span>{t("nav.instances")}</span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          {folderButtons.map(({ kind, icon: Icon }) => (
+            <Button
+              key={kind}
+              aria-label={t(`instances.detail.folders.${kind}`)}
+              onPress={() => {
+                openInstanceFolder(instance.id, kind).catch(toast.showError);
+              }}
+              className={iconButton}
+            >
+              <Icon aria-hidden className="size-4" />
+            </Button>
+          ))}
+          <Link to="/instances" className={quietLink}>
+            <IconBack aria-hidden className="size-4" />
+            <span>{t("nav.instances")}</span>
+          </Link>
+        </div>
       </header>
       {/* タブは中身のあるものだけを出す。いまは設定だけである */}
       <Tabs>

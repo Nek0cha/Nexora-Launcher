@@ -146,6 +146,7 @@
     "details": "Details",
     "duplicate": "Duplicate",
     "delete": "Delete",
+    "openFolder": "Open folder",
     "state": {
       "installing": "Preparing",
       "ready": "Ready",
@@ -179,7 +180,13 @@
       "notFound": "This instance doesn't exist.",
       "backToList": "Back to instances",
       "save": "Save",
-      "saved": "Saved"
+      "saved": "Saved",
+      "folders": {
+        "game": "Game folder",
+        "mods": "Mods folder",
+        "screenshots": "Screenshots folder",
+        "saves": "Worlds folder"
+      }
     }
   },
   "toast": {

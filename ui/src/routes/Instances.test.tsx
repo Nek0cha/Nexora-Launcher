@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteInstance, duplicateInstance, launchInstance, listInstances, listRunning } from "../api/commands";
+import { deleteInstance, duplicateInstance, launchInstance, listInstances, openInstanceFolder, listRunning } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
@@ -21,6 +21,7 @@ vi.mock("../api/commands", () => ({
   deleteInstance: vi.fn(),
   duplicateInstance: vi.fn(),
   launchInstance: vi.fn(),
+  openInstanceFolder: vi.fn(),
   cancelTask: vi.fn(),
   listAccounts: vi.fn(),
   getSkin: vi.fn(),
@@ -204,6 +205,14 @@ describe("Instances", () => {
     expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
     // 一覧の上には出さない
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("row_menu_opens_the_game_folder", async () => {
+    vi.mocked(openInstanceFolder).mockResolvedValue(null);
+    mount([instance("i1", "World")]);
+    const menu = await openMenu("World");
+    await press(within(menu).getByRole("menuitem", { name: "Open folder" }));
+    expect(openInstanceFolder).toHaveBeenCalledWith("i1", "game");
   });
 
   it("duplicate_failure_is_a_toast", async () => {
