@@ -59,7 +59,9 @@
       "succeeded": "Done",
       "failed": "Failed",
       "cancelled": "Cancelled"
-    }
+    },
+    "empty": "No tasks",
+    "runningLabel": "Tasks, {{count}} running"
   },
   "palette": {
     "placeholder": "Search commands",
@@ -191,6 +193,14 @@
   },
   "toast": {
     "region": "Notifications",
+    "close": "Close"
+  },
+  "appBar": {
+    "back": "Back",
+    "forward": "Forward",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore down",
     "close": "Close"
   }
 }

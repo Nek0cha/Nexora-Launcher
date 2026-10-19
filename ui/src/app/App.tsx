@@ -5,9 +5,9 @@ import { I18nProvider } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { Outlet } from "react-router";
 import { appInfo } from "../api/commands";
+import { AppBar } from "../components/appbar/AppBar";
 import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
-import { TaskTray } from "../components/TaskTray";
 import { ToastRegion } from "../components/toast/ToastRegion";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
@@ -63,11 +63,15 @@ export function App() {
     <I18nProvider locale={i18n.language}>
       {/* Motion の動きは、OS の「視差効果を減らす」に従う */}
       <MotionConfig reducedMotion="user">
-        <div className="flex h-screen">
-          <Sidebar materialOn={materialOn} footer={<TaskTray />} />
-          <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">
-            <Outlet />
-          </main>
+        <div className="flex h-screen flex-col">
+          {/* Windows では OS のタイトルバーの代わり、macOS と Linux では OS のタイトルバーの下に置く */}
+          <AppBar showWindowControls={info?.os === "windows"} materialOn={materialOn} />
+          <div className="flex min-h-0 flex-1">
+            <Sidebar materialOn={materialOn} />
+            <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">
+              <Outlet />
+            </main>
+          </div>
           <CommandPalette />
         </div>
         <ToastRegion />

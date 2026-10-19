@@ -59,6 +59,15 @@
 
   --default-transition-duration: 180ms;
   --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* 進み具合のわからないタスクの輪を回す */
+  --animate-spin: spin 1s linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
 
 @theme inline {

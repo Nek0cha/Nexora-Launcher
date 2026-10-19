@@ -59,7 +59,9 @@
       "succeeded": "完了",
       "failed": "失敗",
       "cancelled": "キャンセル済み"
-    }
+    },
+    "empty": "タスクはありません",
+    "runningLabel": "タスク、実行中 {{count}} 件"
   },
   "palette": {
     "placeholder": "コマンドを検索",
@@ -191,6 +193,14 @@
   },
   "toast": {
     "region": "通知",
+    "close": "閉じる"
+  },
+  "appBar": {
+    "back": "戻る",
+    "forward": "進む",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "元に戻す",
     "close": "閉じる"
   }
 }

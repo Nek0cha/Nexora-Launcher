@@ -6,7 +6,7 @@ import { IpcError } from "../api/ipc";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
-import { TaskTray } from "./TaskTray";
+import { TaskList } from "./TaskTray";
 
 vi.mock("../api/commands", () => ({ cancelTask: vi.fn() }));
 
@@ -20,15 +20,9 @@ function mount(tasks: TaskSnapshot[]) {
   client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   return render(
     <QueryClientProvider client={client}>
-      <TaskTray />
+      <TaskList />
     </QueryClientProvider>,
   );
-}
-
-async function openTray() {
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: /Tasks/ }));
-  });
 }
 
 beforeEach(async () => {
@@ -39,22 +33,26 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TaskTray", () => {
-  it("renders nothing without running tasks", () => {
-    const { container } = mount([{ ...running, state: "succeeded" }]);
-    expect(container.innerHTML).toBe("");
+describe("TaskList", () => {
+  it("says there are no tasks when the table is empty", () => {
+    mount([]);
+    expect(screen.getByText("No tasks")).toBeTruthy();
   });
 
-  it("shows the running count and the task progress", async () => {
+  it("keeps finished tasks after the running ones", () => {
+    mount([{ ...running, id: "t0", state: "succeeded", updatedAt: 5 }, running]);
+    const labels = screen.getAllByRole("progressbar").map((bar) => bar.textContent);
+    expect(labels[0]).toContain("40%");
+    expect(labels[1]).toContain("Done");
+  });
+
+  it("shows the task progress", () => {
     mount([running]);
-    expect(screen.getByRole("button", { name: /Tasks/ }).textContent).toContain("1");
-    await openTray();
     expect(screen.getByRole("progressbar", { name: "Install" }).getAttribute("aria-valuenow")).toBe("40");
   });
 
   it("labels a login task in both languages", async () => {
     mount([{ ...running, kind: "login" }]);
-    await openTray();
     expect(screen.getByRole("progressbar", { name: "Sign in" })).toBeTruthy();
     await act(async () => {
       await i18n.changeLanguage("ja");
@@ -65,7 +63,6 @@ describe("TaskTray", () => {
   it("cancels a task by id", async () => {
     vi.mocked(cancelTask).mockResolvedValue(null);
     mount([running]);
-    await openTray();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     });
@@ -77,7 +74,6 @@ describe("TaskTray", () => {
       new IpcError({ code: "task.not_found", params: {}, detail: "SECRET raw detail" }),
     );
     mount([running]);
-    await openTray();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     });
