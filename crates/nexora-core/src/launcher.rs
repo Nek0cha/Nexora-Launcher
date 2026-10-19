@@ -196,6 +196,16 @@ impl Launcher {
         instance::delete(&self.env.db, &self.env.paths, id)
     }
 
+    /// インスタンスの設定を更新する。起動中でも更新でき（反映は次の起動から）、ロックの中で書く。
+    pub async fn update_instance(
+        &self,
+        id: &str,
+        settings: &instance::InstanceSettings,
+    ) -> Result<Instance, CoreError> {
+        let _guard = self.locks.lock(id).await;
+        instance::update_settings(&self.env.db, id, settings)
+    }
+
     /// 削除と複製の前の確認。起動中、またはインストールか起動のタスクが動いていれば `InstanceBusy`。
     fn ensure_idle(&self, id: &str) -> Result<(), CoreError> {
         instance::get(&self.env.db, id)?;

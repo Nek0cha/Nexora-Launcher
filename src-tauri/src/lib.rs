@@ -150,6 +150,11 @@ pub fn run() {
             commands::remove_account,
             commands::begin_login,
             commands::get_skin,
+            commands::update_instance,
+            commands::delete_instance,
+            commands::duplicate_instance,
+            commands::get_skin_variant,
+            commands::change_skin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexora");

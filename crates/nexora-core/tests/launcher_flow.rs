@@ -329,6 +329,28 @@ async fn delete_is_refused_while_installing() {
 }
 
 #[tokio::test]
+async fn update_instance_works_while_running() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    insert_running(&h.launcher, id, 1);
+    let mut s = settings(MemoryMode::Manual, Some(2048), None, "-Dfoo=1");
+    s.name = "renamed".into();
+    let updated = h.launcher.update_instance(id, &s).await.unwrap();
+    assert_eq!(updated.name, "renamed");
+    assert_eq!(updated.memory_mb, Some(2048));
+    assert_eq!(
+        instance::get(h.launcher.db(), id).unwrap().jvm_args,
+        "-Dfoo=1"
+    );
+    // 存在しない ID は見つからない
+    let err = h.launcher.update_instance("nope", &s).await.unwrap_err();
+    assert_eq!(err.code(), "instance.not_found");
+}
+
+#[tokio::test]
 async fn delete_rechecks_after_taking_the_instance_lock() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
