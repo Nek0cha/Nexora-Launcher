@@ -32,6 +32,7 @@ export const duplicateInstance = (instanceId: string) => call<string>("duplicate
 export const launchInstance = (instanceId: string, offline = false) =>
   call<string>("launch_instance", { instanceId, offline });
 export const listRunning = () => call<RunningSession[]>("list_running");
+export const systemMemoryMb = () => call<number>("system_memory_mb");
 export const getDevOfflineUsername = () => call<string>("get_dev_offline_username");
 export const setDevOfflineUsername = (name: string) => call<string>("set_dev_offline_username", { name });
 

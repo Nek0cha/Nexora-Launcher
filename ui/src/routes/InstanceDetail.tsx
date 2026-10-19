@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Button, Input, Label, Tab, TabList, TabPanel, Tabs, Text, TextField } from "react-aria-components";
 import { useTranslation } from "react-i18next";
@@ -5,11 +6,13 @@ import { Link, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
 import IconInfo from "~icons/ph/info";
 import IconWarning from "~icons/ph/warning";
+import { systemMemoryMb } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { JavaMode } from "../bindings/JavaMode";
 import type { MemoryMode } from "../bindings/MemoryMode";
 import { FailureNotice } from "../components/FailureNotice";
+import { MemorySlider } from "../components/MemorySlider";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
 import { useToast } from "../components/toast/useToast";
@@ -24,6 +27,7 @@ import {
   toForm,
   toSettings,
 } from "../features/instances/settingsForm";
+import { SLIDER_STEP_MB, sliderMax, toSliderValue } from "../features/instances/memorySlider";
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useRunning } from "../features/play/useGameSync";
@@ -149,6 +153,10 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   // 保存の結果はトーストで出す
   const toast = useToast();
 
+  // 物理メモリの取得中や失敗のときは、数値の入力だけを出す
+  const { data: totalMb } = useQuery({ queryKey: ["system-memory-mb"], queryFn: systemMemoryMb, staleTime: Infinity });
+  const maxMb = totalMb === undefined ? null : sliderMax(totalMb);
+
   const dirty = isDirty(base, form);
   const canSave = dirty && isValid(form) && !update.isPending;
   const modes = [
@@ -205,6 +213,16 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
             onChange={(memoryMode) => change({ memoryMode })}
             triggerClassName={controlWidth}
           />
+          {form.memoryMode === "manual" && maxMb !== null && (
+            <MemorySlider
+              label={t("instances.detail.memorySlider")}
+              value={toSliderValue(form.memoryMb, maxMb)}
+              min={MEMORY_MIN_MB}
+              max={maxMb}
+              step={SLIDER_STEP_MB}
+              onChange={(memoryMb) => change({ memoryMb })}
+            />
+          )}
           {form.memoryMode === "manual" && (
             <NumberField
               label={t("instances.detail.memoryMb")}

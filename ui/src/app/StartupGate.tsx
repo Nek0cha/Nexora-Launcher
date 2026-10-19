@@ -37,7 +37,7 @@ function StartupError({ data }: { data: ErrorPayload }) {
         })}
       </p>
       {/* 報告に貼れるよう、コードと詳細も選択できるようにする */}
-      <pre className="tabular select-textoverflow-auto rounded-md border border-line bg-surface-1 p-3 text-xs whitespace-pre-wrap text-text">
+      <pre className="tabular scroll-thin select-text overflow-auto rounded-md border border-line bg-surface-1 p-3 text-xs whitespace-pre-wrap text-text">
         {data.code}
         {data.detail ? `\n${data.detail}` : ""}
       </pre>

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listInstances, listRunning, updateInstance } from "../api/commands";
+import { listInstances, listRunning, systemMemoryMb, updateInstance } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
@@ -16,6 +16,7 @@ vi.mock("../api/commands", () => ({
   listInstances: vi.fn(),
   listRunning: vi.fn(),
   updateInstance: vi.fn(),
+  systemMemoryMb: vi.fn(),
 }));
 
 const instance = (patch: Partial<Instance> = {}): Instance => ({
@@ -25,7 +26,10 @@ const instance = (patch: Partial<Instance> = {}): Instance => ({
   ...patch,
 });
 
-function mount(list: Instance[], { id = "i1", running = [] as RunningSession[] } = {}) {
+function mount(list: Instance[], { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null } = {}) {
+  // null は物理メモリの取得に失敗する場合
+  if (totalMb === null) vi.mocked(systemMemoryMb).mockRejectedValue(new Error("no memory"));
+  else vi.mocked(systemMemoryMb).mockResolvedValue(totalMb);
   vi.mocked(listInstances).mockResolvedValue(list);
   vi.mocked(listRunning).mockResolvedValue(running);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -183,5 +187,47 @@ describe("InstanceDetail", () => {
     const alert = await within(toasts()).findByRole("alert");
     expect(within(alert).getByText("A setting value is not valid")).toBeTruthy();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("slider_and_number_input_stay_in_sync", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.value).toBe("4096");
+    fireEvent.change(slider, { target: { value: "6144" } });
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("6,144");
+    const number = screen.getByRole("textbox", { name: "Maximum memory (MB)" });
+    fireEvent.change(number, { target: { value: "2048" } });
+    fireEvent.blur(number);
+    expect((screen.getByRole("slider", { name: "Memory amount" }) as HTMLInputElement).value).toBe("2048");
+  });
+
+  it("value_above_slider_max_keeps_the_number_and_pins_the_slider", async () => {
+    vi.mocked(updateInstance).mockImplementation(async (_id, s) => instance({ ...s }));
+    mount([instance({ memoryMode: "manual", memoryMb: 32768 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.value).toBe("8192");
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("32,768");
+    // 名前だけを変えて保存しても、メモリの値は変わらない
+    fireEvent.change(nameInput(), { target: { value: "Creative" } });
+    await press(await saveButton());
+    await waitFor(() => expect(updateInstance).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateInstance).mock.calls[0]?.[1]).toMatchObject({ memoryMode: "manual", memoryMb: 32768 });
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("32,768");
+  });
+
+  it("slider_is_keyboard_operable_and_announces_value", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/4,?096\s?MB/);
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    fireEvent.change(slider, { target: { value: "4352" } });
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/4,?352\s?MB/);
+    expect(slider.tabIndex).not.toBe(-1);
+  });
+
+  it("number_input_only_while_system_memory_is_unavailable", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })], { totalMb: null });
+    expect(await screen.findByRole("textbox", { name: "Maximum memory (MB)" })).toBeTruthy();
+    expect(screen.queryByRole("slider")).toBeNull();
   });
 });

@@ -65,7 +65,7 @@ export function App() {
       <MotionConfig reducedMotion="user">
         <div className="flex h-screen">
           <Sidebar materialOn={materialOn} footer={<TaskTray />} />
-          <main className="min-w-0 flex-1 overflow-auto bg-surface-0">
+          <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">
             <Outlet />
           </main>
           <CommandPalette />

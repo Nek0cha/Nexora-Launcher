@@ -32,7 +32,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
       {showDetail && error?.detail && (
         <pre
           id={detailId}
-          className="tabular select-text max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
+          className="tabular scroll-thin select-text max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
         >
           {error.detail}
         </pre>

@@ -52,7 +52,7 @@ export function Select<T extends string>(props: {
         offset={4}
         className={`min-w-(--trigger-width) rounded-lg border border-line bg-surface-2 p-1 shadow-float ${popoverMotion}`}
       >
-        <ListBox className="max-h-72 overflow-auto outline-none">
+        <ListBox className="scroll-thin max-h-72 overflow-auto outline-none">
           {props.options.map((o) => (
             <ListBoxItem key={o.id} id={o.id} textValue={o.label} className={optionClass}>
               {({ isSelected }) => (
