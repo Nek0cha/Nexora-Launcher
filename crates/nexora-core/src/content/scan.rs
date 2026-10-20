@@ -56,6 +56,18 @@ pub(super) fn hash_file(path: &Path) -> std::io::Result<(String, String)> {
     Ok((hex(&sha1.finalize()), hex(&sha512.finalize())))
 }
 
+/// 1 ファイル分の読み取りに失敗したら、警告を残して `None` を返す。
+/// ほかのプロセスが一時的に開いているだけのこともあるので、走査全体は止めない。
+fn skip_unreadable<T>(path: &Path, result: std::io::Result<T>) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "skipping a file that could not be read");
+            None
+        }
+    }
+}
+
 /// ディスク上の 1 ファイル分。
 pub(super) struct DiskFile {
     pub rel_path: String,
@@ -93,28 +105,37 @@ pub(super) fn mtime_ms(meta: &std::fs::Metadata) -> std::io::Result<i64> {
         .map_or(0, |d| d.as_millis() as i64))
 }
 
+/// ディスクの一覧。読めずに飛ばしたものも覚えておき、その行を消さないようにする。
+#[derive(Default)]
+struct DiskListing {
+    files: Vec<DiskFile>,
+    /// 名前は分かるが読めなかったファイルの `rel_path`。
+    unreadable: HashSet<String>,
+    /// 名前すら分からないエントリがあった。どの行がディスクに無いかを決められない。
+    incomplete: bool,
+}
+
 /// `game_dir/<kind.dir()>/` の直下の通常ファイルを集める。ディレクトリが無ければ空。
+/// 1 ファイル分の失敗は警告を残して飛ばす。
 fn list_disk(
     game_dir: &Path,
     kind: ContentKind,
     cancel: &CancellationToken,
-) -> Result<Vec<DiskFile>, CoreError> {
+) -> Result<DiskListing, CoreError> {
     let dir = game_dir.join(kind.dir());
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(DiskListing::default()),
         Err(e) => return Err(io_error(&dir, e)),
     };
-    let mut files = Vec::new();
+    let mut listing = DiskListing::default();
     for entry in entries {
         check_cancel(cancel)?;
-        let entry = entry.map_err(|e| io_error(&dir, e))?;
-        let path = entry.path();
-        // DirEntry::file_type はリンクをたどらないので、シンボリックリンクはここで落ちる
-        let file_type = entry.file_type().map_err(|e| io_error(&path, e))?;
-        if !file_type.is_file() {
+        let Some(entry) = skip_unreadable(&dir, entry) else {
+            listing.incomplete = true;
             continue;
-        }
+        };
+        let path = entry.path();
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             tracing::warn!(path = %path.display(), "skipping a file with a non UTF-8 name");
             continue;
@@ -122,16 +143,32 @@ fn list_disk(
         let Some(enabled) = classify(&name, kind) else {
             continue;
         };
-        let meta = entry.metadata().map_err(|e| io_error(&path, e))?;
-        let mtime_ms = mtime_ms(&meta).map_err(|e| io_error(&path, e))?;
-        files.push(DiskFile {
-            rel_path: format!("{}/{name}", kind.dir()),
+        let rel_path = format!("{}/{name}", kind.dir());
+        // DirEntry::file_type はリンクをたどらないので、シンボリックリンクはここで落ちる
+        let Some(file_type) = skip_unreadable(&path, entry.file_type()) else {
+            listing.unreadable.insert(rel_path);
+            continue;
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+        let Some((size, mtime_ms)) = skip_unreadable(
+            &path,
+            entry
+                .metadata()
+                .and_then(|meta| Ok((meta.len(), mtime_ms(&meta)?))),
+        ) else {
+            listing.unreadable.insert(rel_path);
+            continue;
+        };
+        listing.files.push(DiskFile {
+            rel_path,
             enabled,
-            size: meta.len(),
+            size,
             mtime_ms,
         });
     }
-    Ok(files)
+    Ok(listing)
 }
 
 /// まだ特定されていない行を作る。行の組み立てはここに集める。
@@ -180,6 +217,7 @@ pub(super) fn local_row(kind: ContentKind, file: &DiskFile, sha1: String, sha512
 /// サイズか更新時刻が変わった行は、特定の結果を捨てて `local` に戻す。
 /// 外で `.disabled` を付け外ししただけ（同じ sha1、size、mtime_ms）なら、特定の結果を保つ。
 /// 取り消しはファイルごとに確かめる。
+/// 読めないファイル（ほかのプロセスが開いているなど）は飛ばし、その行は次の走査まで手を付けない。
 pub fn scan(
     db: &Db,
     game_dir: &Path,
@@ -188,7 +226,11 @@ pub fn scan(
     cancel: &CancellationToken,
 ) -> Result<ScanReport, CoreError> {
     check_cancel(cancel)?;
-    let disk = list_disk(game_dir, kind, cancel)?;
+    let DiskListing {
+        files: disk,
+        mut unreadable,
+        incomplete,
+    } = list_disk(game_dir, kind, cancel)?;
     let mut rows: HashMap<String, Row> = store::rows(db, instance_id, kind)?
         .into_iter()
         .map(|r| (r.item.rel_path.clone(), r))
@@ -198,12 +240,15 @@ pub fn scan(
 
     for file in &disk {
         check_cancel(cancel)?;
+        let path = game_dir.join(&file.rel_path);
         if let Some(old) = rows.remove(&file.rel_path) {
             if old.item.size == file.size && old.mtime_ms == file.mtime_ms {
                 continue;
             }
-            let path = game_dir.join(&file.rel_path);
-            let (sha1, sha512) = hash_file(&path).map_err(|e| io_error(&path, e))?;
+            // 読めなければ古い行をそのまま残す（rows から外したので最後にも消えない）
+            let Some((sha1, sha512)) = skip_unreadable(&path, hash_file(&path)) else {
+                continue;
+            };
             let mut row = local_row(kind, file, sha1, sha512);
             // 入れた経緯と固定は、中身が変わっても利用者の意図として残す
             row.item.pinned = old.item.pinned;
@@ -213,8 +258,11 @@ pub fn scan(
             continue;
         }
 
-        let path = game_dir.join(&file.rel_path);
-        let (sha1, sha512) = hash_file(&path).map_err(|e| io_error(&path, e))?;
+        let Some((sha1, sha512)) = skip_unreadable(&path, hash_file(&path)) else {
+            // 外で名前を変えただけかもしれないので、相方の行も残す
+            unreadable.insert(file.rel_path.clone());
+            continue;
+        };
         let counterpart = toggled(&file.rel_path);
         let renamed = !on_disk.contains(counterpart.as_str())
             && rows.get(&counterpart).is_some_and(|old| {
@@ -230,8 +278,15 @@ pub fn scan(
         }
     }
 
-    // 残った行はディスクに無い
+    // 一覧を取りきれなかったときは、どの行がディスクに無いのか決められないので消さない
+    if incomplete {
+        return Ok(report);
+    }
+    // 残った行はディスクに無い。ただし読めずに飛ばしたファイル（とその相方）の行は残す
     for rel_path in rows.keys() {
+        if unreadable.contains(rel_path) || unreadable.contains(&toggled(rel_path)) {
+            continue;
+        }
         store::delete(db, instance_id, rel_path)?;
         report.removed += 1;
     }
@@ -477,6 +532,96 @@ mod tests {
 
         assert!(matches!(err, CoreError::Cancelled));
         assert!(rows(&db, ContentKind::Mod).is_empty());
+    }
+
+    #[test]
+    fn skip_unreadable_keeps_ok_and_drops_err() {
+        let path = Path::new("mods/a.jar");
+        assert_eq!(skip_unreadable(path, Ok(3)), Some(3));
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        assert_eq!(skip_unreadable::<i32>(path, Err(err)), None);
+    }
+
+    /// ほかのプロセスが共有なしで開いているファイルに見せかける（Windows だけで再現できる）。
+    #[cfg(windows)]
+    fn lock(path: &Path) -> std::fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_keeps_the_old_row_when_a_changed_file_cannot_be_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path();
+        put(game, "mods/a.jar", b"aaa");
+        put(game, "mods/b.jar", b"bbb");
+        let db = db_with_instance();
+        run(&db, game, ContentKind::Mod);
+        identify(&db, "mods/a.jar");
+        let before = rows(&db, ContentKind::Mod);
+        put(game, "mods/a.jar", b"aaaaaa");
+        let _guard = lock(&game.join("mods/a.jar"));
+
+        let report = run(&db, game, ContentKind::Mod);
+
+        assert_eq!(report, ScanReport::default());
+        assert_eq!(rows(&db, ContentKind::Mod), before);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_skips_a_new_file_that_cannot_be_read_and_adds_it_later() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path();
+        put(game, "mods/a.jar", b"aaa");
+        put(game, "mods/b.jar", b"bbb");
+        let db = db_with_instance();
+        let guard = lock(&game.join("mods/a.jar"));
+
+        let report = run(&db, game, ContentKind::Mod);
+
+        assert_eq!(report.added, 1);
+        let paths: Vec<_> = rows(&db, ContentKind::Mod)
+            .into_iter()
+            .map(|r| r.item.rel_path)
+            .collect();
+        assert_eq!(paths, ["mods/b.jar"]);
+
+        drop(guard);
+        assert_eq!(run(&db, game, ContentKind::Mod).added, 1);
+        assert_eq!(rows(&db, ContentKind::Mod).len(), 2);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_keeps_the_counterpart_row_when_a_renamed_file_cannot_be_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path();
+        put(game, "mods/a.jar", b"aaa");
+        let db = db_with_instance();
+        run(&db, game, ContentKind::Mod);
+        identify(&db, "mods/a.jar");
+        let before = rows(&db, ContentKind::Mod);
+        std::fs::rename(game.join("mods/a.jar"), game.join("mods/a.jar.disabled")).unwrap();
+        let guard = lock(&game.join("mods/a.jar.disabled"));
+
+        let report = run(&db, game, ContentKind::Mod);
+
+        assert_eq!(report, ScanReport::default());
+        assert_eq!(rows(&db, ContentKind::Mod), before);
+
+        // 読めるようになれば、外での名前の変更として特定の結果ごと引き継ぐ
+        drop(guard);
+        let report = run(&db, game, ContentKind::Mod);
+        assert_eq!(report.changed, 1);
+        let row = rows(&db, ContentKind::Mod).remove(0);
+        assert_eq!(row.item.rel_path, "mods/a.jar.disabled");
+        assert_eq!(row.item.provider, Provider::Modrinth);
     }
 
     #[test]
