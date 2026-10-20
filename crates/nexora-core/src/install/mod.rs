@@ -1,5 +1,6 @@
 //! ゲームのインストール。
 
+pub mod forge;
 pub mod plan;
 
 use std::sync::Arc;

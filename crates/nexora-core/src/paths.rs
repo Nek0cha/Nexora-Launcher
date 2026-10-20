@@ -109,6 +109,11 @@ impl AppPaths {
         self.cache_dir().join("skins")
     }
 
+    /// 取得した Forge と NeoForge のインストーラ。導入のたびには消さない。
+    pub fn installers_dir(&self) -> PathBuf {
+        self.cache_dir().join("installers")
+    }
+
     /// インスタンスの起動に使う @argfile。
     pub fn argfile(&self, instance_id: &str) -> PathBuf {
         self.launch_cache_dir().join(format!("{instance_id}.args"))
@@ -223,6 +228,10 @@ mod tests {
         );
         assert_eq!(paths.game_logs_dir(), root.join("logs").join("game"));
         assert_eq!(paths.skins_dir(), root.join("cache").join("skins"));
+        assert_eq!(
+            paths.installers_dir(),
+            root.join("cache").join("installers")
+        );
     }
 
     #[test]

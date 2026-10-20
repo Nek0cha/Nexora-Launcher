@@ -57,9 +57,14 @@ fn is_safe_segment(s: &str) -> bool {
 /// メタデータの相対パスが、基準のディレクトリの外に出ないか。
 /// 通常の区切りだけからなるものを認め、`..`、`.`、ルート、ドライブ、`\`、`:` を含むものは弾く。
 /// `\` は Windows で区切りになり、`:` はドライブや代替データストリームになるため、どの OS でも弾く。
-fn is_safe_relative(rel: &str) -> bool {
+/// `components` は途中の `.` と空の区切りを読み飛ばすため、`/` で分けた各部分も確かめる。
+/// インストーラの jar のエントリ名にも使う。
+pub(crate) fn is_safe_relative(rel: &str) -> bool {
     !rel.is_empty()
         && !rel.contains(['\\', ':'])
+        && rel
+            .split('/')
+            .all(|s| !s.is_empty() && s != "." && s != "..")
         && std::path::Path::new(rel)
             .components()
             .all(|c| matches!(c, std::path::Component::Normal(_)))
@@ -627,6 +632,9 @@ mod tests {
             "a/../../evil.jar",
             "/abs/evil.jar",
             "./a/evil.jar",
+            "a/./evil.jar",
+            "a//evil.jar",
+            "a/evil.jar/",
             r"a\..\..\evil.jar",
             r"C:\evil.jar",
             "C:evil.jar",
