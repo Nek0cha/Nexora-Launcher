@@ -1,0 +1,6 @@
+[
+  { "icon": "<svg></svg>", "name": "adventure", "project_type": "mod", "header": "Categories" },
+  { "icon": "<svg></svg>", "name": "fabric", "project_type": "mod", "header": "Loaders" },
+  { "icon": "<svg></svg>", "name": "realistic", "project_type": "resourcepack", "header": "Categories" },
+  { "icon": "<svg></svg>", "name": "cartoon", "project_type": "shader", "header": "Categories" }
+]

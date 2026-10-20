@@ -1,0 +1,33 @@
+{
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+    "id": "IIJJKKLL",
+    "project_id": "P7dR8mSH",
+    "author_id": "JZA4dW8o",
+    "name": "Fabric API 0.92.2+1.20.1",
+    "version_number": "0.92.2+1.20.1",
+    "changelog": "",
+    "dependencies": [
+      { "version_id": null, "project_id": "AANobbMI", "file_name": null, "dependency_type": "required" },
+      { "version_id": "ZZYYXXWW", "project_id": null, "file_name": "pinned-lib.jar", "dependency_type": "required" },
+      { "version_id": null, "project_id": "gvQqBUqZ", "file_name": null, "dependency_type": "optional" },
+      { "version_id": null, "project_id": "nvQzSEkH", "file_name": null, "dependency_type": "incompatible" },
+      { "version_id": null, "project_id": "mOgUt4GM", "file_name": null, "dependency_type": "embedded" }
+    ],
+    "game_versions": ["1.20.1"],
+    "version_type": "release",
+    "loaders": ["fabric"],
+    "featured": true,
+    "status": "listed",
+    "date_published": "2023-12-01T10:00:00.000000Z",
+    "downloads": 1234,
+    "files": [
+      {
+        "hashes": { "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sha512": "00" },
+        "url": "https://cdn.modrinth.com/data/P7dR8mSH/versions/IIJJKKLL/fabric-api-0.92.2+1.20.1.jar",
+        "filename": "fabric-api-0.92.2+1.20.1.jar",
+        "primary": true,
+        "size": 2048
+      }
+    ]
+  }
+}

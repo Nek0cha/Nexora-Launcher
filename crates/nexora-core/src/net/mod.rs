@@ -17,6 +17,18 @@ use crate::error::CoreError;
 /// 一時的な失敗に対する再試行の最大回数（最初の試行を含まない）。
 pub const MAX_RETRIES: u32 = 3;
 
+/// Modrinth の API は、連絡先の分かる User-Agent を求めている。
+pub const USER_AGENT: &str = concat!(
+    "Nexora/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/Nek0cha/Nexora-Launcher)"
+);
+
+/// 429 のときに `X-Ratelimit-Reset` がなければ待つ秒数。
+const RATE_LIMIT_DEFAULT_SECS: u64 = 5;
+/// 429 のときに待つ秒数の上限。
+const RATE_LIMIT_MAX_SECS: u64 = 60;
+
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,
@@ -33,7 +45,7 @@ pub enum Conditional {
 impl Http {
     pub fn new() -> Result<Self, CoreError> {
         let client = reqwest::Client::builder()
-            .user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION")))
+            .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(60))
             .build()
@@ -86,6 +98,82 @@ impl Http {
                 other => return other,
             }
         }
+    }
+
+    /// JSON を POST して本文を返す。一時的な失敗は `get_conditional` と同じく再試行する。
+    /// 429 のときだけは `X-Ratelimit-Reset` の秒数待って 1 回再試行する。
+    pub async fn post_json(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<Vec<u8>, CoreError> {
+        let payload = serde_json::to_vec(body).map_err(|e| CoreError::Unexpected {
+            message: e.to_string(),
+        })?;
+        self.send_rate_limited(url, || {
+            self.client
+                .post(url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.clone())
+        })
+        .await
+    }
+
+    /// GET して本文を返す。429 の扱いは `post_json` と同じ。
+    pub(crate) async fn get_rate_limited(&self, url: &str) -> Result<Vec<u8>, CoreError> {
+        self.send_rate_limited(url, || self.client.get(url)).await
+    }
+
+    async fn send_rate_limited(
+        &self,
+        url: &str,
+        build: impl Fn() -> reqwest::RequestBuilder,
+    ) -> Result<Vec<u8>, CoreError> {
+        let mut attempt = 0;
+        let mut waited_for_limit = false;
+        loop {
+            let (err, reset) = match self.try_send(build(), url).await {
+                Ok(body) => return Ok(body),
+                Err(failure) => failure,
+            };
+            let limited = matches!(err, CoreError::HttpStatus { status: 429, .. });
+            if limited && !waited_for_limit {
+                waited_for_limit = true;
+                let secs = reset
+                    .unwrap_or(RATE_LIMIT_DEFAULT_SECS)
+                    .min(RATE_LIMIT_MAX_SECS);
+                tokio::time::sleep(Duration::from_secs(secs)).await;
+            } else if is_transient(&err) && attempt < MAX_RETRIES {
+                tokio::time::sleep(self.backoff(attempt)).await;
+                attempt += 1;
+            } else {
+                return Err(err);
+            }
+        }
+    }
+
+    /// 1 回送る。失敗には、`X-Ratelimit-Reset`（秒）があれば添える。
+    async fn try_send(
+        &self,
+        request: reqwest::RequestBuilder,
+        url: &str,
+    ) -> Result<Vec<u8>, (CoreError, Option<u64>)> {
+        let response = request.send().await.map_err(|e| (offline(e), None))?;
+        let status = response.status();
+        if !status.is_success() {
+            let reset = response
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse::<u64>().ok());
+            let err = CoreError::HttpStatus {
+                status: status.as_u16(),
+                url: url.to_string(),
+            };
+            return Err((err, reset));
+        }
+        let body = response.bytes().await.map_err(|e| (offline(e), None))?;
+        Ok(body.to_vec())
     }
 
     async fn try_get(&self, url: &str, etag: Option<&str>) -> Result<Conditional, CoreError> {

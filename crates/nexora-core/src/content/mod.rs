@@ -5,6 +5,7 @@
 pub(crate) mod store;
 
 pub mod local_meta;
+pub mod modrinth;
 pub mod ops;
 pub mod scan;
 

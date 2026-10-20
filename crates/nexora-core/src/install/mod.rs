@@ -31,6 +31,7 @@ pub struct Urls {
     pub forge_maven: String,
     pub forge_promotions: String,
     pub neoforge_maven: String,
+    pub modrinth_api: String,
 }
 
 impl Default for Urls {
@@ -44,6 +45,7 @@ impl Default for Urls {
             forge_maven: crate::meta::loader::forge::FORGE_MAVEN_URL.to_string(),
             forge_promotions: crate::meta::loader::forge::FORGE_PROMOTIONS_URL.to_string(),
             neoforge_maven: crate::meta::loader::forge::NEOFORGE_MAVEN_URL.to_string(),
+            modrinth_api: crate::content::modrinth::MODRINTH_API_URL.to_string(),
         }
     }
 }
