@@ -20,15 +20,15 @@ use nexora_core::instance::{
 use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::meta::loader::LoaderKind;
 use nexora_core::paths::AppPaths;
-use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
+use nexora_core::task::{TaskManager, TaskPhase, TaskSnapshot, TaskState};
 use secrecy::SecretString;
 use uuid::Uuid;
 use wiremock::MockServer;
 
 use common::{
     FABRIC_VERSION, FAKE_JAVA, FakeLoaderMeta, FakeMojang, FixedProbe, Ownership, PROFILE_ID,
-    PROFILE_NAME, QUILT_VERSION, REFRESH_1, REFRESH_2, RecordingGame, XUID, auth_urls, hits_on,
-    http, mount_chain, mount_refresh,
+    PROFILE_NAME, QUILT_VERSION, REFRESH_1, REFRESH_2, RecordingGame, SnapshotRecorder, XUID,
+    auth_urls, hits_on, http, mount_chain, mount_refresh,
 };
 
 #[cfg(unix)]
@@ -36,15 +36,11 @@ use common::MC_TOKEN;
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-struct Silent;
-impl TaskNotifier for Silent {
-    fn notify(&self, _: &str, _: u64, _: TaskChange) {}
-}
-
 struct Harness {
     _temp: tempfile::TempDir,
     launcher: Launcher,
     tasks: TaskManager,
+    recorder: Arc<SnapshotRecorder>,
     game: Arc<RecordingGame>,
     auth_server: MockServer,
     store: Arc<MemoryStore>,
@@ -63,7 +59,7 @@ async fn harness_with(fake: &FakeMojang) -> Harness {
     let temp = tempfile::tempdir().unwrap();
     let paths = AppPaths::from_root(temp.path());
     paths.ensure_dirs().unwrap();
-    let tasks = TaskManager::new(Arc::new(Silent));
+    let (tasks, recorder) = SnapshotRecorder::manager();
     let game = Arc::new(RecordingGame::default());
     let loaders = FakeLoaderMeta::start(fake).await;
     let urls = Urls {
@@ -101,6 +97,7 @@ async fn harness_with(fake: &FakeMojang) -> Harness {
         _temp: temp,
         launcher,
         tasks,
+        recorder,
         game,
         auth_server,
         store,
@@ -344,6 +341,27 @@ async fn repeated_play_reuses_the_launch_task() {
     wait(&h.tasks, &first).await;
     // Windows では偽の Java を実行できないため、起動の成否は問わない。起動は多くても 1 回
     assert!(h.game.started.lock().unwrap().len() <= 1);
+}
+
+#[tokio::test]
+async fn launch_reports_its_phases() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h.installed().await;
+    let task = h.launcher.launch_instance(&id, false).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_reached_spawn(&snap);
+    // 登録済みの Java を使うため、Java の取得の段階は無い
+    assert_eq!(
+        h.recorder.phases(&task),
+        vec![
+            TaskPhase::Resolving,
+            TaskPhase::Verifying,
+            TaskPhase::Downloading,
+            TaskPhase::Launching
+        ]
+    );
+    assert_eq!(snap.phase, None);
 }
 
 #[tokio::test]

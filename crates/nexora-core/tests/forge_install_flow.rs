@@ -23,15 +23,15 @@ use nexora_core::launcher::Launcher;
 use nexora_core::meta::loader::LoaderKind;
 use nexora_core::net::hash::sha1_hex;
 use nexora_core::paths::AppPaths;
-use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
+use nexora_core::task::{TaskManager, TaskPhase, TaskSnapshot, TaskState};
 use secrecy::SecretString;
 use uuid::Uuid;
 use wiremock::MockServer;
 use zip::write::SimpleFileOptions;
 
 use common::{
-    FakeMojang, FixedProbe, PROFILE_ID, PROFILE_NAME, REFRESH_1, RecordingGame, XUID, auth_urls,
-    hits_on, http, serve,
+    FakeMojang, FixedProbe, PROFILE_ID, PROFILE_NAME, REFRESH_1, RecordingGame, SnapshotRecorder,
+    XUID, auth_urls, hits_on, http, serve,
 };
 
 const MC: &str = "1.16.5";
@@ -193,11 +193,6 @@ fn processor_jar() -> Vec<u8> {
     )])
 }
 
-struct Silent;
-impl TaskNotifier for Silent {
-    fn notify(&self, _: &str, _: u64, _: TaskChange) {}
-}
-
 struct Harness {
     _temp: tempfile::TempDir,
     /// 止めた後は None。
@@ -205,6 +200,7 @@ struct Harness {
     paths: AppPaths,
     launcher: Launcher,
     tasks: TaskManager,
+    recorder: Arc<SnapshotRecorder>,
     store: Arc<MemoryStore>,
 }
 
@@ -226,7 +222,7 @@ async fn harness(profile: Option<&str>) -> Harness {
     let temp = tempfile::tempdir().unwrap();
     let paths = AppPaths::from_root(temp.path());
     paths.ensure_dirs().unwrap();
-    let tasks = TaskManager::new(Arc::new(Silent));
+    let (tasks, recorder) = SnapshotRecorder::manager();
     let urls = Urls {
         manifest: fake.manifest_url(),
         runtime_index: fake.runtime_index_url(),
@@ -264,6 +260,7 @@ async fn harness(profile: Option<&str>) -> Harness {
         paths,
         launcher,
         tasks,
+        recorder,
         store,
     }
 }
@@ -421,6 +418,35 @@ async fn forge_install_runs_processors_and_pins_profile() {
         "{:?}",
         h.staging_leftovers()
     );
+}
+
+#[tokio::test]
+async fn forge_install_reports_loader_phases() {
+    let h = harness(None).await;
+    let (_, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    // ゲームのファイルの後に、ローダーの情報、ライブラリの確認と取得、processor の実行、記録と進む
+    assert_eq!(
+        h.recorder.phases(&snap.id),
+        vec![
+            TaskPhase::Resolving,
+            TaskPhase::Verifying,
+            TaskPhase::Downloading,
+            TaskPhase::Resolving,
+            TaskPhase::Verifying,
+            TaskPhase::Downloading,
+            TaskPhase::BuildingLoader,
+            TaskPhase::Finishing,
+        ]
+    );
+    // processor の数は始める前から分かる（この導入では 1 つ）。済んだ数の通知は間引かれうるため、最初だけを確かめる
+    let building = h
+        .recorder
+        .snapshots(&snap.id)
+        .into_iter()
+        .find(|s| s.phase == Some(TaskPhase::BuildingLoader) && s.progress.total > 0)
+        .map(|s| (s.progress.current, s.progress.total));
+    assert_eq!(building, Some((0, 1)));
 }
 
 #[tokio::test]

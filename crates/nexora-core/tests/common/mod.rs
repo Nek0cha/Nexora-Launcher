@@ -590,3 +590,55 @@ pub async fn hits_on(server: &MockServer, route: &str) -> usize {
         .filter(|r| r.url.path() == route)
         .count()
 }
+
+use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskPhase, TaskSnapshot};
+
+/// 通知のたびにタスクの状態を記録する通知先。段階と進捗の移り変わりを確かめるために使う。
+#[derive(Default)]
+pub struct SnapshotRecorder {
+    tasks: std::sync::OnceLock<TaskManager>,
+    seen: std::sync::Mutex<Vec<TaskSnapshot>>,
+}
+
+impl SnapshotRecorder {
+    /// 記録する TaskManager を作る。
+    pub fn manager() -> (TaskManager, std::sync::Arc<Self>) {
+        let recorder = std::sync::Arc::new(Self::default());
+        let tasks = TaskManager::new(recorder.clone());
+        let _ = recorder.tasks.set(tasks.clone());
+        (tasks, recorder)
+    }
+
+    /// task_id の記録（通知の順）。
+    pub fn snapshots(&self, task_id: &str) -> Vec<TaskSnapshot> {
+        self.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| s.id == task_id)
+            .cloned()
+            .collect()
+    }
+
+    /// task_id が通った段階（続けて同じものは 1 つにまとめる）。
+    pub fn phases(&self, task_id: &str) -> Vec<TaskPhase> {
+        let mut out: Vec<TaskPhase> = Vec::new();
+        for phase in self.snapshots(task_id).into_iter().filter_map(|s| s.phase) {
+            if out.last() != Some(&phase) {
+                out.push(phase);
+            }
+        }
+        out
+    }
+}
+
+impl TaskNotifier for SnapshotRecorder {
+    fn notify(&self, task_id: &str, _: u64, change: TaskChange) {
+        if change == TaskChange::Removed {
+            return;
+        }
+        if let Some(snapshot) = self.tasks.get().and_then(|t| t.get(task_id).ok()) {
+            self.seen.lock().unwrap().push(snapshot);
+        }
+    }
+}

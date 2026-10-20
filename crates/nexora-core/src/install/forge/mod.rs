@@ -13,17 +13,17 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::CoreError;
 use crate::install::plan::{is_safe_relative, maven_path};
-use crate::install::{InstallEnv, kib, now_ms};
+use crate::install::{InstallEnv, fetch_with_phases, now_ms};
 use crate::instance::Instance;
 use crate::meta::loader::forge::{check_target, installer_url};
 use crate::meta::loader::{LoaderKind, LoaderProfile, check_version, profile_path};
 use crate::meta::mojang::manifest::client_jar_path;
 use crate::meta::mojang::version::{Library, VersionJson};
 use crate::meta::{parse_json, write_atomic};
-use crate::net::{Depth, DownloadItem, fetch_all, io_err, lock_path};
+use crate::net::{Depth, DownloadItem, io_err, lock_path};
 use crate::paths::AppPaths;
 use crate::settings;
-use crate::task::TaskHandle;
+use crate::task::{TaskHandle, TaskPhase};
 use data::{DataContext, PlannedProcessor, client_resources, data_libraries, plan_processors};
 use installer::{Installer, extract_maven, extract_resource, fetch_installer, read_entry};
 use profile::{InstallProfile, parse_install_profile};
@@ -385,6 +385,7 @@ pub async fn finish_install(
     handle: &TaskHandle,
 ) -> Result<(), CoreError> {
     let token = handle.token();
+    handle.set_phase(TaskPhase::Resolving);
     let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
     let profile_dir = env.paths.versions_dir().join(&id);
     let record_path = profile_dir.join(RECORD_FILE);
@@ -416,33 +417,32 @@ pub async fn finish_install(
     let profile = read_install_profile(&installer.path, &inst.mc_version)?;
     let items = install_library_items(&profile.libraries, &env.paths)?;
     let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
-    fetch_all(
-        &env.http,
-        items,
-        Depth::Full,
-        concurrency,
-        token,
-        |done, total| handle.set_progress(kib(done), kib(total)),
-    )
-    .await?;
+    fetch_with_phases(&env.http, items, Depth::Full, concurrency, handle).await?;
     if token.is_cancelled() {
         return Err(CoreError::Cancelled);
     }
 
+    // 展開と processor の実行。processor の数が分かるまでは進み具合を持たない
+    handle.set_phase(TaskPhase::BuildingLoader);
     let libraries_dir = env.paths.libraries_dir();
     let installer_path = installer.path.clone();
     let libs = libraries_dir.clone();
-    let provided = blocking(move || extract_maven(&installer_path, &libs)).await?;
+    let cancel = token.clone();
+    let provided = blocking(move || extract_maven(&installer_path, &libs, &cancel)).await?;
 
     // 資源は導入ごとの作業場所に展開し、終わったら（失敗や取り消しでも）消す
     let staging = StagingDir::create(&env.paths)?;
     let names = client_resources(&profile);
     let installer_path = installer.path.clone();
     let staging_path = staging.0.clone();
+    let cancel = token.clone();
     let resources: BTreeMap<String, PathBuf> = blocking(move || {
         names
             .into_iter()
             .map(|name| {
+                if cancel.is_cancelled() {
+                    return Err(CoreError::Cancelled);
+                }
                 let path = extract_resource(&installer_path, &name, &staging_path)?;
                 Ok((name, path))
             })
@@ -461,14 +461,15 @@ pub async fn finish_install(
     };
     let planned = plan_processors(&profile, &ctx)?;
     let data_paths = data_libraries(&profile, &ctx)?;
+    let to_u32 = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    // 最初の processor を始める前から「0/全体」を見せる
+    handle.set_progress(0, to_u32(planned.len()));
     run_processors(java, &planned, token, |done, total| {
-        handle.set_progress(
-            u32::try_from(done).unwrap_or(u32::MAX),
-            u32::try_from(total).unwrap_or(u32::MAX),
-        );
+        handle.set_progress(to_u32(done), to_u32(total));
     })
     .await?;
     drop(staging);
+    handle.set_phase(TaskPhase::Finishing);
 
     if let Some(missing) = generated.iter().find(|p| !p.is_file()) {
         return Err(CoreError::LoaderFilesMissing {

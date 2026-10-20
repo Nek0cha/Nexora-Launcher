@@ -198,8 +198,12 @@ pub fn read_entry(installer: &Path, name: &str) -> Result<Vec<u8>, CoreError> {
 }
 
 /// `maven/<path>` のエントリを `libraries_dir/<path>` に展開し、インストーラが置くパス（書いたもの、または既に在ったもの）を返す。
-/// 既存のファイルは上書きしない（同じ版の再導入のため）。
-pub fn extract_maven(installer: &Path, libraries_dir: &Path) -> Result<Vec<PathBuf>, CoreError> {
+/// 既存のファイルは上書きしない（同じ版の再導入のため）。取り消されたら、次のエントリの前に `Cancelled` にする。
+pub fn extract_maven(
+    installer: &Path,
+    libraries_dir: &Path,
+    token: &CancellationToken,
+) -> Result<Vec<PathBuf>, CoreError> {
     let mut archive = open(installer)?;
     // 先にすべての名前を確かめ、1 つでも安全でなければ何も書かない
     let mut files = Vec::new();
@@ -237,6 +241,9 @@ pub fn extract_maven(installer: &Path, libraries_dir: &Path) -> Result<Vec<PathB
     // 書いたもの、または既に在ったもの
     let mut provided = Vec::new();
     for (name, rel) in files {
+        if token.is_cancelled() {
+            return Err(CoreError::Cancelled);
+        }
         let dest = libraries_dir.join(&rel);
         if std::fs::symlink_metadata(&dest).is_err() {
             let bytes = read_named(&mut archive, installer, &name)?;
@@ -352,7 +359,7 @@ mod tests {
             ],
         );
         let libs = temp.path().join("libraries");
-        let written = extract_maven(&jar, &libs).unwrap();
+        let written = extract_maven(&jar, &libs, &CancellationToken::new()).unwrap();
         assert_eq!(written, vec![libs.join("a").join("b").join("c.jar")]);
         assert_eq!(std::fs::read(&written[0]).unwrap(), b"lib");
         assert_eq!(files_under(&libs), vec!["a/b/c.jar"]);
@@ -367,7 +374,7 @@ mod tests {
         let target = libs.join("a").join("b").join("c.jar");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, b"old").unwrap();
-        extract_maven(&jar, &libs).unwrap();
+        extract_maven(&jar, &libs, &CancellationToken::new()).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), b"old");
     }
 
@@ -387,7 +394,7 @@ mod tests {
             // 安全なエントリを先に置き、それも書かれないことを確かめる
             make_jar(&jar, &[("maven/ok/ok.jar", b"ok"), (evil, b"evil")]);
             let libs = temp.path().join("root").join("libraries");
-            let err = extract_maven(&jar, &libs).unwrap_err();
+            let err = extract_maven(&jar, &libs, &CancellationToken::new()).unwrap_err();
             assert_eq!(err.code(), "meta.invalid", "{evil}");
             assert!(files_under(&temp.path().join("root")).is_empty(), "{evil}");
             assert!(!temp.path().join("evil").exists(), "{evil}");

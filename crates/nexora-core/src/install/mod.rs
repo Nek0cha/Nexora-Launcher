@@ -16,10 +16,10 @@ use crate::meta::loader::{FABRIC_META_URL, LoaderKind, LoaderMeta, QUILT_META_UR
 use crate::meta::mojang::manifest::{MANIFEST_URL, MojangMeta};
 use crate::meta::mojang::rules::RuleEnv;
 use crate::meta::mojang::version::VersionJson;
-use crate::net::{Depth, Http, fetch_all};
+use crate::net::{Depth, DownloadItem, FetchPhase, Http, fetch_all_with};
 use crate::paths::AppPaths;
 use crate::settings;
-use crate::task::TaskHandle;
+use crate::task::{TaskHandle, TaskPhase};
 
 #[derive(Debug, Clone)]
 pub struct Urls {
@@ -97,6 +97,47 @@ pub fn kib(bytes: u64) -> u32 {
     bytes.div_ceil(1024).min(u64::from(u32::MAX)) as u32
 }
 
+fn clamp_u32(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// 足りないファイルを取得し、確認（ファイルの数）と取得（KiB）の段階と進捗をタスクに伝える。
+pub(crate) async fn fetch_with_phases(
+    http: &Http,
+    items: Vec<DownloadItem>,
+    depth: Depth,
+    concurrency: usize,
+    handle: &TaskHandle,
+) -> Result<(), CoreError> {
+    fetch_all_with(
+        http,
+        items,
+        depth,
+        concurrency,
+        handle.token(),
+        |phase| match phase {
+            FetchPhase::Verifying { checked, total } => {
+                handle.set_phase(TaskPhase::Verifying);
+                handle.set_progress(clamp_u32(checked), clamp_u32(total));
+            }
+            FetchPhase::Downloading => handle.set_phase(TaskPhase::Downloading),
+        },
+        |done, total| handle.set_progress(kib(done), kib(total)),
+    )
+    .await
+}
+
+/// 取り消されたら、終わるのを待たずに `Cancelled` にする（取り消しを見ない通信や子プロセスの待ちに使う）。
+pub(crate) async fn cancellable<T>(
+    token: &CancellationToken,
+    fut: impl std::future::Future<Output = Result<T, CoreError>>,
+) -> Result<T, CoreError> {
+    tokio::select! {
+        _ = token.cancelled() => Err(CoreError::Cancelled),
+        r = fut => r,
+    }
+}
+
 /// インスタンスをインストールする。結果に応じてインスタンスの state を更新する。
 pub async fn install(
     env: &InstallEnv,
@@ -127,6 +168,7 @@ async fn install_inner(
     let inst = instance::get(&env.db, instance_id)?;
     instance::set_state(&env.db, instance_id, InstanceState::Installing)?;
     let token = handle.token();
+    handle.set_phase(TaskPhase::Resolving);
     let vanilla = env.meta.pin_version(&inst.mc_version, token).await?;
     let version = overlay_loader(env, &inst, vanilla, false, token).await?;
     plan::check_profile(&version)?;
@@ -139,31 +181,34 @@ async fn install_inner(
         &env.urls.resources,
     )?;
     let (component, major) = crate::java::requirement(&version);
-    let runtime = crate::java::prepare_runtime(
-        &env.http,
-        &env.paths,
-        &env.urls.runtime_index,
-        &component,
-        major,
+    let runtime = cancellable(
+        token,
+        crate::java::prepare_runtime(
+            &env.http,
+            &env.paths,
+            &env.urls.runtime_index,
+            &component,
+            major,
+        ),
     )
     .await?;
 
     let mut items = game.downloads;
     items.extend(runtime.downloads.iter().cloned());
     let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
-    fetch_all(
-        &env.http,
-        items,
-        Depth::Full,
-        concurrency,
+    fetch_with_phases(&env.http, items, Depth::Full, concurrency, handle).await?;
+    // Forge と NeoForge は、この後にローダーの導入（情報の用意から）が続くため、Java の確認もその準備として見せる
+    handle.set_phase(if is_forge_like(inst.loader) {
+        TaskPhase::Resolving
+    } else {
+        TaskPhase::Finishing
+    });
+    // processor の Java は、ゲームと同じ runtime（手動の Java の指定は導入では使わない）
+    let java = cancellable(
         token,
-        |done, total| {
-            handle.set_progress(kib(done), kib(total));
-        },
+        crate::java::finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()),
     )
     .await?;
-    // processor の Java は、ゲームと同じ runtime（手動の Java の指定は導入では使わない）
-    let java = crate::java::finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()).await?;
     if is_forge_like(inst.loader) {
         forge::finish_install(env, &inst, &version, &game.generated, &java, handle).await?;
     }

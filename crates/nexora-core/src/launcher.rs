@@ -14,7 +14,8 @@ use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
 use crate::install::{
-    InstallEnv, Urls, forge, install, is_forge_like, kib, now_ms, overlay_loader,
+    InstallEnv, Urls, cancellable, fetch_with_phases, forge, install, is_forge_like, now_ms,
+    overlay_loader,
 };
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
@@ -33,10 +34,10 @@ use crate::meta::mojang::manifest::{
 };
 use crate::meta::mojang::rules::RuleEnv;
 use crate::meta::write_atomic;
-use crate::net::{Depth, Http, fetch_all};
+use crate::net::{Depth, Http};
 use crate::paths::AppPaths;
 use crate::settings;
-use crate::task::{TaskHandle, TaskManager};
+use crate::task::{TaskHandle, TaskManager, TaskPhase};
 
 pub const INSTALL_KIND: &str = "install";
 pub const LAUNCH_KIND: &str = "launch";
@@ -463,6 +464,7 @@ impl Launcher {
             self.auth.session_for_launch().await?
         };
         let token = handle.token();
+        handle.set_phase(TaskPhase::Resolving);
         // 固定済みのメタデータだけで解決する。欠けていればそのときだけ取得する
         let vanilla = match load_pinned_version(&env.paths, &inst.mc_version)? {
             Some(v) => v,
@@ -489,15 +491,12 @@ impl Launcher {
             forge::check_installed_files(env, &inst)?;
         }
         let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
-        fetch_all(
+        fetch_with_phases(
             &env.http,
             game.downloads.clone(),
             Depth::Quick,
             concurrency,
-            token,
-            |done, total| {
-                handle.set_progress(kib(done), kib(total));
-            },
+            handle,
         )
         .await?;
 
@@ -509,30 +508,40 @@ impl Launcher {
         let java = match chosen {
             Some(path) => path,
             None => {
-                let runtime = prepare_runtime(
-                    &env.http,
-                    &env.paths,
-                    &env.urls.runtime_index,
-                    &component,
-                    major,
+                handle.set_phase(TaskPhase::Resolving);
+                let runtime = cancellable(
+                    token,
+                    prepare_runtime(
+                        &env.http,
+                        &env.paths,
+                        &env.urls.runtime_index,
+                        &component,
+                        major,
+                    ),
                 )
                 .await?;
-                fetch_all(
+                fetch_with_phases(
                     &env.http,
                     runtime.downloads.clone(),
                     Depth::Full,
                     concurrency,
-                    token,
-                    |_, _| {},
+                    handle,
                 )
                 .await?;
-                finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()).await?
+                handle.set_phase(TaskPhase::Finishing);
+                cancellable(
+                    token,
+                    finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()),
+                )
+                .await?
             }
         };
         if token.is_cancelled() {
             return Err(CoreError::Cancelled);
         }
 
+        // natives の展開から子プロセスの起動まで
+        handle.set_phase(TaskPhase::Launching);
         let natives_dir = env.paths.natives_dir().join(id);
         let natives = game.natives.clone();
         let dest = natives_dir.clone();

@@ -11,7 +11,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CoreError;
-pub use types::{TaskChange, TaskChangedEvent, TaskProgress, TaskSnapshot, TaskState};
+pub use types::{TaskChange, TaskChangedEvent, TaskPhase, TaskProgress, TaskSnapshot, TaskState};
 
 pub const MAX_FINISHED_TASKS: usize = 50;
 pub const PROGRESS_NOTIFY_INTERVAL: Duration = Duration::from_millis(100);
@@ -31,6 +31,10 @@ struct Entry {
     last_progress_notify: Option<Instant>,
     last_progress_revision: u64,
     progress_flush_pending: bool,
+    /// いまの段階に入った時刻（段階ごとの所要時間をログに残すため）。
+    phase_started: Option<std::time::Instant>,
+    /// キャンセルを受け付けた時刻（取り消しが済むまでの時間をログに残すため）。
+    cancel_requested: Option<std::time::Instant>,
 }
 
 #[derive(Clone)]
@@ -59,6 +63,11 @@ impl TaskHandle {
     pub fn set_progress(&self, current: u32, total: u32) {
         self.manager.set_progress(&self.id, current, total);
     }
+
+    /// 段階を変える。変わったときだけ進捗を 0/0 に戻してすぐに通知する（同じ段階なら何もしない）。
+    pub fn set_phase(&self, phase: TaskPhase) {
+        self.manager.set_phase(&self.id, phase);
+    }
 }
 
 fn now_ms() -> i64 {
@@ -66,6 +75,24 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+fn elapsed_ms(since: std::time::Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// いまの段階の所要時間をログに残す。段階が無ければ何もしない。
+fn log_phase_end(entry: &mut Entry) {
+    if let (Some(phase), Some(started)) = (entry.snapshot.phase, entry.phase_started.take()) {
+        tracing::info!(
+            task_id = %entry.snapshot.id,
+            kind = %entry.snapshot.kind,
+            phase = phase.as_str(),
+            elapsed_ms = elapsed_ms(started),
+            progress_total = entry.snapshot.progress.total,
+            "task phase finished"
+        );
+    }
 }
 
 impl TaskManager {
@@ -134,6 +161,7 @@ impl TaskManager {
                     kind: kind.to_string(),
                     instance_id,
                     state: TaskState::Queued,
+                    phase: None,
                     progress: TaskProgress::default(),
                     revision: 1,
                     error: None,
@@ -144,6 +172,8 @@ impl TaskManager {
                 last_progress_notify: None,
                 last_progress_revision: 0,
                 progress_flush_pending: false,
+                phase_started: None,
+                cancel_requested: None,
             },
         );
         (id, token)
@@ -195,6 +225,21 @@ impl TaskManager {
             // キャンセル中のタスクが走り出しても、キャンセル中のまま表示する
             if state == TaskState::Running && entry.snapshot.state == TaskState::Cancelling {
                 return;
+            }
+            if state.is_terminal() {
+                // 終わったタスクは段階を持たない。最後の段階の所要時間と、取り消しにかかった時間を残す
+                log_phase_end(entry);
+                entry.snapshot.phase = None;
+                if state == TaskState::Cancelled
+                    && let Some(at) = entry.cancel_requested
+                {
+                    tracing::info!(
+                        task_id = %id,
+                        kind = %entry.snapshot.kind,
+                        elapsed_ms = elapsed_ms(at),
+                        "task cancelled"
+                    );
+                }
             }
             entry.snapshot.state = state;
             entry.snapshot.error = error;
@@ -267,6 +312,35 @@ impl TaskManager {
         }
     }
 
+    fn set_phase(&self, id: &str, phase: TaskPhase) {
+        let revision = {
+            let mut tasks = self.tasks.lock().unwrap();
+            let Some(entry) = tasks.get_mut(id) else {
+                return;
+            };
+            if entry.snapshot.state.is_terminal() || entry.snapshot.phase == Some(phase) {
+                return;
+            }
+            log_phase_end(entry);
+            tracing::info!(
+                task_id = %id,
+                kind = %entry.snapshot.kind,
+                phase = phase.as_str(),
+                "task phase started"
+            );
+            entry.phase_started = Some(std::time::Instant::now());
+            entry.snapshot.phase = Some(phase);
+            // 段階ごとに単位が違うため、前の段階の数字を持ち越さない
+            entry.snapshot.progress = TaskProgress::default();
+            entry.snapshot.revision += 1;
+            entry.snapshot.updated_at = now_ms();
+            // この通知が最新を運ぶため、待っている進捗の通知は同じ revision なら出さない
+            entry.last_progress_revision = entry.snapshot.revision;
+            entry.snapshot.revision
+        };
+        self.notifier.notify(id, revision, TaskChange::Phase);
+    }
+
     /// 終了したタスクを新しい順に MAX_FINISHED_TASKS 件だけ残す。
     fn prune(&self) {
         let removed: Vec<(String, u64)> = {
@@ -330,6 +404,13 @@ impl TaskManager {
                 return Ok(());
             }
             entry.token.cancel();
+            entry.cancel_requested = Some(std::time::Instant::now());
+            tracing::info!(
+                task_id = %id,
+                kind = %entry.snapshot.kind,
+                phase = entry.snapshot.phase.map(TaskPhase::as_str),
+                "cancel requested"
+            );
             entry.snapshot.state = TaskState::Cancelling;
             entry.snapshot.revision += 1;
             entry.snapshot.updated_at = now_ms();
@@ -499,6 +580,85 @@ mod tests {
         settle().await;
         assert_eq!(progress().len(), 2);
         assert_eq!(tasks.get(&id).unwrap().state, TaskState::Succeeded);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn phase_change_resets_progress_and_notifies_at_once() {
+        let (tasks, recorder) = manager();
+        let (go, wait) = tokio::sync::oneshot::channel::<()>();
+        let id = tasks.spawn("test", None, |handle| async move {
+            handle.set_phase(TaskPhase::Verifying);
+            handle.set_progress(3, 10);
+            // 通知の間隔の内でも、段階の変化はすぐに知らせる
+            handle.set_phase(TaskPhase::Downloading);
+            let _ = wait.await;
+            Ok(())
+        });
+        settle().await;
+        let snap = tasks.get(&id).unwrap();
+        assert_eq!(snap.phase, Some(TaskPhase::Downloading));
+        assert_eq!(snap.progress, TaskProgress::default());
+        let phases: Vec<(u64, TaskChange)> = recorder
+            .changes_for(&id)
+            .into_iter()
+            .filter(|(_, c)| *c == TaskChange::Phase)
+            .collect();
+        assert_eq!(phases.len(), 2, "{phases:?}");
+        assert_eq!(phases[1].0, snap.revision);
+        go.send(()).unwrap();
+        settle().await;
+        let snap = tasks.get(&id).unwrap();
+        assert_eq!(snap.state, TaskState::Succeeded);
+        assert_eq!(snap.phase, None, "a finished task has no phase");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn same_phase_keeps_progress() {
+        let (tasks, recorder) = manager();
+        let id = tasks.spawn("test", None, |handle| async move {
+            handle.set_phase(TaskPhase::Verifying);
+            handle.set_progress(3, 10);
+            handle.set_phase(TaskPhase::Verifying);
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+        settle().await;
+        let snap = tasks.get(&id).unwrap();
+        assert_eq!(snap.phase, Some(TaskPhase::Verifying));
+        assert_eq!(
+            snap.progress,
+            TaskProgress {
+                current: 3,
+                total: 10
+            }
+        );
+        let phases = recorder
+            .changes_for(&id)
+            .into_iter()
+            .filter(|(_, c)| *c == TaskChange::Phase)
+            .count();
+        assert_eq!(phases, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_task_clears_its_phase() {
+        let (tasks, _) = manager();
+        let id = tasks.spawn("test", None, |handle| async move {
+            handle.set_phase(TaskPhase::BuildingLoader);
+            handle.token().cancelled().await;
+            Err(CoreError::Cancelled)
+        });
+        settle().await;
+        tasks.cancel(&id).unwrap();
+        // キャンセル中も段階は残す（何を止めているかが分かるように）
+        assert_eq!(
+            tasks.get(&id).unwrap().phase,
+            Some(TaskPhase::BuildingLoader)
+        );
+        settle().await;
+        let snap = tasks.get(&id).unwrap();
+        assert_eq!(snap.state, TaskState::Cancelled);
+        assert_eq!(snap.phase, None);
     }
 
     #[tokio::test(start_paused = true)]
