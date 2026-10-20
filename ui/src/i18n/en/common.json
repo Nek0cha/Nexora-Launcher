@@ -30,7 +30,10 @@
       "crashed": "The game crashed"
     },
     "install": "Install",
-    "launchingPercent": "Launching {{percent}}%"
+    "launchingPercent": "Launching {{percent}}%",
+    "stop": "Stop",
+    "forceStop": "Force stop",
+    "waitingExit": "Waiting for the game to close"
   },
   "create": {
     "open": "Create instance",
@@ -44,7 +47,6 @@
   },
   "tasks": {
     "title": "Tasks",
-    "running": "{{count}} running",
     "cancel": "Cancel",
     "kind": {
       "install": "Install",
@@ -59,7 +61,9 @@
       "succeeded": "Done",
       "failed": "Failed",
       "cancelled": "Cancelled"
-    }
+    },
+    "empty": "No tasks",
+    "runningLabel": "Tasks, {{count}} running"
   },
   "palette": {
     "placeholder": "Search commands",
@@ -99,6 +103,11 @@
   "sidebar": {
     "login": "Sign in",
     "accountNeedsLogin": "{{name}} (sign-in needed)"
+  },
+  "routeError": {
+    "title": "This screen could not be shown",
+    "body": "Something went wrong while showing this screen. Reload to try again, and include the details below when reporting it.",
+    "reload": "Reload"
   },
   "startup": {
     "title": "Nexora could not start",
@@ -146,6 +155,7 @@
     "details": "Details",
     "duplicate": "Duplicate",
     "delete": "Delete",
+    "openFolder": "Open folder",
     "state": {
       "installing": "Preparing",
       "ready": "Ready",
@@ -165,6 +175,8 @@
       "name": "Name",
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
+      "memorySlider": "Memory amount",
+      "memoryAboveRange": "{{value}}, above the slider range",
       "memoryRange": "From 512 to 65536 MB",
       "java": "Java",
       "javaPath": "Java path",
@@ -178,7 +190,43 @@
       "notFound": "This instance doesn't exist.",
       "backToList": "Back to instances",
       "save": "Save",
-      "saved": "Saved"
+      "saved": "Saved",
+      "folders": {
+        "game": "Game folder",
+        "mods": "Mods folder",
+        "screenshots": "Screenshots folder",
+        "saves": "Worlds folder",
+        "logs": "Logs folder"
+      }
     }
+  },
+  "toast": {
+    "region": "Notifications",
+    "close": "Close notification"
+  },
+  "appBar": {
+    "back": "Back",
+    "forward": "Forward",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore down",
+    "close": "Close"
+  },
+  "running": {
+    "title": "Running games",
+    "label": "{{count}} running games",
+    "more": "+{{count}}",
+    "stop": "Stop {{name}}",
+    "forceStop": "Force stop {{name}}",
+    "openLog": "Open logs for {{name}}",
+    "openDetail": "Open details for {{name}}",
+    "waiting": "Waiting for {{name}} to close"
+  },
+  "forceStop": {
+    "title": "The game is not closing",
+    "instance": "Instance: {{name}}",
+    "body": "Force stopping may lose any progress since the last save.",
+    "wait": "Wait",
+    "confirm": "Force stop"
   }
 }

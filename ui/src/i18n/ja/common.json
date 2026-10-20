@@ -30,7 +30,10 @@
       "crashed": "ゲームが異常終了しました"
     },
     "install": "インストール",
-    "launchingPercent": "起動中 {{percent}}%"
+    "launchingPercent": "起動中 {{percent}}%",
+    "stop": "停止",
+    "forceStop": "強制終了",
+    "waitingExit": "終了を待っています"
   },
   "create": {
     "open": "インスタンスを作成",
@@ -44,7 +47,6 @@
   },
   "tasks": {
     "title": "タスク",
-    "running": "実行中 {{count}} 件",
     "cancel": "キャンセル",
     "kind": {
       "install": "インストール",
@@ -59,7 +61,9 @@
       "succeeded": "完了",
       "failed": "失敗",
       "cancelled": "キャンセル済み"
-    }
+    },
+    "empty": "タスクはありません",
+    "runningLabel": "タスク、実行中 {{count}} 件"
   },
   "palette": {
     "placeholder": "コマンドを検索",
@@ -99,6 +103,11 @@
   "sidebar": {
     "login": "ログイン",
     "accountNeedsLogin": "{{name}}（ログインが必要）"
+  },
+  "routeError": {
+    "title": "この画面を表示できませんでした",
+    "body": "画面の表示中に問題が起きました。再読み込みして試してください。報告するときは下の詳細を添えてください。",
+    "reload": "再読み込み"
   },
   "startup": {
     "title": "Nexora を起動できませんでした",
@@ -146,6 +155,7 @@
     "details": "詳細",
     "duplicate": "複製",
     "delete": "削除",
+    "openFolder": "フォルダを開く",
     "state": {
       "installing": "準備中",
       "ready": "使用可能",
@@ -165,6 +175,8 @@
       "name": "名前",
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
+      "memorySlider": "メモリの量",
+      "memoryAboveRange": "{{value}}（スライダーの範囲を超えています）",
       "memoryRange": "512〜65536 MB の範囲で指定します",
       "java": "Java",
       "javaPath": "Java のパス",
@@ -178,7 +190,43 @@
       "notFound": "このインスタンスは見つかりません。",
       "backToList": "インスタンスの一覧に戻る",
       "save": "保存",
-      "saved": "保存しました"
+      "saved": "保存しました",
+      "folders": {
+        "game": "ゲームのフォルダ",
+        "mods": "mods のフォルダ",
+        "screenshots": "スクリーンショットのフォルダ",
+        "saves": "ワールドのフォルダ",
+        "logs": "ログのフォルダ"
+      }
     }
+  },
+  "toast": {
+    "region": "通知",
+    "close": "通知を閉じる"
+  },
+  "appBar": {
+    "back": "戻る",
+    "forward": "進む",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "元に戻す",
+    "close": "閉じる"
+  },
+  "running": {
+    "title": "実行中のゲーム",
+    "label": "実行中のゲーム {{count}} 件",
+    "more": "+{{count}}",
+    "stop": "{{name}} を停止",
+    "forceStop": "{{name}} を強制終了",
+    "openLog": "{{name}} のログを開く",
+    "openDetail": "{{name}} の詳細を開く",
+    "waiting": "{{name}} の終了を待っています"
+  },
+  "forceStop": {
+    "title": "ゲームが閉じません",
+    "instance": "対象：{{name}}",
+    "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
+    "wait": "待つ",
+    "confirm": "強制終了"
   }
 }

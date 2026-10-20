@@ -6,6 +6,7 @@ import IconPlay from "~icons/ph/play-fill";
 import IconRetry from "~icons/ph/arrow-clockwise";
 import IconInstall from "~icons/ph/download-simple";
 import IconStop from "~icons/ph/x";
+import IconStopGame from "~icons/ph/stop-fill";
 import { cancelTask } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
@@ -22,8 +23,10 @@ import { PlayLoginDialog, usePlayDialogHost } from "../features/login/LoginDialo
 import { loginPrompt } from "../features/login/loginState";
 import { useLastExits, useRunning } from "../features/play/useGameSync";
 import { usePlay } from "../features/play/usePlay";
+import { useStopFlow } from "../features/play/useStopFlow";
 import { useTasks } from "../features/tasks/useTasks";
 import { FailureNotice } from "./FailureNotice";
+import { useToast } from "./toast/useToast";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -71,6 +74,10 @@ function PreparingLabel({ percent, labelKey }: { percent: number; labelKey: "pla
   );
 }
 
+// 重ねた層。同じマスに置き、不透明度を既存の長さとイージングで切り替える
+const layer =
+  "col-start-1 row-start-1 transition-opacity duration-(--duration-fast) ease-out-quint motion-reduce:transition-none";
+
 const phaseLabelKey = (phase: Phase) => (phase === "install" ? "play.preparingPercent" : "play.launchingPercent");
 
 export function PlayButton({
@@ -94,7 +101,9 @@ export function PlayButton({
   const state = playStateFrom({ instance, task: snapshot, running, runningLoaded: sessions !== undefined, lastExit });
   const now = useNow(state.kind === "playing" ? Number.POSITIVE_INFINITY : 0);
   const play = usePlay(instance.id);
-  const { press, starting, error: startError } = play;
+  const stopFlow = useStopFlow();
+  const stop = stopFlow.stateOf(instance.id);
+  const { press, starting, error: startError, errorId: startErrorId } = play;
   // ログインのダイアログはここに置く（ホームが出ている間は、コマンドパレットからの起動の分も）
   usePlayDialogHost(instance.id);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -118,26 +127,51 @@ export function PlayButton({
   const active = view.kind === "preparing" || view.kind === "cancelling";
   const percent = active ? view.percent : 0;
   // 押しても何も起きない状態。isDisabled にするとフォーカスが外れるため、フォーカスは残して押下だけを無視する
-  const inert = view.kind === "cancelling" || view.kind === "playing" || view.kind === "checking";
+  const inert =
+    view.kind === "cancelling" || view.kind === "checking" || (view.kind === "playing" && stop === "waiting");
 
   // 開始の失敗は、押し直せる状態のときだけ出す（別の場所から開始されて動き出したら古い失敗になる）
   const shownStartError = view.kind === "ready" || view.kind === "needsInstall" || view.kind === "failed" || view.kind === "crashed"
       ? startError
       : null;
   const cancelError = cancel.error ? toErrorPayload(cancel.error) : null;
-  const failure: { error: ErrorPayload | null } | null = shownStartError
-    ? { error: shownStartError }
+  // id は失敗ごとに変わる印。一覧の行では、変わったときだけトーストで知らせる
+  const failure: { error: ErrorPayload | null; id: string } | null = shownStartError
+    ? { error: shownStartError, id: startErrorId ?? "start" }
     : cancelError
-      ? { error: cancelError }
+      ? { error: cancelError, id: `cancel:${cancel.submittedAt}` }
       // ログインのダイアログで扱う失敗は、ボタンのそばには出さない
       : view.kind === "failed" && !loginPrompt(view.error)
-        ? { error: view.error }
+        ? { error: view.error, id: `task:${snapshot?.id}` }
         : view.kind === "crashed"
-          ? { error: crashPayload(view.exitCode) }
+          ? { error: crashPayload(view.exitCode), id: `exit:${lastExit?.at}` }
           : null;
 
+  // 一覧の行では、失敗をその場に出すと行の高さが変わるため、トーストで出す。
+  // 画面を開いた時点ですでにある失敗は知らせ直さない（undefined はまだ見ていない印）
+  const toast = useToast();
+  const toasted = useRef<string | null | undefined>(undefined);
+  const failureId = failure?.id ?? null;
+  useEffect(() => {
+    if (!row || view.kind === "checking") return;
+    if (toasted.current === undefined || toasted.current === failureId) {
+      toasted.current = failureId;
+      return;
+    }
+    toasted.current = failureId;
+    if (failure) toast.showError(failure.error ?? { code: "unknown", params: {}, detail: null });
+  }, [row, failureId, view.kind]);
+
+  // プレイ中に、ポインタを乗せるかキーボードでフォーカスしたとき、赤い停止の表示にする。待っている間は変えない
+  const revealsStop = (isHovered: boolean, isFocusVisible: boolean) =>
+    view.kind === "playing" && stop !== "waiting" && (isHovered || isFocusVisible);
+
   const onPress = () => {
-    if (view.kind === "preparing") {
+    if (view.kind === "playing") {
+      // 待っている間は押しても何もしない。確認のダイアログを閉じた後は、押したときだけ強制終了する
+      if (stop === "idle") stopFlow.requestStop(instance.id);
+      else if (stop === "forceReady") stopFlow.forceStop(instance.id);
+    } else if (view.kind === "preparing") {
       if (cancelInFlight.current) return;
       cancelInFlight.current = true;
       cancel.mutate(view.taskId, { onSettled: () => (cancelInFlight.current = false) });
@@ -155,7 +189,11 @@ export function PlayButton({
       : view.kind === "cancelling"
         ? t("play.cancelling")
         : view.kind === "playing"
-          ? t("play.playing")
+          ? stop === "waiting"
+            ? t("play.waitingExit")
+            : stop === "forceReady"
+              ? t("play.forceStop")
+              : t("play.stop")
           : view.kind === "needsInstall"
             ? t("play.install")
             : view.kind === "failed"
@@ -176,7 +214,7 @@ export function PlayButton({
   return (
     <div className={`flex flex-col gap-3 ${row ? "items-end" : "items-start"}`}>
       {/* 失敗の説明はボタンの上に出す。画面の下端に揃えているため、下に足すとボタンが押し上げられ、再試行しようとした位置からずれる */}
-      {failure && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
+      {failure && !row && <FailureNotice key={failure.error?.code ?? "unknown"} error={failure.error} />}
       <Button
         ref={buttonRef}
         onPress={onPress}
@@ -184,20 +222,29 @@ export function PlayButton({
         isDisabled={isDisabled}
         aria-disabled={inert || undefined}
         aria-label={name}
-        aria-describedby={view.kind === "preparing" ? describedBy : undefined}
-        className={[
-          "play-press relative overflow-hidden font-display font-semibold",
-          row ? "h-9 w-36 rounded-md text-sm" : "h-14 w-72 rounded-lg text-lg",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          "data-pending:cursor-progress data-disabled:opacity-50",
-          view.kind === "playing" ? "bg-surface-3 text-text-strong" : "bg-text-strong text-surface-0",
-          view.kind === "playing" || view.kind === "cancelling" ? "" : "data-hovered:opacity-90",
-          inert ? "cursor-default" : "",
-        ].join(" ")}
+        aria-describedby={view.kind === "preparing" || view.kind === "playing" ? describedBy : undefined}
+        className={({ isHovered, isFocusVisible }) =>
+          [
+            "play-press relative overflow-hidden font-display font-semibold",
+            row ? "h-9 w-36 rounded-md text-sm" : "h-14 w-72 rounded-lg text-lg",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+            "data-pending:cursor-progress data-disabled:opacity-50",
+            "transition-colors duration-(--duration-fast) ease-out-quint",
+            view.kind === "playing"
+              ? revealsStop(isHovered, isFocusVisible)
+                ? "bg-danger text-danger-ink"
+                : "bg-surface-3 text-text-strong"
+              : "bg-text-strong text-surface-0",
+            view.kind === "playing" || view.kind === "cancelling" ? "" : "data-hovered:opacity-90",
+            inert ? "cursor-default" : "",
+          ].join(" ")
+        }
       >
         {({ isHovered, isFocusVisible }) => {
           // 準備中は進捗を見せ、ポインタを乗せるかキーボードでフォーカスしたときだけ、押すと何が起きるか（キャンセル）を見せる
           const revealCancel = view.kind === "preparing" && (isHovered || isFocusVisible);
+          // プレイ中も同じく、乗せたときだけ赤い「停止」（確認の後は「強制終了」）を見せる
+          const revealStop = revealsStop(isHovered, isFocusVisible);
           return (
             <>
               <span
@@ -214,17 +261,43 @@ export function PlayButton({
                     <IconStop className={row ? "size-4" : "size-5"} />
                     <span>{name}</span>
                   </>
+                ) : view.kind === "playing" ? (
+                  // プレイ中は「プレイ中」と赤い「停止」を同じ場所に重ね、不透明度だけを切り替えて交差させる（面の色は親の transition で変わる）
+                  <span className="grid place-items-center">
+                    <span
+                      data-testid="play-layer-playing"
+                      data-active={!revealStop || undefined}
+                      className={`${layer} flex items-center justify-center gap-2 ${revealStop ? "opacity-0" : ""}`}
+                    >
+                      {stop !== "idle" ? (
+                        <span className={row ? "text-xs" : "text-base"}>{t("play.waitingExit")}</span>
+                      ) : (
+                        <>
+                          <span>{t("play.playing")}</span>
+                          <span className={`tabular font-normal text-text-muted ${row ? "text-xs" : "text-sm"}`}>
+                            {formatElapsed(now - view.launchedAt)}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    {/* 待っている間は停止の層を出さない（名前が重複するため。待っている間は赤くならない） */}
+                    {stop !== "waiting" && (
+                      <span
+                        data-testid="play-layer-stop"
+                        data-active={revealStop || undefined}
+                        className={`${layer} flex items-center justify-center gap-2 ${revealStop ? "" : "opacity-0"}`}
+                      >
+                        <IconStopGame className={row ? "size-4" : "size-5"} />
+                        <span>{name}</span>
+                      </span>
+                    )}
+                  </span>
                 ) : view.kind === "preparing" ? (
                   <PreparingLabel percent={percent} labelKey={phaseLabelKey(view.phase)} />
                 ) : (
                   <>
                     {Icon && <Icon className={row ? "size-4" : "size-5"} />}
                     <span>{name}</span>
-                    {view.kind === "playing" && (
-                      <span className={`tabular font-normal text-text-muted ${row ? "text-xs" : "text-sm"}`}>
-                        {formatElapsed(now - view.launchedAt)}
-                      </span>
-                    )}
                   </>
                 )}
               </span>
@@ -235,6 +308,11 @@ export function PlayButton({
       {view.kind === "preparing" && (
         <span id={describedBy} className="sr-only">
           {t(phaseLabelKey(view.phase), { percent })}
+        </span>
+      )}
+      {view.kind === "playing" && (
+        <span id={describedBy} className="sr-only">
+          {t("play.playing")}
         </span>
       )}
       <div aria-live="polite" className="sr-only">

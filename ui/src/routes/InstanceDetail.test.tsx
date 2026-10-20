@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listInstances, listRunning, updateInstance } from "../api/commands";
+import { listInstances, listRunning, openInstanceFolder, systemMemoryMb, updateInstance } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
+import { ToastRegion } from "../components/toast/ToastRegion";
+import { clearToasts } from "../components/toast/useToast";
 import { RUNNING_KEY } from "../features/play/useGameSync";
 import i18n from "../i18n";
 import InstanceDetail from "./InstanceDetail";
@@ -14,6 +16,8 @@ vi.mock("../api/commands", () => ({
   listInstances: vi.fn(),
   listRunning: vi.fn(),
   updateInstance: vi.fn(),
+  systemMemoryMb: vi.fn(),
+  openInstanceFolder: vi.fn(),
 }));
 
 const instance = (patch: Partial<Instance> = {}): Instance => ({
@@ -23,7 +27,10 @@ const instance = (patch: Partial<Instance> = {}): Instance => ({
   ...patch,
 });
 
-function mount(list: Instance[], { id = "i1", running = [] as RunningSession[] } = {}) {
+function mount(list: Instance[], { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null } = {}) {
+  // null は物理メモリの取得に失敗する場合
+  if (totalMb === null) vi.mocked(systemMemoryMb).mockRejectedValue(new Error("no memory"));
+  else vi.mocked(systemMemoryMb).mockResolvedValue(totalMb);
   vi.mocked(listInstances).mockResolvedValue(list);
   vi.mocked(listRunning).mockResolvedValue(running);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -36,10 +43,12 @@ function mount(list: Instance[], { id = "i1", running = [] as RunningSession[] }
           <Route path="/instances" element={<p>list page</p>} />
         </Routes>
       </MemoryRouter>
+      <ToastRegion />
     </QueryClientProvider>,
   );
 }
 
+const toasts = () => screen.getByRole("region", { name: "Notifications" });
 const saveButton = () => screen.findByRole("button", { name: "Save" }) as Promise<HTMLButtonElement>;
 const nameInput = () => screen.getByRole("textbox", { name: "Name" });
 const jvmInput = () => screen.getByRole("textbox", { name: "JVM arguments" });
@@ -61,6 +70,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  act(() => clearToasts());
   cleanup();
   vi.resetAllMocks();
 });
@@ -103,12 +113,29 @@ describe("InstanceDetail", () => {
       javaPath: "C:\\Program Files\\Java\\bin\\javaw.exe",
       jvmArgs: "-Xss1M",
     });
+    // 保存の成功はトーストで知らせる
+    const status = await within(toasts()).findByRole("status");
+    expect(status.textContent).toContain("Saved");
   });
 
   it("name_input_is_limited_to_64_characters", async () => {
     mount([instance()]);
     await saveButton();
     expect((nameInput() as HTMLInputElement).maxLength).toBe(64);
+  });
+
+  it("form_errors_stay_inline_and_are_not_toasts", async () => {
+    mount([instance()]);
+    await saveButton();
+    fireEvent.change(nameInput(), { target: { value: "   " } });
+    fireEvent.submit(nameInput().closest("form")!);
+    expect((await saveButton()).disabled).toBe(true);
+    await act(async () => { await Promise.resolve(); });
+    expect(updateInstance).not.toHaveBeenCalled();
+    expect(within(toasts()).queryByRole("alert")).toBeNull();
+    // 成功と情報の読み上げ用の領域はいつも置いてあるので、中身が空で、トーストが 1 つも無いことを見る
+    expect(within(toasts()).getByRole("status").textContent).toBe("");
+    expect(within(toasts()).queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("blank_name_blocks_saving", async () => {
@@ -152,7 +179,7 @@ describe("InstanceDetail", () => {
     expect(await screen.findByText("list page")).toBeTruthy();
   });
 
-  it("save_failure_shows_failure_notice", async () => {
+  it("save_failure_is_a_toast", async () => {
     vi.mocked(updateInstance).mockRejectedValue(
       new IpcError({ code: "instance.invalid_setting", params: {}, detail: null }),
     );
@@ -160,7 +187,90 @@ describe("InstanceDetail", () => {
     await saveButton();
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
     await press(await saveButton());
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByText("A setting value is not valid")).toBeTruthy();
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("A setting value is not valid")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("slider_and_number_input_stay_in_sync", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.value).toBe("4096");
+    fireEvent.change(slider, { target: { value: "6144" } });
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("6,144");
+    const number = screen.getByRole("textbox", { name: "Maximum memory (MB)" });
+    fireEvent.change(number, { target: { value: "2048" } });
+    fireEvent.blur(number);
+    expect((screen.getByRole("slider", { name: "Memory amount" }) as HTMLInputElement).value).toBe("2048");
+  });
+
+  it("value_above_slider_max_keeps_the_number_and_pins_the_slider", async () => {
+    vi.mocked(updateInstance).mockImplementation(async (_id, s) => instance({ ...s }));
+    mount([instance({ memoryMode: "manual", memoryMb: 32768 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.value).toBe("8192");
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("32,768");
+    // 表示と読み上げは、右端に置いた値ではなく本当の値にする
+    expect(screen.getByTestId("memory-slider-output").textContent).toMatch(/32,?768\s?MB/);
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/32,?768\s?MB, above the slider range/);
+    // 名前だけを変えて保存しても、メモリの値は変わらない
+    fireEvent.change(nameInput(), { target: { value: "Creative" } });
+    await press(await saveButton());
+    await waitFor(() => expect(updateInstance).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateInstance).mock.calls[0]?.[1]).toMatchObject({ memoryMode: "manual", memoryMb: 32768 });
+    expect((screen.getByRole("textbox", { name: "Maximum memory (MB)" }) as HTMLInputElement).value).toBe("32,768");
+  });
+
+  it("slider_is_keyboard_operable_and_announces_value", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })]);
+    const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/4,?096\s?MB/);
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    fireEvent.change(slider, { target: { value: "4352" } });
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/4,?352\s?MB/);
+    expect(slider.getAttribute("aria-valuetext")).not.toContain("above");
+    expect(screen.getByTestId("memory-slider-output").textContent).toMatch(/4,?352\s?MB/);
+    expect(slider.tabIndex).not.toBe(-1);
+  });
+
+  it("number_input_only_while_system_memory_is_unavailable", async () => {
+    mount([instance({ memoryMode: "manual", memoryMb: 4096 })], { totalMb: null });
+    expect(await screen.findByRole("textbox", { name: "Maximum memory (MB)" })).toBeTruthy();
+    expect(screen.queryByRole("slider")).toBeNull();
+  });
+
+  it("folder_buttons_call_the_command_with_each_kind", async () => {
+    vi.mocked(openInstanceFolder).mockResolvedValue(null);
+    mount([instance()]);
+    const cases = [
+      ["Game folder", "game"],
+      ["Mods folder", "mods"],
+      ["Screenshots folder", "screenshots"],
+      ["Worlds folder", "saves"],
+    ] as const;
+    for (const [name, kind] of cases) {
+      await press(await screen.findByRole("button", { name }));
+      expect(openInstanceFolder).toHaveBeenLastCalledWith("i1", kind);
+    }
+    expect(openInstanceFolder).toHaveBeenCalledTimes(4);
+  });
+
+  it("folder_buttons_show_their_name_in_a_tooltip", async () => {
+    mount([instance()]);
+    const button = await screen.findByRole("button", { name: "Mods folder" });
+    // キーボードでフォーカスすると、待たずにツールチップが出る
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => button.focus());
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toBe("Mods folder");
+    expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
+  });
+
+  it("folder_open_failure_is_a_toast", async () => {
+    vi.mocked(openInstanceFolder).mockRejectedValue(new IpcError({ code: "instance.busy", params: {}, detail: null }));
+    mount([instance()]);
+    await press(await screen.findByRole("button", { name: "Game folder" }));
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
   });
 });

@@ -5,7 +5,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -176,6 +176,78 @@ impl GameProcesses {
                 |r| r.get::<_, i64>(0),
             )? > 0)
         })
+    }
+
+    /// 記録されたゲームを止める。`force` なら強制終了し、そうでなければ閉じるよう頼む。終了は待たない。
+    /// 記録が無い、または pid が別のプロセスに再利用されているときは、何も送らずに成功とする。
+    /// 終了後の記録（プレイ時間など）は、既存の終了の検知に任せる。
+    pub fn stop(&self, instance_id: &str, force: bool) -> Result<(), CoreError> {
+        let row = self.db.with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT pid, process_started_at FROM running_sessions WHERE instance_id = ?1",
+                    [instance_id],
+                    |r| Ok((r.get::<_, u32>(0)?, r.get::<_, i64>(1)?)),
+                )
+                .optional()?)
+        })?;
+        let Some((pid, started_at)) = row else {
+            tracing::info!(
+                instance_id,
+                force,
+                found = false,
+                "stop: no running session"
+            );
+            return Ok(());
+        };
+        if force {
+            // 開始時刻の確認と強制終了に、同じプロセスの情報を使う
+            let mut sys = System::new();
+            let sys_pid = Pid::from_u32(pid);
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&[sys_pid]),
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+            let matched = sys
+                .process(sys_pid)
+                .is_some_and(|p| p.start_time() as i64 * 1000 == started_at);
+            tracing::info!(
+                instance_id,
+                pid,
+                force,
+                found = true,
+                matched,
+                "stop: force"
+            );
+            if matched
+                && let Some(process) = sys.process(sys_pid)
+                && !process.kill()
+            {
+                tracing::warn!(instance_id, pid, "failed to kill the game");
+            }
+        } else {
+            let matched = is_alive(pid, started_at);
+            tracing::info!(
+                instance_id,
+                pid,
+                force,
+                found = true,
+                matched,
+                "stop: close request"
+            );
+            if matched {
+                let windows = super::stop::request_close(pid);
+                tracing::info!(instance_id, pid, windows, "stop: close request sent");
+            } else {
+                tracing::warn!(
+                    instance_id,
+                    pid,
+                    "stop: the process is gone or its pid was reused; nothing sent"
+                );
+            }
+        }
+        Ok(())
     }
 
     /// 起動して記録する。出力の読み取りと終了の処理は、裏で続ける。

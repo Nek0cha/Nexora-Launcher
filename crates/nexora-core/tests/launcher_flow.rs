@@ -13,6 +13,7 @@ use nexora_core::auth::store::{MemoryStore, SecretStore};
 use nexora_core::db::Db;
 use nexora_core::error::ParamValue;
 use nexora_core::install::{Urls, now_ms};
+use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{self, InstanceSettings, InstanceState, JavaMode, MemoryMode};
 use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::paths::AppPaths;
@@ -199,6 +200,59 @@ async fn lists_supported_versions() {
         .map(|v| v.id)
         .collect();
     assert_eq!(ids, vec!["1.99-test", "1.8.9"]);
+}
+
+#[tokio::test]
+async fn stop_instance_of_missing_instance_is_not_found() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let err = h.launcher.stop_instance("missing", false).unwrap_err();
+    assert_eq!(err.code(), "instance.not_found");
+}
+
+#[tokio::test]
+async fn instance_folder_creates_missing_dirs_under_the_game_dir() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    let game = h.launcher.instance_folder(id, FolderKind::Game).unwrap();
+    assert!(game.is_dir());
+    for (kind, name) in [
+        (FolderKind::Mods, "mods"),
+        (FolderKind::Screenshots, "screenshots"),
+        (FolderKind::Saves, "saves"),
+    ] {
+        let dir = h.launcher.instance_folder(id, kind).unwrap();
+        assert!(dir.is_dir());
+        assert_eq!(dir, game.join(name));
+    }
+}
+
+#[tokio::test]
+async fn instance_folder_logs_is_the_game_log_dir_and_is_created() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    wait(&h.tasks, &created.task_id).await;
+    let id = &created.instance.id;
+    let expected = AppPaths::from_root(h._temp.path()).game_logs_dir().join(id);
+    assert!(!expected.exists());
+    let dir = h.launcher.instance_folder(id, FolderKind::Logs).unwrap();
+    assert_eq!(dir, expected);
+    assert!(dir.is_dir());
+}
+
+#[tokio::test]
+async fn instance_folder_of_missing_instance_is_not_found() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let err = h
+        .launcher
+        .instance_folder("missing", FolderKind::Game)
+        .unwrap_err();
+    assert_eq!(err.code(), "instance.not_found");
 }
 
 #[tokio::test]

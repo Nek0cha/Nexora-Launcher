@@ -1,12 +1,23 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
-import { getStartupStatus } from "../api/commands";
+import { appInfo, getStartupStatus } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import { StartupGate } from "./StartupGate";
 
-vi.mock("../api/commands", () => ({ getStartupStatus: vi.fn() }));
+vi.mock("../api/commands", () => ({ getStartupStatus: vi.fn(), appInfo: vi.fn(), listInstances: vi.fn() }));
+
+const win = vi.hoisted(() => ({
+  minimize: vi.fn(),
+  toggleMaximize: vi.fn(),
+  close: vi.fn(),
+  isMaximized: vi.fn(async () => false),
+  onResized: vi.fn(async () => () => {}),
+}));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => win }));
+
+const info = (os: string) => ({ version: "0", build: "dev", os, dataDir: "", materialAvailable: false });
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -26,7 +37,14 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   vi.mocked(getStartupStatus).mockReset();
+  vi.mocked(appInfo).mockReset();
+  vi.restoreAllMocks();
 });
+
+const failed = {
+  state: "failed" as const,
+  error: { code: "db.migration_failed", params: {}, detail: "bad file" },
+};
 
 describe("StartupGate", () => {
   it("renders children when ready", async () => {
@@ -55,5 +73,44 @@ describe("StartupGate", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("app.unexpected");
     expect(alert.textContent).toContain("ipc unavailable");
+  });
+
+  it("shows window controls on the startup error screen on Windows", async () => {
+    vi.mocked(appInfo).mockResolvedValue(info("windows"));
+    vi.mocked(getStartupStatus).mockResolvedValue(failed);
+    mount();
+    await screen.findByRole("alert");
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize" })).toBeTruthy();
+    expect(screen.getByTestId("fallback-title-bar").getAttribute("data-tauri-drag-region")).toBe("deep");
+  });
+
+  it("does not show window controls on the startup error screen on other systems", async () => {
+    vi.mocked(appInfo).mockResolvedValue(info("linux"));
+    vi.mocked(getStartupStatus).mockResolvedValue(failed);
+    mount();
+    await screen.findByRole("alert");
+    await waitFor(() => expect(vi.mocked(appInfo)).toHaveBeenCalled());
+    // app_info が届くまで待ってから、出ていないことを確かめる
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(screen.queryByTestId("fallback-title-bar")).toBeNull();
+  });
+
+  it("falls back to the browser platform when app_info fails", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    vi.mocked(appInfo).mockRejectedValue(new IpcError({ code: "app.unexpected", params: {}, detail: null }));
+    vi.mocked(getStartupStatus).mockResolvedValue(failed);
+    mount();
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+  });
+
+  it("shows window controls while starting on Windows", async () => {
+    vi.mocked(appInfo).mockResolvedValue(info("windows"));
+    vi.mocked(getStartupStatus).mockResolvedValue({ state: "starting" });
+    mount();
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    expect(screen.queryByText("app")).toBeNull();
   });
 });

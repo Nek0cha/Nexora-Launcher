@@ -1,18 +1,39 @@
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { Button, Input, Label, Tab, TabList, TabPanel, Tabs, Text, TextField } from "react-aria-components";
+import {
+  Button,
+  Input,
+  Label,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  Text,
+  TextField,
+  Tooltip,
+  TooltipTrigger,
+} from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
+import IconGame from "~icons/ph/folder-open";
+import IconScreenshots from "~icons/ph/image";
 import IconInfo from "~icons/ph/info";
+import IconMods from "~icons/ph/puzzle-piece";
+import IconWorlds from "~icons/ph/globe-hemisphere-west";
 import IconWarning from "~icons/ph/warning";
+import { openInstanceFolder, systemMemoryMb } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
-import type { ErrorPayload } from "../bindings/ErrorPayload";
+import type { FolderKind } from "../bindings/FolderKind";
 import type { Instance } from "../bindings/Instance";
 import type { JavaMode } from "../bindings/JavaMode";
 import type { MemoryMode } from "../bindings/MemoryMode";
 import { FailureNotice } from "../components/FailureNotice";
+import { MemorySlider } from "../components/MemorySlider";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
+import { useToast } from "../components/toast/useToast";
+import { tooltipClass } from "../components/tooltip";
 import {
   hasMemoryFlag,
   isDirty,
@@ -24,6 +45,7 @@ import {
   toForm,
   toSettings,
 } from "../features/instances/settingsForm";
+import { SLIDER_STEP_MB, sliderMax } from "../features/instances/memorySlider";
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useRunning } from "../features/play/useGameSync";
@@ -63,6 +85,21 @@ const tabClass = [
   "focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 ].join(" ");
 
+// 詳細の見出しの横に並べるフォルダのボタン
+const folderButtons: { kind: FolderKind; icon: typeof IconGame }[] = [
+  { kind: "game", icon: IconGame },
+  { kind: "mods", icon: IconMods },
+  { kind: "screenshots", icon: IconScreenshots },
+  { kind: "saves", icon: IconWorlds },
+];
+
+const iconButton = [
+  "inline-flex size-8 items-center justify-center rounded-md text-text-muted",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
+  ring,
+].join(" ");
+
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
 export default function InstanceDetail() {
@@ -70,6 +107,8 @@ export default function InstanceDetail() {
   const { id } = useParams();
   const { data, error } = useInstances();
   const running = useRunning();
+  // フォルダを開けなかったときはトーストで出す
+  const toast = useToast();
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)
@@ -104,10 +143,29 @@ export default function InstanceDetail() {
           <h1 className={`${title} truncate`}>{instance.name}</h1>
           <span className="tabular text-sm text-text-muted">{instance.mcVersion}</span>
         </div>
-        <Link to="/instances" className={`${quietLink} shrink-0`}>
-          <IconBack aria-hidden className="size-4" />
-          <span>{t("nav.instances")}</span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* アイコンだけのボタンなので、名前をツールチップでも見せる */}
+          {folderButtons.map(({ kind, icon: Icon }) => (
+            <TooltipTrigger key={kind} delay={500}>
+              <Button
+                aria-label={t(`instances.detail.folders.${kind}`)}
+                onPress={() => {
+                  openInstanceFolder(instance.id, kind).catch(toast.showError);
+                }}
+                className={iconButton}
+              >
+                <Icon aria-hidden className="size-4" />
+              </Button>
+              <Tooltip offset={6} className={tooltipClass}>
+                {t(`instances.detail.folders.${kind}`)}
+              </Tooltip>
+            </TooltipTrigger>
+          ))}
+          <Link to="/instances" className={quietLink}>
+            <IconBack aria-hidden className="size-4" />
+            <span>{t("nav.instances")}</span>
+          </Link>
+        </div>
       </header>
       {/* タブは中身のあるものだけを出す。いまは設定だけである */}
       <Tabs>
@@ -146,8 +204,12 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   // 保存済みの値。保存に成功したら、一覧の取り直しを待たずに差し替える
   const [base, setBase] = useState<SettingsForm>(() => toForm(instance));
   const [form, setForm] = useState<SettingsForm>(base);
-  const [failure, setFailure] = useState<ErrorPayload | null>(null);
-  const [saved, setSaved] = useState(false);
+  // 保存の結果はトーストで出す
+  const toast = useToast();
+
+  // 物理メモリの取得中や失敗のときは、数値の入力だけを出す
+  const { data: totalMb } = useQuery({ queryKey: ["system-memory-mb"], queryFn: systemMemoryMb, staleTime: Infinity });
+  const maxMb = totalMb === undefined ? null : sliderMax(totalMb);
 
   const dirty = isDirty(base, form);
   const canSave = dirty && isValid(form) && !update.isPending;
@@ -158,13 +220,10 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
 
   const change = (patch: Partial<SettingsForm>) => {
     setForm((f) => ({ ...f, ...patch }));
-    setSaved(false);
   };
 
   const save = () => {
     if (!canSave) return;
-    setFailure(null);
-    setSaved(false);
     update.mutate(
       { instanceId: instance.id, settings: toSettings(form) },
       {
@@ -172,9 +231,9 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           const next = toForm(updated);
           setBase(next);
           setForm(next);
-          setSaved(true);
+          toast.show({ kind: "success", message: t("instances.detail.saved") });
         },
-        onError: (e) => setFailure(toErrorPayload(e)),
+        onError: toast.showError,
       },
     );
   };
@@ -208,6 +267,16 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
             onChange={(memoryMode) => change({ memoryMode })}
             triggerClassName={controlWidth}
           />
+          {form.memoryMode === "manual" && maxMb !== null && (
+            <MemorySlider
+              label={t("instances.detail.memorySlider")}
+              value={form.memoryMb}
+              min={MEMORY_MIN_MB}
+              max={maxMb}
+              step={SLIDER_STEP_MB}
+              onChange={(memoryMb) => change({ memoryMb })}
+            />
+          )}
           {form.memoryMode === "manual" && (
             <NumberField
               label={t("instances.detail.memoryMb")}
@@ -250,18 +319,10 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
           {hasMemoryFlag(form.jvmArgs) && <Notice tone="warning">{t("instances.detail.xmxWarning")}</Notice>}
         </Row>
       </div>
-      {failure && (
-        <div role="alert">
-          <FailureNotice error={failure} />
-        </div>
-      )}
       <div className="flex items-center gap-3">
         <Button type="submit" isDisabled={!canSave} isPending={update.isPending} className={saveButton}>
           {t("instances.detail.save")}
         </Button>
-        <span role="status" className="text-sm text-text-muted">
-          {saved && !dirty ? t("instances.detail.saved") : ""}
-        </span>
       </div>
     </form>
   );

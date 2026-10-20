@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Button, Dialog, DialogTrigger, Popover, ProgressBar, Tooltip, TooltipTrigger } from "react-aria-components";
+import { Button, ProgressBar, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconWarning from "~icons/ph/warning-circle";
 import IconX from "~icons/ph/x";
@@ -7,29 +7,14 @@ import { cancelTask } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { errorKey } from "../features/errors/errorText";
-import { activeCount, isTerminal, sortedTasks } from "../features/tasks/taskTable";
+import { isTerminal, sortedTasks } from "../features/tasks/taskTable";
 import { useTasks } from "../features/tasks/useTasks";
 import i18n from "../i18n";
+import { tooltipClass } from "./tooltip";
 
 const focusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-const popoverClass = [
-  "w-80 rounded-lg border border-line bg-surface-2 p-2 shadow-float",
-  "transition-[opacity,translate] duration-(--duration-base) ease-out-quint",
-  "data-entering:opacity-0 data-exiting:opacity-0 data-exiting:duration-(--duration-fast)",
-  "motion-safe:data-[placement=top]:data-entering:translate-y-1 motion-safe:data-[placement=top]:data-exiting:translate-y-1",
-  "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
-].join(" ");
-
-const tooltipClass = [
-  "rounded-sm border border-line bg-surface-2 px-2 py-1 text-xs text-text shadow-float",
-  "transition-[opacity,translate] duration-(--duration-fast) ease-out-quint",
-  "data-entering:opacity-0 data-exiting:opacity-0",
-  "motion-safe:data-[placement=top]:data-entering:translate-y-1 motion-safe:data-[placement=bottom]:data-entering:-translate-y-1",
-  "motion-reduce:transition-opacity",
-].join(" ");
-
-function percentOf(task: TaskSnapshot): number {
+export function percentOf(task: TaskSnapshot): number {
   const { current, total } = task.progress;
   return total > 0 ? Math.min(100, Math.floor((current * 100) / total)) : 0;
 }
@@ -104,34 +89,24 @@ function TaskRow({ task }: { task: TaskSnapshot }) {
   );
 }
 
-export function TaskTray() {
+/**
+ * タスクの一覧。AppBar のタスクのボタンが開くポップアップの中身として使う。
+ * 進行中のものを先に、終わったものは新しい 5 件まで並べる。
+ */
+export function TaskList() {
   const { t } = useTranslation();
-  const table = useTasks();
-  const running = activeCount(table);
-  const all = sortedTasks(table);
+  const all = sortedTasks(useTasks());
   const unfinished = all.filter((task) => !isTerminal(task));
   const finished = all.filter(isTerminal).slice(0, 5);
+  const rows = [...unfinished, ...finished];
 
-  if (running === 0) return null;
+  if (rows.length === 0) return <p className="px-2 py-2 text-sm text-text-muted">{t("tasks.empty")}</p>;
 
   return (
-    <DialogTrigger>
-      <Button
-        aria-label={`${t("tasks.title")}, ${t("tasks.running", { count: running })}`}
-        className={`flex h-10 w-full items-center justify-between rounded-md px-3 text-text-muted transition-colors duration-(--duration-fast) ease-out-quint data-hovered:bg-surface-2 data-pressed:bg-surface-3 ${focusRing}`}
-      >
-        <span>{t("tasks.title")}</span>
-        <span className="tabular text-text">{running}</span>
-      </Button>
-      <Popover placement="top start" offset={6} className={popoverClass}>
-        <Dialog aria-label={t("tasks.title")} className="outline-hidden">
-          <ul className="flex flex-col gap-1">
-            {[...unfinished, ...finished].map((task) => (
-              <TaskRow key={task.id} task={task} />
-            ))}
-          </ul>
-        </Dialog>
-      </Popover>
-    </DialogTrigger>
+    <ul className="flex flex-col gap-1">
+      {rows.map((task) => (
+        <TaskRow key={task.id} task={task} />
+      ))}
+    </ul>
   );
 }

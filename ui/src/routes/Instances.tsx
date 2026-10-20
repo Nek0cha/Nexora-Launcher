@@ -4,18 +4,21 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import IconMore from "~icons/ph/dots-three-bold";
 import IconEmpty from "~icons/ph/stack";
+import { openInstanceFolder } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
-import type { ErrorPayload } from "../bindings/ErrorPayload";
 import type { Instance } from "../bindings/Instance";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
 import { PlayButton } from "../components/PlayButton";
+import { useToast } from "../components/toast/useToast";
+import { errorSentence } from "../features/errors/errorText";
 import { activeDuplicate, duplicatePercent, useDuplicateRefresh } from "../features/instances/duplicateState";
 import { useDeleteInstance, useDuplicateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useTasks } from "../features/tasks/useTasks";
+import i18n from "../i18n";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -41,8 +44,6 @@ const popoverClass = [
 const menuItemClass =
   "flex h-9 cursor-default items-center rounded-sm px-2 text-sm outline-none hover:bg-surface-3 focused:bg-surface-3";
 
-type Failure = { error: ErrorPayload; partial: boolean };
-
 export default function Instances() {
   const { t } = useTranslation();
   const { data, error } = useInstances();
@@ -50,8 +51,8 @@ export default function Instances() {
   useDuplicateRefresh();
   const remove = useDeleteInstance();
   const duplicate = useDuplicateInstance();
-  // 行の操作の失敗。次の操作を始めたら消す
-  const [failure, setFailure] = useState<Failure | null>(null);
+  // 行の操作の失敗はトーストで出す。一覧の並びを動かさない
+  const toast = useToast();
   // 削除の確認。閉じる動きの間も名前を残すため、対象と開閉を分けて持つ
   const [deleting, setDeleting] = useState<Instance | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -74,14 +75,14 @@ export default function Instances() {
   if (!data) return null;
 
   const onDuplicate = (instance: Instance) => {
-    setFailure(null);
-    duplicate.mutate(instance.id, {
-      onError: (e) => setFailure({ error: toErrorPayload(e), partial: false }),
-    });
+    duplicate.mutate(instance.id, { onError: toast.showError });
+  };
+
+  const onOpenFolder = (instance: Instance) => {
+    openInstanceFolder(instance.id, "game").catch(toast.showError);
   };
 
   const onDelete = (instance: Instance) => {
-    setFailure(null);
     setDeleting(instance);
     setDeleteOpen(true);
   };
@@ -91,8 +92,10 @@ export default function Instances() {
     remove.mutate(deleting.id, {
       onError: (e) => {
         const payload = toErrorPayload(e);
-        // ディレクトリの削除の途中で失敗すると、一部のファイルだけが消えていることがある
-        setFailure({ error: payload, partial: payload.code === "io.failed" });
+        // ディレクトリの削除の途中で失敗すると、一部のファイルだけが消えていることがある。同じトーストに続けて書く
+        if (payload.code !== "io.failed") return toast.showError(payload);
+        const sentence = errorSentence(payload, (key, options) => t(key as never, options), (key) => i18n.exists(key));
+        toast.show({ kind: "error", message: `${sentence} ${t("instances.deletePartial")}` });
       },
       onSettled: () => setDeleteOpen(false),
     });
@@ -124,23 +127,20 @@ export default function Instances() {
         {title}
         <CreateInstanceDialog trigger="quiet" />
       </header>
-      {failure && (
-        <div role="alert" className="flex flex-col gap-1">
-          <FailureNotice error={failure.error} />
-          {failure.partial && <p className="pl-6 text-sm text-text">{t("instances.deletePartial")}</p>}
-        </div>
-      )}
       <ul className="flex flex-col divide-y divide-line border-y border-line">
         {data.map((instance) => {
           const task = activeDuplicate(tasks, instance.id);
-          // コマンドの応答を待つ間も、タスクが表に届くまでの間の分として、同じく操作を止める
+          // コマンドの応答を待つ間も、タスクが表に届くまでの間の分として、操作は止める。
+          // ただし進捗（複製中 0%）は出さない。コマンドが断られる（起動中など）こともあり、受け付けられてタスクが届いてから出す
           const sending = duplicate.isPending && duplicate.variables === instance.id;
           return (
             <InstanceRow
               key={instance.id}
               instance={instance}
-              duplicating={task ? duplicatePercent(task) : sending ? 0 : null}
+              duplicating={task ? duplicatePercent(task) : null}
+              sending={sending}
               onDuplicate={() => onDuplicate(instance)}
+              onOpenFolder={() => onOpenFolder(instance)}
               onDelete={() => onDelete(instance)}
             />
           );
@@ -185,19 +185,25 @@ function StateLabel({ state }: { state: Instance["state"] }) {
 function InstanceRow({
   instance,
   duplicating,
+  sending,
   onDuplicate,
+  onOpenFolder,
   onDelete,
 }: {
   instance: Instance;
   /** 複製の進捗（%）。複製していなければ null */
   duplicating: number | null;
+  /** 複製のコマンドの応答待ち。操作は止めるが、進捗は出さない */
+  sending: boolean;
   onDuplicate: () => void;
+  onOpenFolder: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const nameId = useId();
   const format = useFormatters();
-  const busy = duplicating !== null;
+  const progressing = duplicating !== null;
+  const busy = progressing || sending;
   const dot = <span aria-hidden className="text-text-faint">·</span>;
 
   return (
@@ -227,7 +233,7 @@ function InstanceRow({
             </>
           )}
         </span>
-        {busy && (
+        {progressing && (
           <span className="text-sm text-text">
             <span className="tabular">{t("instances.duplicatingPercent", { percent: duplicating })}</span>
           </span>
@@ -246,10 +252,13 @@ function InstanceRow({
             <Menu
               aria-label={t("instances.more")}
               className="outline-none"
-              onAction={(key) => (key === "duplicate" ? onDuplicate() : onDelete())}
+              onAction={(key) => (key === "duplicate" ? onDuplicate() : key === "openFolder" ? onOpenFolder() : onDelete())}
             >
               <MenuItem id="duplicate" className={`${menuItemClass} text-text`}>
                 {t("instances.duplicate")}
+              </MenuItem>
+              <MenuItem id="openFolder" className={`${menuItemClass} text-text`}>
+                {t("instances.openFolder")}
               </MenuItem>
               <MenuItem id="delete" className={`${menuItemClass} text-danger`}>
                 {t("instances.delete")}
@@ -259,7 +268,7 @@ function InstanceRow({
         </MenuTrigger>
       </div>
       {/* 複製の進捗は行の下端の細い線でも示す。読み上げは上の文で行う */}
-      {busy && (
+      {progressing && (
         <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden">
           <span
             className="block h-full origin-left bg-accent transition-transform duration-(--duration-slow) ease-out-quint"

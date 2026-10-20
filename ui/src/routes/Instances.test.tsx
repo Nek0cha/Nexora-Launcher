@@ -2,10 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteInstance, duplicateInstance, listInstances, listRunning } from "../api/commands";
+import { deleteInstance, duplicateInstance, launchInstance, listInstances, openInstanceFolder, listRunning } from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
+import { ToastRegion } from "../components/toast/ToastRegion";
+import { clearToasts } from "../components/toast/useToast";
 import { LAST_EXIT_KEY, RUNNING_KEY } from "../features/play/useGameSync";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
@@ -19,6 +21,7 @@ vi.mock("../api/commands", () => ({
   deleteInstance: vi.fn(),
   duplicateInstance: vi.fn(),
   launchInstance: vi.fn(),
+  openInstanceFolder: vi.fn(),
   cancelTask: vi.fn(),
   listAccounts: vi.fn(),
   getSkin: vi.fn(),
@@ -55,11 +58,18 @@ function mount(list: Instance[], tasks: TaskSnapshot[] = []) {
       <MemoryRouter>
         <Instances />
       </MemoryRouter>
+      <ToastRegion />
     </QueryClientProvider>,
   );
 }
 
 const row = (name: string) => screen.findByRole("listitem", { name });
+const toasts = () => screen.getByRole("region", { name: "Notifications" });
+
+const launchTask = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
+  id: "l1", kind: "launch", instanceId: "i1", state: "running", progress: { current: 10, total: 100 },
+  revision: 1, error: null, createdAt: 0, updatedAt: 0, ...patch,
+});
 
 async function press(el: HTMLElement) {
   await act(async () => {
@@ -78,6 +88,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  act(() => clearToasts());
   cleanup();
   vi.resetAllMocks();
 });
@@ -116,7 +127,8 @@ describe("Instances", () => {
     mount([]);
     expect(await screen.findByText("No instances yet. Pick a version to create one.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create instance" })).toBeTruthy();
-    expect(screen.queryByRole("list")).toBeNull();
+    // トーストの並び（空）は数えない
+    expect(screen.queryAllByRole("list").filter((l) => !toasts().contains(l))).toHaveLength(0);
   });
 
   it("delete_asks_for_confirmation_and_cancel_is_default", async () => {
@@ -168,6 +180,22 @@ describe("Instances", () => {
     expect(duplicateInstance).toHaveBeenCalledWith("i1");
   });
 
+  it("duplicate_refused_while_sending_never_shows_progress", async () => {
+    let refuse: (e: unknown) => void = () => {};
+    vi.mocked(duplicateInstance).mockReturnValue(new Promise((_, reject) => (refuse = reject)));
+    mount([instance("i1", "World")]);
+    const menu = await openMenu("World");
+    await press(within(menu).getByRole("menuitem", { name: "Duplicate" }));
+    const world = await row("World");
+    // 応答待ちの間は操作を止めるが、複製中の表示は出さない
+    await waitFor(() => expect((within(world).getByRole("button", { name: "More" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(within(world).queryByText(/Duplicating/)).toBeNull();
+    await act(async () => refuse(new IpcError({ code: "instance.busy", params: {}, detail: null })));
+    await within(toasts()).findByRole("alert");
+    expect(within(world).queryByText(/Duplicating/)).toBeNull();
+    expect((within(world).getByRole("button", { name: "More" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("refetches_the_list_when_a_duplicate_task_starts_and_finishes", async () => {
     mount([instance("i1", "World")]);
     await row("World");
@@ -183,14 +211,65 @@ describe("Instances", () => {
     expect(within(await row("World")).queryByText(/Duplicating/)).toBeNull();
   });
 
-  it("failure_is_shown_with_failure_notice", async () => {
+  it("delete_failure_is_a_toast", async () => {
     vi.mocked(deleteInstance).mockRejectedValue(new IpcError({ code: "instance.busy", params: {}, detail: null }));
     mount([instance("i1", "World")]);
     const menu = await openMenu("World");
     await press(within(menu).getByRole("menuitem", { name: "Delete" }));
     await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
-    const alert = await screen.findByRole("alert");
+    const alert = await within(toasts()).findByRole("alert");
     expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
+    // 一覧の上には出さない
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("row_menu_opens_the_game_folder", async () => {
+    vi.mocked(openInstanceFolder).mockResolvedValue(null);
+    mount([instance("i1", "World")]);
+    const menu = await openMenu("World");
+    await press(within(menu).getByRole("menuitem", { name: "Open folder" }));
+    expect(openInstanceFolder).toHaveBeenCalledWith("i1", "game");
+  });
+
+  it("duplicate_failure_is_a_toast", async () => {
+    vi.mocked(duplicateInstance).mockRejectedValue(new IpcError({ code: "instance.busy", params: {}, detail: null }));
+    mount([instance("i1", "World")]);
+    const menu = await openMenu("World");
+    await press(within(menu).getByRole("menuitem", { name: "Duplicate" }));
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
+  });
+
+  it("launch_failure_is_a_toast", async () => {
+    vi.mocked(launchInstance).mockRejectedValue(new IpcError({ code: "app.not_ready", params: {}, detail: null }));
+    mount([instance("i1", "World")]);
+    await press(within(await row("World")).getByRole("button", { name: "Play" }));
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("Startup has not finished yet")).toBeTruthy();
+    expect(within(await row("World")).queryByText("Startup has not finished yet")).toBeNull();
+  });
+
+  it("launch_task_failure_is_a_toast_once", async () => {
+    mount([instance("i1", "World")], [launchTask({ state: "running" })]);
+    await row("World");
+    expect(within(toasts()).queryByRole("alert")).toBeNull();
+    act(() =>
+      client.setQueryData(TASKS_KEY, {
+        l1: launchTask({ state: "failed", revision: 2, updatedAt: 1, error: { code: "app.not_ready", params: {}, detail: null } }),
+      }),
+    );
+    const alert = await within(toasts()).findByRole("alert");
+    expect(within(alert).getByText("Startup has not finished yet")).toBeTruthy();
+    expect(within(toasts()).getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("an_existing_failure_is_not_toasted_on_open", async () => {
+    mount([instance("i1", "World")], [
+      launchTask({ state: "failed", updatedAt: 1, error: { code: "app.not_ready", params: {}, detail: null } }),
+    ]);
+    await row("World");
+    await act(async () => { await Promise.resolve(); });
+    expect(within(toasts()).queryByRole("alert")).toBeNull();
   });
 
   it("delete_io_failure_says_the_folder_may_be_partly_removed", async () => {
@@ -201,10 +280,8 @@ describe("Instances", () => {
     const menu = await openMenu("World");
     await press(within(menu).getByRole("menuitem", { name: "Delete" }));
     await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("Could not read or write a file: C:/x")).toBeTruthy();
-    expect(
-      within(alert).getByText("The folder may have been partly removed. Try deleting it again."),
-    ).toBeTruthy();
+    const alert = await within(toasts()).findByRole("alert");
+    expect(alert.textContent).toContain("Could not read or write a file: C:/x");
+    expect(alert.textContent).toContain("The folder may have been partly removed. Try deleting it again.");
   });
 });

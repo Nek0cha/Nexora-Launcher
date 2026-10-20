@@ -111,7 +111,7 @@ export function CommandPalette() {
                 items={visible}
                 aria-label={t("palette.placeholder")}
                 renderEmptyState={() => <p className="px-3 py-4 text-text-muted">{t("palette.noResults")}</p>}
-                className="max-h-80 overflow-auto p-1 outline-hidden"
+                className="scroll-thin max-h-80 overflow-auto p-1 outline-hidden"
                 onAction={(key) => {
                   // 先に閉じてから実行する（ページ移動などで閉じる動きと重ならないように）
                   const command = commands.find((c) => c.id === key);

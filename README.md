@@ -11,6 +11,7 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Done: installing and launching vanilla game versions, including the Java runtime
 - Microsoft sign-in is implemented; the Minecraft API review was passed on 2026-10-17
 - Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed
+- A running instance can be stopped from the launcher (a graceful close first, with a force-stop prompt if it does not exit); the app has its own title bar, toast notifications, a memory slider, and buttons that open an instance's folders
 - Planned: mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
@@ -30,6 +31,8 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
 - インスタンスの一覧、作成、複製、削除ができます。
 - インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
 - アカウント画面からスキンを変更できます（Minecraft API の審査は 2026-10-17 に通っています）。
+- 起動中のインスタンスを、ランチャーから停止できます（まず閉じるよう頼み、終了しないときは強制終了の確認を出します）。
+- 独自のタイトルバー、トースト通知、メモリのスライダー、インスタンスのフォルダを開くボタンがあります。
 
 ## 開発環境
 

@@ -16,6 +16,8 @@ import { onAccountsChanged, onLoginProgress } from "../api/events";
 import { IpcError } from "../api/ipc";
 import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
+import { ToastRegion } from "../components/toast/ToastRegion";
+import { clearToasts } from "../components/toast/useToast";
 import { ACCOUNTS_KEY } from "../features/accounts/useAccounts";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
@@ -50,6 +52,7 @@ function mount(list: AccountList) {
   render(
     <QueryClientProvider client={client}>
       <Accounts />
+      <ToastRegion />
     </QueryClientProvider>,
   );
 }
@@ -71,6 +74,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  act(() => clearToasts());
   cleanup();
   vi.resetAllMocks();
 });
@@ -162,7 +166,8 @@ describe("Accounts", () => {
     mount({ accounts: [account("a1", "Alex", { isActive: true })], devOffline: null });
     await press(within(await row("Alex")).getByRole("button", { name: "Remove" }));
     await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Remove" }));
-    expect(await screen.findByText("This account can't be removed while a game is running")).toBeTruthy();
+    const alert = await within(screen.getByRole("region", { name: "Notifications" })).findByRole("alert");
+    expect(within(alert).getByText("This account can't be removed while a game is running")).toBeTruthy();
   });
 
   it("empty state has an add button", async () => {
@@ -243,6 +248,9 @@ describe("Accounts", () => {
     await press(within(dev).getByRole("button", { name: "Save" }));
     expect(await screen.findByText("The setting value is invalid")).toBeTruthy();
     expect(input.value).toBe("bad name!");
+    // 入力の誤りはその場に出し、トーストにはしない
+    expect(within(dev).getByText("The setting value is invalid")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Notifications" })).queryByRole("alert")).toBeNull();
   });
 
   it("release build has no dev offline row", async () => {

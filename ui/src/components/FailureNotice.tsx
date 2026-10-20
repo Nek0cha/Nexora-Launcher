@@ -3,19 +3,8 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconWarning from "~icons/ph/warning-circle";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
-import { errorKey } from "../features/errors/errorText";
+import { errorSentence } from "../features/errors/errorText";
 import i18n from "../i18n";
-
-/** auth.xbox は XErr の番号ごとの文言があればそれを使い、なければ番号つきの汎用文にする。 */
-function noticeKey(error: ErrorPayload): string {
-  const exists = (k: string) => i18n.exists(k);
-  const xerr = error.params.xerr;
-  if (error.code === "auth.xbox" && xerr !== undefined) {
-    const specific = `errors:auth.xbox_${xerr}`;
-    if (exists(specific)) return specific;
-  }
-  return errorKey(error.code, exists);
-}
 
 /** 失敗の説明。タスクの失敗と、開始やキャンセルの呼び出し自体の失敗の両方に使う。 */
 export function FailureNotice({ error }: { error: ErrorPayload | null }) {
@@ -27,12 +16,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
       <p className="flex items-center gap-2 text-danger">
         <IconWarning aria-hidden className="size-4 shrink-0" />
         <span className="select-text">
-          {error
-            ? t(noticeKey(error) as never, {
-                ...(error.params as Record<string, unknown>),
-                code: error.code,
-              })
-            : t("errors:generic" as never, { code: "unknown" })}
+          {errorSentence(error, (key, options) => t(key as never, options), (key) => i18n.exists(key))}
         </span>
       </p>
       {error?.detail && (
@@ -48,7 +32,7 @@ export function FailureNotice({ error }: { error: ErrorPayload | null }) {
       {showDetail && error?.detail && (
         <pre
           id={detailId}
-          className="tabular select-text max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
+          className="tabular scroll-thin select-text max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-surface-1 p-3 text-xs text-text"
         >
           {error.detail}
         </pre>

@@ -340,6 +340,19 @@ pub fn shell(script: &str) -> (std::path::PathBuf, Vec<String>) {
     }
 }
 
+/// 1 分ほど動き続ける、ウィンドウを持たない 1 つのプロセス (program, args)。
+/// シェルを挟まないため、記録される pid がそのプロセスになる。
+pub fn long_running() -> (std::path::PathBuf, Vec<String>) {
+    if cfg!(windows) {
+        (
+            "ping".into(),
+            vec!["-n".into(), "60".into(), "127.0.0.1".into()],
+        )
+    } else {
+        ("sleep".into(), vec!["60".into()])
+    }
+}
+
 /// 認証のエンドポイントを wiremock の URL に向ける。
 pub fn auth_urls(server: &MockServer) -> nexora_core::auth::AuthUrls {
     let u = server.uri();

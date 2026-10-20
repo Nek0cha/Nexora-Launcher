@@ -13,6 +13,8 @@ export type Play = {
   starting: boolean;
   /** 開始の失敗。ログインのダイアログで扱う失敗（prompt の元）は含めない。 */
   error: ErrorPayload | null;
+  /** 開始の失敗ごとに変わる印。同じ失敗を二度知らせないために使う。error が null なら null。 */
+  errorId: string | null;
   /** ログインのダイアログを出す理由。閉じたら null。 */
   prompt: LoginPrompt | null;
   dismissPrompt: () => void;
@@ -84,6 +86,7 @@ export function usePlay(instanceId: string): Play {
     press: () => launch(false),
     starting,
     error,
+    errorId: error ? `call:${last?.at}` : null,
     prompt,
     dismissPrompt,
     playOffline: () => {

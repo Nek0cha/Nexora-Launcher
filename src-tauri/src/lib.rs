@@ -155,6 +155,9 @@ pub fn run() {
             commands::duplicate_instance,
             commands::get_skin_variant,
             commands::change_skin,
+            commands::stop_instance,
+            commands::open_instance_folder,
+            commands::system_memory_mb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexora");

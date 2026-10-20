@@ -15,6 +15,7 @@ use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
 use crate::install::{InstallEnv, Urls, install, kib, now_ms};
 use crate::instance::copy::copy_dir;
+use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
 use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
 use crate::java::verify::{JavaProbe, SystemProbe};
@@ -325,6 +326,37 @@ impl Launcher {
             InstanceState::Ready => self.start_launch(instance_id, offline),
             InstanceState::Installing | InstanceState::Broken => self.start_install(instance_id),
         })
+    }
+
+    /// 動いているゲームを止める（spec 3.1）。終了は待たず、終了後の記録は終了の検知に任せる。
+    pub fn stop_instance(&self, instance_id: &str, force: bool) -> Result<(), CoreError> {
+        instance::get(&self.env.db, instance_id)?;
+        self.processes.stop(instance_id, force)
+    }
+
+    /// インスタンスのフォルダの場所。無ければ作る。
+    pub fn instance_folder(
+        &self,
+        instance_id: &str,
+        kind: FolderKind,
+    ) -> Result<PathBuf, CoreError> {
+        let inst = instance::get(&self.env.db, instance_id)?;
+        let dir = match kind {
+            // 起動のときにゲームの出力を書く場所（start_launch の log_path）と同じ
+            FolderKind::Logs => self.env.paths.game_logs_dir().join(&inst.id),
+            _ => {
+                let mut dir = instance::game_dir(&self.env.paths, &inst);
+                if let Some(sub) = kind.subdir() {
+                    dir.push(sub);
+                }
+                dir
+            }
+        };
+        std::fs::create_dir_all(&dir).map_err(|source| CoreError::Io {
+            path: dir.display().to_string(),
+            source,
+        })?;
+        Ok(dir)
     }
 
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {

@@ -22,7 +22,7 @@ function mount(list: AccountList) {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Sidebar materialOn={false} footer={<p>tray</p>} />
+        <Sidebar materialOn={false} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -46,7 +46,6 @@ describe("Sidebar", () => {
     expect(link.getAttribute("href")).toBe("/accounts");
     expect(link.querySelector(".bg-warning")).toBeTruthy();
     expect(link.querySelector("[data-testid='skin-face-default']")).toBeTruthy();
-    expect(screen.getByText("tray")).toBeTruthy();
   });
 
   it("has no dot when the active account is fine", async () => {

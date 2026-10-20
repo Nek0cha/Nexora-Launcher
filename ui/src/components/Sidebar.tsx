@@ -10,7 +10,7 @@ import IconUser from "~icons/ph/user-circle";
 import IconUserFill from "~icons/ph/user-circle-fill";
 import IconGear from "~icons/ph/gear-six";
 import IconGearFill from "~icons/ph/gear-six-fill";
-import type { ComponentType, ReactNode, SVGProps } from "react";
+import type { ComponentType, SVGProps } from "react";
 import { SkinFace } from "../features/accounts/SkinFace";
 import { useAccounts } from "../features/accounts/useAccounts";
 
@@ -40,16 +40,13 @@ const itemBase = [
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 ].join(" ");
 
-export function Sidebar({ materialOn, footer }: { materialOn: boolean; footer?: ReactNode }) {
+export function Sidebar({ materialOn }: { materialOn: boolean }) {
   const { t } = useTranslation();
   return (
     <nav
       aria-label="Nexora"
-      className={`flex w-56 shrink-0 flex-col gap-1 px-3 py-4 ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
+      className={`flex w-56 shrink-0 flex-col gap-1 px-3 pt-2 pb-4 ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
     >
-      <p className="mb-3 px-3 font-display text-base font-semibold tracking-[-0.01em] text-text-strong">
-        {t("appName")}
-      </p>
       {ITEMS.map(({ to, key, Icon, ActiveIcon }) => (
         <NavLink
           key={key}
@@ -73,7 +70,6 @@ export function Sidebar({ materialOn, footer }: { materialOn: boolean; footer?: 
       ))}
       <div className="mt-auto flex flex-col gap-1">
         <AccountLink />
-        {footer}
       </div>
     </nav>
   );

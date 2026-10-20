@@ -7,6 +7,7 @@ import type { RunningSession } from "../../bindings/RunningSession";
 import { INSTANCES_KEY } from "../instances/useInstances";
 import { isTerminal } from "../tasks/taskTable";
 import { useTasks } from "../tasks/useTasks";
+import { clearStop } from "./useStopFlow";
 
 export const RUNNING_KEY = ["running"] as const;
 export const LAST_EXIT_KEY = ["lastExit"] as const;
@@ -81,6 +82,8 @@ export function useGameSync(): void {
         ...prev,
         [event.instanceId]: { instanceId: event.instanceId, exitCode: event.exitCode, at: Date.now() },
       }));
+      // 停止の待ちを終え、確認のダイアログが開いていれば閉じる
+      clearStop(client, event.instanceId);
       refresh();
     }).then(keep, warn);
     return () => {

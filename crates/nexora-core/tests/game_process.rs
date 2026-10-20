@@ -9,7 +9,7 @@ use nexora_core::launch::process::{GameProcesses, SpawnSpec, process_start_ms};
 use nexora_core::paths::AppPaths;
 use secrecy::SecretString;
 
-use common::{RecordingGame, shell};
+use common::{RecordingGame, long_running, shell};
 
 struct Fixture {
     _temp: tempfile::TempDir,
@@ -184,6 +184,86 @@ async fn reused_pid_is_not_mistaken_for_the_game() {
     assert!(!f.processes.is_running(&inst.id).unwrap());
     // latest.log がないため、プレイ時間は加算しない
     assert_eq!(instance::get(&f.db, &inst.id).unwrap().play_time_ms, 0);
+}
+
+/// 偽のゲーム（しばらく動き続けるプロセス）を spawn で起動する。
+async fn spawn_long_running(f: &Fixture, id: &str) -> u32 {
+    let (program, args) = long_running();
+    let mut spec = spec(f, id, "", None);
+    spec.program = program;
+    spec.args = args;
+    f.processes.spawn(spec).await.unwrap().pid
+}
+
+#[tokio::test]
+async fn stop_force_ends_the_process_and_row() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let pid = spawn_long_running(&f, &inst.id).await;
+    assert!(process_start_ms(pid).is_some());
+    f.processes.stop(&inst.id, true).unwrap();
+    f.game.wait_exit(&inst.id).await;
+    assert!(!f.processes.is_running(&inst.id).unwrap());
+    assert!(process_start_ms(pid).is_none());
+}
+
+#[tokio::test]
+async fn stop_with_mismatched_start_time_sends_nothing() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let (program, args) = long_running();
+    let mut other = std::process::Command::new(program)
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = other.id();
+    let wrong_start = process_start_ms(pid).unwrap() - 60_000;
+    insert_session(&f.db, &inst.id, pid, wrong_start, 1_000);
+    f.processes.stop(&inst.id, true).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let alive = other.try_wait().unwrap().is_none();
+    let _ = other.kill();
+    let _ = other.wait();
+    assert!(alive, "a process with a different start time was stopped");
+}
+
+#[tokio::test]
+async fn stop_without_a_row_is_ok() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    f.processes.stop(&inst.id, false).unwrap();
+    f.processes.stop(&inst.id, true).unwrap();
+    assert!(f.game.exits.lock().unwrap().is_empty());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn stop_graceful_on_a_windowless_process_does_nothing() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let pid = spawn_long_running(&f, &inst.id).await;
+    f.processes.stop(&inst.id, false).unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let alive = process_start_ms(pid).is_some() && f.processes.is_running(&inst.id).unwrap();
+    f.processes.stop(&inst.id, true).unwrap();
+    f.game.wait_exit(&inst.id).await;
+    assert!(
+        alive,
+        "a windowless process was stopped by a graceful request"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_graceful_sends_sigterm_on_unix() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    spawn_long_running(&f, &inst.id).await;
+    f.processes.stop(&inst.id, false).unwrap();
+    f.game.wait_exit(&inst.id).await;
+    assert!(!f.processes.is_running(&inst.id).unwrap());
 }
 
 fn insert_session(db: &Db, id: &str, pid: u32, started: i64, launched: i64) {

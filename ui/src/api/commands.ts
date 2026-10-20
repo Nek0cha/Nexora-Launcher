@@ -10,6 +10,7 @@ import type { StartupStatus } from "../bindings/StartupStatus";
 import type { Settings } from "../bindings/Settings";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import type { AccountList } from "../bindings/AccountList";
+import type { FolderKind } from "../bindings/FolderKind";
 import type { LoginMethod } from "../bindings/LoginMethod";
 import { call } from "./ipc";
 
@@ -31,7 +32,12 @@ export const deleteInstance = (instanceId: string) => call<null>("delete_instanc
 export const duplicateInstance = (instanceId: string) => call<string>("duplicate_instance", { instanceId });
 export const launchInstance = (instanceId: string, offline = false) =>
   call<string>("launch_instance", { instanceId, offline });
+export const stopInstance = (instanceId: string, force: boolean) =>
+  call<null>("stop_instance", { instanceId, force });
+export const openInstanceFolder = (instanceId: string, kind: FolderKind) =>
+  call<null>("open_instance_folder", { instanceId, kind });
 export const listRunning = () => call<RunningSession[]>("list_running");
+export const systemMemoryMb = () => call<number>("system_memory_mb");
 export const getDevOfflineUsername = () => call<string>("get_dev_offline_username");
 export const setDevOfflineUsername = (name: string) => call<string>("set_dev_offline_username", { name });
 
