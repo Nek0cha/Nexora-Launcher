@@ -253,5 +253,80 @@
     "body": "Force stopping may lose any progress since the last save.",
     "wait": "Wait",
     "confirm": "Force stop"
+  },
+  "content": {
+    "filter": {
+      "search": "Filter by name",
+      "client": "Client side",
+      "server": "Server side",
+      "side": {
+        "required": "Required",
+        "optional": "Optional",
+        "unsupported": "Unsupported"
+      },
+      "categories": "Categories",
+      "status": "Status",
+      "statusValue": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "dependency": "Dependency"
+      }
+    },
+    "category": {
+      "adventure": "Adventure",
+      "cursed": "Cursed",
+      "decoration": "Decoration",
+      "economy": "Economy",
+      "equipment": "Equipment",
+      "food": "Food",
+      "game-mechanics": "Game Mechanics",
+      "library": "Library",
+      "magic": "Magic",
+      "management": "Management",
+      "minigame": "Minigame",
+      "mobs": "Mobs",
+      "optimization": "Optimization",
+      "social": "Social",
+      "storage": "Storage",
+      "technology": "Technology",
+      "transportation": "Transportation",
+      "utility": "Utility",
+      "worldgen": "World Generation",
+      "audio": "Audio",
+      "blocks": "Blocks",
+      "combat": "Combat",
+      "core-shaders": "Core Shaders",
+      "entities": "Entities",
+      "environment": "Environment",
+      "fonts": "Fonts",
+      "gui": "GUI",
+      "items": "Items",
+      "locale": "Locale",
+      "modded": "Modded",
+      "models": "Models",
+      "realistic": "Realistic",
+      "simplistic": "Simplistic",
+      "themed": "Themed",
+      "tweaks": "Tweaks",
+      "vanilla-like": "Vanilla-like",
+      "atmosphere": "Atmosphere",
+      "bloom": "Bloom",
+      "cartoon": "Cartoon",
+      "colored-lighting": "Colored Lighting",
+      "fantasy": "Fantasy",
+      "foliage": "Foliage",
+      "path-tracing": "Path Tracing",
+      "pbr": "PBR",
+      "reflections": "Reflections",
+      "semi-realistic": "Semi-realistic",
+      "shadows": "Shadows"
+    },
+    "row": {
+      "list": "Installed content",
+      "enable": "Enable {{name}}",
+      "remove": "Remove {{name}}",
+      "removeShort": "Remove",
+      "dependency": "Dependency"
+    }
   }
 }

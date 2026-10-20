@@ -253,5 +253,80 @@
     "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
     "wait": "待つ",
     "confirm": "強制終了"
+  },
+  "content": {
+    "filter": {
+      "search": "名前で絞り込む",
+      "client": "クライアント側",
+      "server": "サーバー側",
+      "side": {
+        "required": "必須",
+        "optional": "任意",
+        "unsupported": "非対応"
+      },
+      "categories": "カテゴリ",
+      "status": "状態",
+      "statusValue": {
+        "enabled": "有効",
+        "disabled": "無効",
+        "dependency": "依存"
+      }
+    },
+    "category": {
+      "adventure": "冒険",
+      "cursed": "呪われた",
+      "decoration": "装飾",
+      "economy": "経済",
+      "equipment": "装備",
+      "food": "食べ物",
+      "game-mechanics": "ゲームの仕組み",
+      "library": "ライブラリ",
+      "magic": "魔法",
+      "management": "管理",
+      "minigame": "ミニゲーム",
+      "mobs": "モブ",
+      "optimization": "最適化",
+      "social": "交流",
+      "storage": "収納",
+      "technology": "技術",
+      "transportation": "移動手段",
+      "utility": "便利",
+      "worldgen": "ワールド生成",
+      "audio": "音声",
+      "blocks": "ブロック",
+      "combat": "戦闘",
+      "core-shaders": "コアシェーダー",
+      "entities": "エンティティ",
+      "environment": "環境",
+      "fonts": "フォント",
+      "gui": "GUI",
+      "items": "アイテム",
+      "locale": "言語",
+      "modded": "MOD 向け",
+      "models": "モデル",
+      "realistic": "写実的",
+      "simplistic": "簡素",
+      "themed": "テーマ",
+      "tweaks": "調整",
+      "vanilla-like": "バニラ風",
+      "atmosphere": "大気",
+      "bloom": "ブルーム",
+      "cartoon": "カートゥーン",
+      "colored-lighting": "色付きの光",
+      "fantasy": "ファンタジー",
+      "foliage": "草木",
+      "path-tracing": "パストレーシング",
+      "pbr": "PBR",
+      "reflections": "反射",
+      "semi-realistic": "半写実的",
+      "shadows": "影"
+    },
+    "row": {
+      "list": "導入済みのコンテンツ",
+      "enable": "{{name}} を有効にする",
+      "remove": "{{name}} を削除",
+      "removeShort": "削除",
+      "dependency": "依存"
+    }
   }
 }
