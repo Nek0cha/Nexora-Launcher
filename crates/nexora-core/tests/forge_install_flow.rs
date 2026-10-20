@@ -46,6 +46,8 @@ const DEP_ROUTE: &str = "/maven/com/example/forge-dep/1.0/forge-dep-1.0.jar";
 const DEP: &[u8] = b"forge-dep-jar";
 const MAVEN_FORGE: &[u8] = b"forge-from-maven-dir";
 const MAVEN_UNIVERSAL: &[u8] = b"forge-universal-from-maven-dir";
+const LEGACY_UNIVERSAL: &[u8] = b"legacy-universal-jar";
+const LEGACY_ENTRY: &str = "forge-1.16.5-36.2.39-universal.jar";
 
 /// Forge のライブラリの、`shared/libraries` からの相対パス。
 fn forge_lib(classifier: Option<&str>) -> String {
@@ -128,6 +130,34 @@ fn install_profile(base: &str, minecraft: &str, processor_jar: &[u8]) -> String 
     .to_string()
 }
 
+/// 入れ子の旧形式の install_profile.json（実物の 1.8.9 と同じ形。Forge 本体は URL を持たず、
+/// `forge-dep` は URL だけを持ち、`launchwrapper` は URL を持たない）。
+fn legacy_install_profile(base: &str, file_path: &str) -> String {
+    serde_json::json!({
+        "install": {
+            "profileName": "forge",
+            "target": format!("{MC}-forge{FORGE}"),
+            "path": format!("net.minecraftforge:forge:{FORGE}"),
+            "version": format!("forge {FORGE}"),
+            "filePath": file_path,
+            "minecraft": MC
+        },
+        "versionInfo": {
+            "id": format!("{MC}-forge{FORGE}"),
+            "type": "release",
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+            "inheritsFrom": MC,
+            "minecraftArguments": "--username ${auth_player_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userType ${user_type} --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker",
+            "libraries": [
+                { "name": format!("net.minecraftforge:forge:{FORGE}"), "url": "https://maven.minecraftforge.net/" },
+                { "name": "com.example:forge-dep:1.0", "url": format!("{base}/maven/"), "clientreq": true, "serverreq": true },
+                { "name": "com.example:server-only:1.0", "url": format!("{base}/maven/"), "serverreq": true, "clientreq": false }
+            ]
+        }
+    })
+    .to_string()
+}
+
 fn version_json(base: &str) -> String {
     serde_json::json!({
         "id": format!("{MC}-forge-36.2.39"),
@@ -183,6 +213,7 @@ fn installer(base: &str, profile: Option<&str>) -> Vec<u8> {
         (&universal, MAVEN_UNIVERSAL),
         ("data/client.lzma", b"client-patches"),
         ("data/server.lzma", b"server-patches"),
+        (LEGACY_ENTRY, LEGACY_UNIVERSAL),
     ])
 }
 
@@ -206,9 +237,15 @@ struct Harness {
 
 /// profile が None なら正しいインストーラを配る。
 async fn harness(profile: Option<&str>) -> Harness {
+    harness_with(|_| profile.map(str::to_string)).await
+}
+
+/// サーバーの URL から install_profile.json を作る版。
+async fn harness_with(profile: impl FnOnce(&str) -> Option<String>) -> Harness {
     let fake = FakeMojang::start_version(MC, &fake_java_bytes()).await;
     let u = fake.server.uri();
-    let jar = installer(&u, profile);
+    let profile = profile(&u);
+    let jar = installer(&u, profile.as_deref());
     serve(&fake.server, INSTALLER_ROUTE, &jar).await;
     serve(
         &fake.server,
@@ -263,6 +300,11 @@ async fn harness(profile: Option<&str>) -> Harness {
         recorder,
         store,
     }
+}
+
+/// 入れ子の旧形式のインストーラを配る harness。`file_path` は `install.filePath`。
+async fn harness_legacy(file_path: &str) -> Harness {
+    harness_with(|base| Some(legacy_install_profile(base, file_path))).await
 }
 
 fn forge_instance(name: &str) -> NewInstance {
@@ -532,26 +574,50 @@ async fn mismatched_minecraft_version_is_invalid_metadata() {
 }
 
 #[tokio::test]
-async fn legacy_installer_is_unsupported() {
-    let legacy = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/forge/forge-legacy-2847-install_profile.json"
-    ))
-    .unwrap();
-    let h = harness(Some(&legacy)).await;
+async fn legacy_nested_installer_installs_the_universal_jar() {
+    let h = harness_legacy(LEGACY_ENTRY).await;
+    let (id, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    assert_eq!(h.state(&id), InstanceState::Ready);
+    let libs = h.shared().join("libraries");
+    // Forge 本体は、インストーラ直下の universal jar を座標のパスに置いたもの
+    assert_eq!(
+        std::fs::read(libs.join(forge_lib(None))).unwrap(),
+        LEGACY_UNIVERSAL
+    );
+    assert!(
+        libs.join("com/example/forge-dep/1.0/forge-dep-1.0.jar")
+            .is_file()
+    );
+    // 固定したプロファイルは、起動引数と Mojang 側の取得元を持ち、サーバー専用のライブラリを持たない
+    let pinned =
+        std::fs::read_to_string(h.profile_dir().join(format!("forge-{FORGE}.json"))).unwrap();
+    assert!(pinned.contains("--tweakClass"), "{pinned}");
+    assert!(!pinned.contains("server-only"), "{pinned}");
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.record()).unwrap()).unwrap();
+    let files: Vec<&str> = record["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    let rel = format!("libraries/{}", forge_lib(None));
+    assert!(files.contains(&rel.as_str()), "{rel} not in {files:?}");
+    // processor は無く、作業場所も残らない
+    assert_eq!(h.calls(), 0);
+    assert!(h.staging_leftovers().is_empty());
+}
+
+#[tokio::test]
+async fn legacy_nested_installer_without_the_universal_entry_fails_without_a_record() {
+    let h = harness_legacy("missing-universal.jar").await;
     let (id, snap) = h.create("forge").await;
     assert_eq!(snap.state, TaskState::Failed);
-    let error = snap.error.unwrap();
-    assert_eq!(error.code, "install.unsupported_profile");
-    // インストーラを読んだうえで、旧形式として断る
-    let reason = format!("{:?}", error.params.get("reason"));
-    assert!(reason.contains("legacy"), "{reason}");
-    assert_eq!(
-        hits_on(&h.fake.as_ref().unwrap().server, INSTALLER_ROUTE).await,
-        1
-    );
+    assert_eq!(snap.error.unwrap().code, "meta.invalid");
     assert_eq!(h.state(&id), InstanceState::Broken);
-    assert!(!h.profile_dir().join(format!("forge-{FORGE}.json")).exists());
+    assert!(!h.record().exists());
+    assert!(!h.shared().join("libraries").join(forge_lib(None)).exists());
 }
 
 #[tokio::test]

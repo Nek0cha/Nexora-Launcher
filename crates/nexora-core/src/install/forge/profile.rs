@@ -113,6 +113,18 @@ mod tests {
     }
 
     #[test]
+    fn real_1_12_2_profile_has_no_processors() {
+        // 1.12.2 の 2859 以降は spec 0 で、processor も data も無い（導入は `maven/` を置くだけ）
+        let profile = parse_install_profile(&fixture("forge-1.12.2")).unwrap();
+        assert_eq!(profile.spec, 0);
+        assert_eq!(profile.minecraft, "1.12.2");
+        assert_eq!(profile.json, "/version.json");
+        assert!(profile.processors.is_empty());
+        assert!(profile.data.is_empty());
+        assert!(crate::install::forge::data::client_resources(&profile).is_empty());
+    }
+
+    #[test]
     fn sides_and_outputs_are_read() {
         let profile = parse_install_profile(&fixture("forge-1.20.1")).unwrap();
         let sided: Vec<_> = profile

@@ -2,6 +2,7 @@
 
 pub mod data;
 pub mod installer;
+pub mod legacy;
 pub mod profile;
 pub mod run;
 
@@ -25,7 +26,10 @@ use crate::paths::AppPaths;
 use crate::settings;
 use crate::task::{TaskHandle, TaskPhase};
 use data::{DataContext, PlannedProcessor, client_resources, data_libraries, plan_processors};
-use installer::{Installer, extract_maven, extract_resource, fetch_installer, read_entry};
+use installer::{
+    Installer, extract_entry_to, extract_maven, extract_resource, fetch_installer, read_entry,
+};
+use legacy::{is_legacy_profile, parse_legacy_profile};
 use profile::{InstallProfile, parse_install_profile};
 use run::run_processors;
 
@@ -79,6 +83,25 @@ fn read_install_profile(installer: &Path, mc_version: &str) -> Result<InstallPro
         )));
     }
     Ok(profile)
+}
+
+/// 入れ子の旧形式なら、その内容（Minecraft のバージョンが合うことを確かめ済み）。そうでなければ `None`。
+fn read_legacy_profile(
+    installer: &Path,
+    mc_version: &str,
+) -> Result<Option<legacy::LegacyProfile>, CoreError> {
+    let bytes = read_entry(installer, INSTALL_PROFILE)?;
+    if !is_legacy_profile(&bytes) {
+        return Ok(None);
+    }
+    let legacy = parse_legacy_profile(&bytes)?;
+    if legacy.minecraft != mc_version {
+        return Err(invalid(format!(
+            "installer is for Minecraft {}, not {mc_version}",
+            legacy.minecraft
+        )));
+    }
+    Ok(Some(legacy))
 }
 
 /// 固定済みの version.json を読む。無い、読めない、`inheritsFrom` が mc_version と違うときは `Ok(None)`。
@@ -143,8 +166,12 @@ pub async fn pin_profile(
     }
 
     let installer = instance_installer(env, inst, token).await?;
-    let install = read_install_profile(&installer.path, &inst.mc_version)?;
-    let body = read_entry(&installer.path, &install.json)?;
+    let body = if let Some(legacy) = read_legacy_profile(&installer.path, &inst.mc_version)? {
+        legacy.profile_json
+    } else {
+        let install = read_install_profile(&installer.path, &inst.mc_version)?;
+        read_entry(&installer.path, &install.json)?
+    };
     let profile: LoaderProfile = parse_json(&body, "loader profile")?;
     if profile.inherits_from != inst.mc_version {
         return Err(invalid(format!(
@@ -414,6 +441,18 @@ pub async fn finish_install(
     // 古い記録は、すべてが済むまで残さない
     remove_if_exists(&record_path)?;
 
+    if let Some(legacy) = read_legacy_profile(&installer.path, &inst.mc_version)? {
+        return install_legacy(
+            env,
+            &installer,
+            &legacy,
+            expected,
+            generated,
+            &record_path,
+            handle,
+        )
+        .await;
+    }
     let profile = read_install_profile(&installer.path, &inst.mc_version)?;
     let items = install_library_items(&profile.libraries, &env.paths)?;
     let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
@@ -477,6 +516,15 @@ pub async fn finish_install(
         });
     }
     let files = installed_files(&root, &provided, &planned, &data_paths)?;
+    write_record(&record_path, expected, files)
+}
+
+/// 完了記録を書く（`expected` に、いまの時刻と置いたファイルの一覧を加える）。
+fn write_record(
+    record_path: &Path,
+    expected: CompletionRecord,
+    files: Vec<String>,
+) -> Result<(), CoreError> {
     let record = CompletionRecord {
         completed_at: now_ms(),
         files: Some(files),
@@ -485,7 +533,42 @@ pub async fn finish_install(
     let bytes = serde_json::to_vec_pretty(&record).map_err(|e| CoreError::Unexpected {
         message: e.to_string(),
     })?;
-    write_atomic(&record_path, &bytes)
+    write_atomic(record_path, &bytes)
+}
+
+/// 入れ子の旧形式の導入。processor は無く、インストーラ直下の universal jar を、Forge 本体のライブラリの
+/// パスに置くだけ。ゲームのライブラリは、`plan_game` が取得済み。
+async fn install_legacy(
+    env: &InstallEnv,
+    installer: &Installer,
+    legacy: &legacy::LegacyProfile,
+    expected: CompletionRecord,
+    generated: &[PathBuf],
+    record_path: &Path,
+    handle: &TaskHandle,
+) -> Result<(), CoreError> {
+    let token = handle.token();
+    if token.is_cancelled() {
+        return Err(CoreError::Cancelled);
+    }
+    handle.set_phase(TaskPhase::BuildingLoader);
+    let rel = maven_path(&legacy.forge_path)
+        .filter(|rel| is_safe_relative(rel))
+        .ok_or_else(|| invalid(format!("unsafe library {}", legacy.forge_path)))?;
+    let dest = env.paths.libraries_dir().join(rel);
+    let installer_path = installer.path.clone();
+    let entry = legacy.universal_entry.clone();
+    let target = dest.clone();
+    blocking(move || extract_entry_to(&installer_path, &entry, &target)).await?;
+    handle.set_phase(TaskPhase::Finishing);
+
+    if let Some(missing) = generated.iter().find(|p| !p.is_file()) {
+        return Err(CoreError::LoaderFilesMissing {
+            path: missing.display().to_string(),
+        });
+    }
+    let files = installed_files(&env.paths.shared_dir(), &[dest], &[], &[])?;
+    write_record(record_path, expected, files)
 }
 
 #[cfg(test)]
