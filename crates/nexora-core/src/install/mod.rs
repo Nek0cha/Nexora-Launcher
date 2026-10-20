@@ -128,7 +128,7 @@ async fn install_inner(
     instance::set_state(&env.db, instance_id, InstanceState::Installing)?;
     let token = handle.token();
     let vanilla = env.meta.pin_version(&inst.mc_version, token).await?;
-    let version = overlay_loader(env, &inst, vanilla, token).await?;
+    let version = overlay_loader(env, &inst, vanilla, false, token).await?;
     plan::check_profile(&version)?;
     let index = env.meta.pin_asset_index(&version, token).await?;
     let game = plan::plan_game(
@@ -177,17 +177,24 @@ fn is_forge_like(kind: LoaderKind) -> bool {
 
 /// Vanilla の VersionJson に、インスタンスのローダーの差分を重ねた解決済みの VersionJson を返す。
 /// 固定済みのプロファイルがあればネットワークを使わず、無ければ取得して固定する。
+/// `pinned_only`（起動で使う）が真なら、Forge と NeoForge はインストーラを取得せず、
+/// 固定済みのプロファイルが使えなければ `LoaderFilesMissing` にする。Fabric と Quilt は変わらない。
 pub(crate) async fn overlay_loader(
     env: &InstallEnv,
     inst: &Instance,
     vanilla: VersionJson,
+    pinned_only: bool,
     token: &CancellationToken,
 ) -> Result<VersionJson, CoreError> {
     if inst.loader == LoaderKind::Vanilla {
         return Ok(vanilla);
     }
     if is_forge_like(inst.loader) {
-        let profile = forge::pin_profile(env, inst, token).await?;
+        let profile = if pinned_only {
+            forge::load_pinned(env, inst)?
+        } else {
+            forge::pin_profile(env, inst, token).await?
+        };
         return merge_profile(&vanilla, &profile);
     }
     let loader_version =

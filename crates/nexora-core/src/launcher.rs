@@ -454,7 +454,8 @@ impl Launcher {
             Some(v) => v,
             None => env.meta.pin_version(&inst.mc_version, token).await?,
         };
-        let version = overlay_loader(env, &inst, vanilla, token).await?;
+        // 起動ではインストーラを取得しない（Forge と NeoForge は固定済みのプロファイルだけを使う）
+        let version = overlay_loader(env, &inst, vanilla, true, token).await?;
         check_profile(&version)?;
         let index = match load_pinned_asset_index(&env.paths, &version.asset_index.id)? {
             Some(i) => i,

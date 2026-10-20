@@ -81,6 +81,43 @@ fn read_install_profile(installer: &Path, mc_version: &str) -> Result<InstallPro
     Ok(profile)
 }
 
+/// 固定済みの version.json を読む。無い、読めない、`inheritsFrom` が mc_version と違うときは `Ok(None)`。
+/// NotFound 以外の読み出しの失敗だけを `Err` にする。
+fn read_pinned(
+    path: &Path,
+    id: &str,
+    mc_version: &str,
+) -> Result<Option<LoaderProfile>, std::io::Error> {
+    match std::fs::read(path) {
+        Ok(bytes) => match parse_json::<LoaderProfile>(&bytes, "loader profile") {
+            Ok(profile) if profile.inherits_from == mc_version => Ok(Some(profile)),
+            Ok(_) => {
+                tracing::warn!(id, "pinned loader profile is for another version");
+                Ok(None)
+            }
+            Err(err) => {
+                tracing::warn!(id, code = err.code(), "pinned loader profile is unreadable");
+                Ok(None)
+            }
+        },
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// 起動用。固定済みの version.json だけを使い、ネットワークにもインストーラにも触れない。
+/// 無い、読めない、`inheritsFrom` が `inst.mc_version` と違うときは、そのパスの `LoaderFilesMissing`（導入し直してもらう）。
+pub fn load_pinned(env: &InstallEnv, inst: &Instance) -> Result<LoaderProfile, CoreError> {
+    let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
+    let path = profile_path(&env.paths, &id);
+    match read_pinned(&path, &id, &inst.mc_version) {
+        Ok(Some(profile)) => Ok(profile),
+        Ok(None) | Err(_) => Err(CoreError::LoaderFilesMissing {
+            path: path.display().to_string(),
+        }),
+    }
+}
+
 /// 固定済みの version.json があり、`inheritsFrom` が `inst.mc_version` と一致するなら、ネットワークに出ずにそれを返す。
 /// 無ければインストーラを取得し、`install_profile.minecraft` が `inst.mc_version` と一致することを確かめ
 /// （違えば `InvalidMetadata`）、`version.json` を `shared/versions/<id>/<id>.json` に固定して返す。
@@ -91,13 +128,9 @@ pub async fn pin_profile(
 ) -> Result<LoaderProfile, CoreError> {
     let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
     let path = profile_path(&env.paths, &id);
-    match std::fs::read(&path) {
-        Ok(bytes) => match parse_json::<LoaderProfile>(&bytes, "loader profile") {
-            Ok(profile) if profile.inherits_from == inst.mc_version => return Ok(profile),
-            Ok(_) => tracing::warn!(id, "pinned loader profile is for another version"),
-            Err(err) => tracing::warn!(id, code = err.code(), "refetching loader profile"),
-        },
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+    match read_pinned(&path, &id, &inst.mc_version) {
+        Ok(Some(profile)) => return Ok(profile),
+        Ok(None) => {}
         Err(source) => return Err(io_err(&path, source)),
     }
 

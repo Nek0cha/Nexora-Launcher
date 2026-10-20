@@ -558,3 +558,53 @@ async fn concurrent_installs_of_same_version_run_processors_once() {
     assert_eq!(h.state(&a.instance.id), InstanceState::Ready);
     assert_eq!(h.state(&b.instance.id), InstanceState::Ready);
 }
+
+impl Harness {
+    fn pinned_json(&self) -> PathBuf {
+        self.profile_dir().join(format!("forge-{FORGE}.json"))
+    }
+
+    /// 起動が `install.loader_files_missing`（固定済みの version.json のパス）で止まり、
+    /// インストーラを取りに行かないこと。取得済みのインストーラは消しておき、取りに行けば必ず数に出るようにする。
+    async fn assert_launch_needs_reinstall(&self, id: &str) {
+        std::fs::remove_dir_all(self.paths.installers_dir()).unwrap();
+        let server = &self.fake.as_ref().unwrap().server;
+        let before = hits_on(server, INSTALLER_ROUTE).await;
+        let launch = self.launch_offline(id).await;
+        assert_eq!(launch.state, TaskState::Failed);
+        let error = launch.error.unwrap();
+        assert_eq!(error.code, "install.loader_files_missing", "{error:?}");
+        let path = format!("{:?}", error.params.get("path"));
+        assert!(path.contains(&format!("forge-{FORGE}.json")), "{path}");
+        assert_eq!(hits_on(server, INSTALLER_ROUTE).await, before);
+        assert_eq!(hits_on(server, &format!("{INSTALLER_ROUTE}.sha1")).await, 1);
+    }
+}
+
+#[tokio::test]
+async fn launch_without_pinned_profile_is_loader_files_missing() {
+    let h = harness(None).await;
+    let (id, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    h.seed();
+    std::fs::remove_file(h.pinned_json()).unwrap();
+    h.assert_launch_needs_reinstall(&id).await;
+    assert!(!h.pinned_json().exists());
+}
+
+#[tokio::test]
+async fn launch_with_pinned_profile_for_another_version_is_loader_files_missing() {
+    let h = harness(None).await;
+    let (id, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    h.seed();
+    let mut pinned: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.pinned_json()).unwrap()).unwrap();
+    pinned["inheritsFrom"] = "1.16.4".into();
+    std::fs::write(h.pinned_json(), pinned.to_string()).unwrap();
+    h.assert_launch_needs_reinstall(&id).await;
+    // 起動は固定済みのファイルを書き換えない
+    let after: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.pinned_json()).unwrap()).unwrap();
+    assert_eq!(after["inheritsFrom"], "1.16.4");
+}
