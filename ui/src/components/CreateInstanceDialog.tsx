@@ -1,12 +1,46 @@
-import { useEffect, useState } from "react";
-import { Button, Dialog, DialogTrigger, Heading, Input, Label, Modal, ModalOverlay, TextField } from "react-aria-components";
+import { type ReactNode, useEffect, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogTrigger,
+  Disclosure,
+  DisclosurePanel,
+  Heading,
+  Input,
+  Label,
+  Modal,
+  ModalOverlay,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  TextField,
+} from "react-aria-components";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import IconCaretRight from "~icons/ph/caret-right";
 import IconPlus from "~icons/ph/plus";
 import IconRetry from "~icons/ph/arrow-clockwise";
 import { toErrorPayload } from "../api/ipc";
-import { nextName } from "../features/instances/createName";
-import { useCreateInstance, useVersions } from "../features/instances/useCreateInstance";
+import type { LoaderKind } from "../bindings/LoaderKind";
+import {
+  fallbackLoader,
+  LOADER_TABS,
+  pickLoaderVersion,
+  type TabState,
+  tabState,
+  versionsFor,
+} from "../features/instances/createLoader";
+import { defaultName, nextName } from "../features/instances/createName";
+import { isValid, MEMORY_DEFAULT_MB, type SettingsForm, toSettings } from "../features/instances/settingsForm";
+import {
+  useCreateInstance,
+  useLoaderGameVersions,
+  useLoaderVersions,
+  useVersions,
+} from "../features/instances/useCreateInstance";
 import { FailureNotice } from "./FailureNotice";
+import { InstanceAdvancedFields } from "./InstanceAdvancedFields";
 import { modalClass, overlayClass } from "./modal";
 import { Select } from "./Select";
 
@@ -41,6 +75,23 @@ const submitButton = [
   ring,
 ].join(" ");
 
+// ローダーのタブ。インスタンスの詳細のタブと同じ下線の形。選べないタブは文字を薄くする
+const tabClass = [
+  "-mb-px cursor-default border-b-2 border-transparent px-1 pb-2 text-sm text-text-muted outline-none",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:text-text selected:border-text-strong selected:text-text-strong",
+  "disabled:text-text-faint disabled:hover:text-text-faint",
+  "focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+].join(" ");
+
+// 詳細設定の開閉のボタン。行の全幅を押せるようにし、面は乗せたときだけ現れる
+const disclosureButton = [
+  "flex h-11 w-full items-center gap-2 px-5 text-left text-sm text-text-muted",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-3 hover:text-text",
+  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+].join(" ");
+
 // 右の列の幅。名前の欄、バージョンの選択欄、読み込み中の表示で揃える（日本語の「読み込んでいます」が 1 行に収まる幅）
 const controlWidth = "w-60";
 
@@ -52,6 +103,15 @@ const inputClass = [
   "data-hovered:border-text-muted",
   "data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-accent",
 ].join(" ");
+
+/** 詳細設定の初期値。閉じたまま作ると、従来と同じ自動の設定になる。 */
+const ADVANCED_DEFAULTS: Omit<SettingsForm, "name"> = {
+  memoryMode: "auto",
+  memoryMb: MEMORY_DEFAULT_MB,
+  javaMode: "auto",
+  javaPath: "",
+  jvmArgs: "",
+};
 
 export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet" }) {
   const { t } = useTranslation();
@@ -74,9 +134,32 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
 function CreateForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   const versions = useVersions(true);
+  // Fabric と Quilt の対応バージョンは、開いたときに取りに行く（どちらも小さく、キャッシュされる）
+  const fabricGames = useLoaderGameVersions("fabric", true);
+  const quiltGames = useLoaderGameVersions("quilt", true);
   const create = useCreateInstance();
+  const [loader, setLoader] = useState<LoaderKind>("vanilla");
   const [version, setVersion] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [chosenLoaderVersion, setChosenLoaderVersion] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(ADVANCED_DEFAULTS);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const gameVersions: Partial<Record<LoaderKind, string[]>> = { fabric: fabricGames.data, quilt: quiltGames.data };
+  const gameQueries = [fabricGames, quiltGames];
+  const failedGames = gameQueries.find((q) => q.error);
+  const loaderVersions = useLoaderVersions(loader, version, loader !== "vanilla");
+
+  const nameFor = (l: LoaderKind, v: string) => defaultName(l, v, t(`create.tab.${l}`));
+  const currentDefault = version === null ? null : nameFor(loader, version);
+
+  // ローダーとバージョンを一緒に切り替える。名前は、利用者が書き換えていなければ新しい既定の名前にする
+  const select = (nextLoader: LoaderKind, nextVersion: string) => {
+    const nextDefault = nameFor(nextLoader, nextVersion);
+    setName((current) => nextName(current, currentDefault, nextDefault));
+    setLoader(nextLoader);
+    setVersion(nextVersion);
+  };
 
   // 一覧が届いたら、最初の項目（最新の正式版）を選ぶ
   const first = versions.data?.[0]?.id;
@@ -86,28 +169,66 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     setName((current) => nextName(current, null, first));
   }, [first, version]);
 
+  // 対応バージョンの一覧が取り直され、選んでいるローダーが今のバージョンに対応しなくなったら Vanilla に戻す
+  const fallback = version === null ? loader : fallbackLoader(loader, version, gameVersions);
+  useEffect(() => {
+    if (version !== null && fallback !== loader) select(fallback, version);
+    // select は毎回作り直されるが、判定に使う値はこの 3 つだけである
+  }, [fallback, loader, version]);
+
+  const tabInfo = (l: LoaderKind): TabState | { enabled: false; reason: null } => {
+    if (l === "fabric" || l === "quilt") {
+      // 取得に失敗した一覧は「読み込み中」のままにしない。理由はダイアログの下部に出す
+      if ((l === "fabric" ? fabricGames : quiltGames).error) return { enabled: false, reason: null };
+      // バージョンの一覧がまだ届いていない間は、ローダーの一覧も揃っていないものとして扱う
+      if (version === null) return { enabled: false, reason: "loading" };
+    }
+    return tabState(l, version, gameVersions);
+  };
+  const tabTitle = (s: ReturnType<typeof tabInfo>) => {
+    if (s.enabled || s.reason === null) return undefined;
+    return { soon: t("create.tabSoon"), unsupportedVersion: t("create.tabUnsupportedVersion"), loading: t("create.loadingLoaderVersions") }[s.reason];
+  };
+
+  const loaderVersion = loader === "vanilla" ? null : pickLoaderVersion(loaderVersions.data ?? [], chosenLoaderVersion);
+  // 名前が空欄なら既定の名前で作る。検証も、送る値で行う
+  const submitName = name.trim() || currentDefault || "";
+  // バージョンが決まる前（名前の既定値が無い間）は、詳細設定の入力の不正とはみなさない
+  const advancedInvalid = submitName !== "" && !isValid({ ...advanced, name: submitName });
+  const ready = version !== null && (loader === "vanilla" || loaderVersion !== null) && !advancedInvalid;
+
+  // 詳細設定の入力が不正なら、閉じていても開いて見せる
+  useEffect(() => {
+    if (advancedInvalid && !advancedOpen) setAdvancedOpen(true);
+  }, [advancedInvalid, advancedOpen]);
+
   const submit = () => {
-    if (version === null || create.isPending) return;
-    // 暫定: ローダーの選択は Task 8 で足す
+    if (!ready || version === null || create.isPending) return;
+    const s = toSettings({ ...advanced, name: submitName });
     create.mutate(
       {
-        name,
+        name: s.name,
         mcVersion: version,
-        loader: "vanilla",
-        loaderVersion: null,
-        memoryMode: "auto",
-        memoryMb: null,
-        javaMode: "auto",
-        javaPath: null,
-        jvmArgs: "",
+        loader,
+        loaderVersion,
+        memoryMode: s.memoryMode,
+        memoryMb: s.memoryMb,
+        javaMode: s.javaMode,
+        javaPath: s.javaPath,
+        jvmArgs: s.jvmArgs,
       },
       { onSuccess: onDone },
     );
   };
 
+  const vanillaIds = versions.data?.map((v) => v.id) ?? [];
+  const versionOptions = versionsFor(loader, vanillaIds, gameVersions[loader]);
+
   return (
+    // 詳細設定を開くと画面の高さを超えうるため、見出しと下部のボタンは固定し、間だけを縦に送る。
+    // 高さの上限は、暗幕の上の余白（15vh）と下の余白（1rem）を除いた分
     <form
-      className="flex flex-col"
+      className="flex max-h-[calc(85vh-1rem)] flex-col"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -116,29 +237,96 @@ function CreateForm({ onDone }: { onDone: () => void }) {
       <Heading slot="title" className="px-5 pt-5 font-display text-lg font-semibold text-text-strong">
         {t("create.title")}
       </Heading>
-      <div className="flex flex-col gap-3 px-5 pt-4 pb-5">
-        <TextField
-          value={name}
-          onChange={setName}
-          maxLength={64}
-          autoFocus
-          className="flex items-center justify-between gap-4"
-        >
-          <Label className="text-text">{t("create.name")}</Label>
-          {/* 空欄のまま作ると、backend がバージョン名を使う。そのことを入力例として見せる */}
-          <Input placeholder={version ?? undefined} className={inputClass} />
-        </TextField>
-        <VersionRow
-          state={versions}
-          version={version}
-          onChange={(next) => {
-            setName((current) => nextName(current, version, next));
-            setVersion(next);
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <Tabs
+          selectedKey={loader}
+          onSelectionChange={(key) => {
+            if (version !== null && key !== loader) select(key as LoaderKind, version);
           }}
-        />
-        {create.error && (
-          <div role="alert" className="pt-1">
-            <FailureNotice error={toErrorPayload(create.error)} />
+          className="px-5 pt-4"
+        >
+          <TabList aria-label={t("create.loader")} className="flex gap-5 border-b border-line">
+            {LOADER_TABS.map((l) => {
+              const state = tabInfo(l);
+              return (
+                <Tab key={l} id={l} isDisabled={!state.enabled} className={tabClass}>
+                  {/* Tab は title を受け取らないため、選べない理由は中の文字に付ける */}
+                  <span title={tabTitle(state)}>{t(`create.tab.${l}`)}</span>
+                </Tab>
+              );
+            })}
+          </TabList>
+          {/* 中身はどのタブでも同じ欄なので、選んでいるタブの id を持つ 1 つのパネルを使い回す */}
+          <TabPanel id={loader} className="flex flex-col gap-3 pt-4 pb-5 outline-none">
+            <TextField value={name} onChange={setName} maxLength={64} autoFocus className="flex items-center justify-between gap-4">
+              <Label className="text-text">{t("create.name")}</Label>
+              {/* 空欄のまま作ると、既定の名前を使う。そのことを入力例として見せる */}
+              <Input placeholder={currentDefault ?? undefined} className={inputClass} />
+            </TextField>
+            <QueryRow label={t("create.version")} query={versions} loadingText={t("create.loadingVersions")} ready={version !== null}>
+              <Select
+                label={t("create.version")}
+                value={version ?? ""}
+                options={versionOptions.map((id) => ({ id, label: id }))}
+                onChange={(next) => select(fallbackLoader(loader, next, gameVersions), next)}
+                triggerClassName={controlWidth}
+              />
+            </QueryRow>
+            {loader !== "vanilla" && (
+              <QueryRow
+                label={t("create.loaderVersion")}
+                query={loaderVersions}
+                loadingText={t("create.loadingLoaderVersions")}
+                ready={loaderVersion !== null}
+              >
+                <Select
+                  label={t("create.loaderVersion")}
+                  value={loaderVersion ?? ""}
+                  options={(loaderVersions.data ?? []).map((e) => ({ id: e.version, label: e.version }))}
+                  onChange={setChosenLoaderVersion}
+                  triggerClassName={controlWidth}
+                />
+              </QueryRow>
+            )}
+          </TabPanel>
+        </Tabs>
+        <Disclosure isExpanded={advancedOpen} onExpandedChange={setAdvancedOpen} className="group border-t border-line">
+          <h3>
+            <Button slot="trigger" className={disclosureButton}>
+              <IconCaretRight
+                aria-hidden
+                className="size-4 transition-transform duration-(--duration-fast) ease-out-quint group-data-expanded:rotate-90 motion-reduce:transition-none"
+              />
+              <span>{t("create.advanced")}</span>
+            </Button>
+          </h3>
+          {/* 閉じている間も中身は残すため、入力は失われない。高さが残らないよう、余白は中の要素に付ける */}
+          <DisclosurePanel>
+            <div className="px-5 pb-3">
+              <InstanceAdvancedFields form={{ ...advanced, name }} onChange={(patch) => setAdvanced((f) => ({ ...f, ...patch }))} />
+            </div>
+          </DisclosurePanel>
+        </Disclosure>
+        {(failedGames || create.error) && (
+          <div className="flex flex-col gap-3 border-t border-line px-5 py-4">
+            {failedGames?.error && (
+              <div role="alert" className="flex flex-col items-start gap-2">
+                <FailureNotice error={toErrorPayload(failedGames.error)} />
+                <Button
+                  onPress={() => gameQueries.filter((q) => q.error).forEach((q) => void q.refetch())}
+                  isPending={gameQueries.some((q) => q.isFetching)}
+                  className={secondaryButton}
+                >
+                  <IconRetry aria-hidden className="size-4" />
+                  <span>{t("create.retryLoaders")}</span>
+                </Button>
+              </div>
+            )}
+            {create.error && (
+              <div role="alert">
+                <FailureNotice error={toErrorPayload(create.error)} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -146,7 +334,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
         <Button slot="close" className={secondaryButton}>
           {t("create.cancel")}
         </Button>
-        <Button type="submit" isDisabled={version === null} isPending={create.isPending} className={submitButton}>
+        <Button type="submit" isDisabled={!ready} isPending={create.isPending} className={submitButton}>
           {t("create.submit")}
         </Button>
       </div>
@@ -154,49 +342,48 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function VersionRow({
-  state,
-  version,
-  onChange,
+/**
+ * 一覧を取りに行く選択欄の行。失敗なら再試行、読み込み中なら同じ形の表示、届いたら children を出す。
+ */
+function QueryRow({
+  label,
+  query,
+  loadingText,
+  ready,
+  children,
 }: {
-  state: ReturnType<typeof useVersions>;
-  version: string | null;
-  onChange: (version: string) => void;
+  label: string;
+  query: Pick<UseQueryResult, "error" | "isFetching" | "refetch">;
+  loadingText: string;
+  ready: boolean;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
-  if (state.error) {
+  if (query.error) {
     // 行の形は残し、右の列に再試行を置く。何が失敗したかは行の下に出す
     return (
       <div role="alert" className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-text">{t("create.version")}</span>
-          <Button onPress={() => void state.refetch()} isPending={state.isFetching} className={`${secondaryButton} ${controlWidth} justify-center`}>
+          <span className="text-text">{label}</span>
+          <Button onPress={() => void query.refetch()} isPending={query.isFetching} className={`${secondaryButton} ${controlWidth} justify-center`}>
             <IconRetry aria-hidden className="size-4" />
             <span>{t("create.retry")}</span>
           </Button>
         </div>
-        <FailureNotice error={toErrorPayload(state.error)} />
+        <FailureNotice error={toErrorPayload(query.error)} />
       </div>
     );
   }
-  if (!state.data || version === null) {
+  if (!ready) {
     // 届いた後の Select と同じ行の形と高さにして、置き換わってもレイアウトを動かさない
     return (
       <div aria-busy="true" className="flex items-center justify-between gap-4">
-        <span className="text-text">{t("create.version")}</span>
+        <span className="text-text">{label}</span>
         <span className={`flex h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 text-sm text-text-muted`}>
-          {t("create.loadingVersions")}
+          {loadingText}
         </span>
       </div>
     );
   }
-  return (
-    <Select
-      label={t("create.version")}
-      value={version}
-      options={state.data.map((v) => ({ id: v.id, label: v.id }))}
-      onChange={onChange}
-      triggerClassName={controlWidth}
-    />
-  );
+  return children;
 }

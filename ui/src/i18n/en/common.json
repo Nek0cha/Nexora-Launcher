@@ -43,7 +43,21 @@
     "submit": "Create",
     "cancel": "Cancel",
     "loadingVersions": "Loading versions",
-    "retry": "Retry"
+    "retry": "Retry",
+    "loader": "Loader",
+    "loaderVersion": "Loader version",
+    "advanced": "Advanced settings",
+    "tab": {
+      "vanilla": "Vanilla",
+      "fabric": "Fabric",
+      "forge": "Forge",
+      "neoforge": "NeoForge",
+      "quilt": "Quilt"
+    },
+    "tabSoon": "Coming soon",
+    "tabUnsupportedVersion": "Not available for this version",
+    "loadingLoaderVersions": "Loading loader versions",
+    "retryLoaders": "Retry loading loaders"
   },
   "tasks": {
     "title": "Tasks",

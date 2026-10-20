@@ -43,7 +43,21 @@
     "submit": "作成",
     "cancel": "キャンセル",
     "loadingVersions": "バージョンを読み込んでいます",
-    "retry": "再試行"
+    "retry": "再試行",
+    "loader": "ローダー",
+    "loaderVersion": "ローダーのバージョン",
+    "advanced": "詳細設定",
+    "tab": {
+      "vanilla": "Vanilla",
+      "fabric": "Fabric",
+      "forge": "Forge",
+      "neoforge": "NeoForge",
+      "quilt": "Quilt"
+    },
+    "tabSoon": "準備中",
+    "tabUnsupportedVersion": "このバージョンには対応していません",
+    "loadingLoaderVersions": "ローダーを読み込んでいます",
+    "retryLoaders": "ローダーの一覧を再試行"
   },
   "tasks": {
     "title": "タスク",
