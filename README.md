@@ -13,7 +13,8 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed
 - A running instance can be stopped from the launcher (a graceful close first, with a force-stop prompt if it does not exit); the app has its own title bar, toast notifications, a memory slider, and buttons that open an instance's folders
 - Fabric and Quilt instances can be created, installed and launched
-- Planned: Forge and NeoForge, content from Modrinth and CurseForge, and importing instances from other launchers
+- Forge (Minecraft 1.16.5 and later) and NeoForge (1.20.1 and later) instances can be created, installed and launched by the code. They are implemented and covered by automated tests that use a fake Java; verification on a real machine is still pending
+- Planned: legacy Forge (1.8.9 to 1.12.2), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
 
