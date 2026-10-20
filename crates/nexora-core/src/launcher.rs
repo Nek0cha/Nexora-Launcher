@@ -13,7 +13,9 @@ use crate::auth::service::AuthService;
 use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
-use crate::install::{InstallEnv, Urls, install, kib, now_ms, overlay_loader};
+use crate::install::{
+    InstallEnv, Urls, forge, install, is_forge_like, kib, now_ms, overlay_loader,
+};
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
@@ -481,6 +483,10 @@ impl Launcher {
             return Err(CoreError::LoaderFilesMissing {
                 path: missing.display().to_string(),
             });
+        }
+        // processor の出力や `maven/` から置いたもの（ゲームのライブラリに出ないものも）は、完了記録の一覧で確かめる
+        if is_forge_like(inst.loader) {
+            forge::check_installed_files(env, &inst)?;
         }
         let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
         fetch_all(

@@ -171,7 +171,7 @@ async fn install_inner(
 }
 
 /// インストーラで導入するローダー（Forge と NeoForge）か。
-fn is_forge_like(kind: LoaderKind) -> bool {
+pub(crate) fn is_forge_like(kind: LoaderKind) -> bool {
     matches!(kind, LoaderKind::Forge | LoaderKind::Neoforge)
 }
 

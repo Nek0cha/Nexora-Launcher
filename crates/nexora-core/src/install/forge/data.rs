@@ -96,6 +96,21 @@ pub fn plan_processors(
         .collect()
 }
 
+/// `data` の `client` の値のうち、`[座標]` の形のもののライブラリのパス（名前の順）。
+/// processor が作るもの（`{PATCHED}` など）が入る。ファイルがあるかは確かめない。
+pub fn data_libraries(
+    profile: &InstallProfile,
+    ctx: &DataContext,
+) -> Result<Vec<PathBuf>, CoreError> {
+    let resolver = Resolver { profile, ctx };
+    profile
+        .data
+        .values()
+        .filter_map(|v| coordinate(&v.client))
+        .map(|coord| resolver.library(coord))
+        .collect()
+}
+
 /// 側が `client` のときのトークン `{SIDE}` の値。
 const SIDE: &str = "client";
 
@@ -451,6 +466,33 @@ mod tests {
         // `{MINECRAFT_JAR}` は与えた jar のパス
         assert_eq!(planned[1].args[0], "--input");
         assert_eq!(planned[1].args[1], s(&env.minecraft_jar));
+    }
+
+    #[test]
+    fn data_libraries_are_the_coordinate_values() {
+        let env = env();
+        let paths = data_libraries(&fixture("forge-1.20.1"), &env.ctx()).unwrap();
+        // PATCHED は processor が作る jar。`/data/...` や `'...'` の値は入らない
+        assert!(
+            paths.contains(
+                &env.libraries
+                    .join("net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-client.jar")
+            )
+        );
+        assert!(!paths.is_empty());
+        assert!(paths.iter().all(|p| p.starts_with(&env.libraries)));
+        let profile = single(
+            serde_json::json!({
+                "A": { "client": "/data/client.lzma", "server": "" },
+                "B": { "client": "'text'", "server": "" },
+                "C": { "client": "[a:b:1]", "server": "" },
+            }),
+            serde_json::json!({ "jar": "a:b:1", "args": [] }),
+        );
+        assert_eq!(
+            data_libraries(&profile, &env.ctx()).unwrap(),
+            [env.library("a:b:1")]
+        );
     }
 
     #[test]

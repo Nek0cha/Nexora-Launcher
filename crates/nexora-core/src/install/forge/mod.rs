@@ -24,7 +24,7 @@ use crate::net::{Depth, DownloadItem, fetch_all, io_err, lock_path};
 use crate::paths::AppPaths;
 use crate::settings;
 use crate::task::TaskHandle;
-use data::{DataContext, client_resources, plan_processors};
+use data::{DataContext, PlannedProcessor, client_resources, data_libraries, plan_processors};
 use installer::{Installer, extract_maven, extract_resource, fetch_installer, read_entry};
 use profile::{InstallProfile, parse_install_profile};
 use run::run_processors;
@@ -156,7 +156,7 @@ pub async fn pin_profile(
     Ok(profile)
 }
 
-/// 導入が済んだことの記録。一致の判定は `completed_at` 以外の 3 つ。
+/// 導入が済んだことの記録。一致の判定は `completed_at` と `files` 以外の 3 つ。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CompletionRecord {
@@ -165,6 +165,72 @@ struct CompletionRecord {
     java_major: u32,
     #[serde(default)]
     completed_at: i64,
+    /// 導入で置いたファイル（`maven/` から展開したもの、processor の `outputs`、
+    /// data の `[座標]` のうち導入の後にあったもの）。`shared/` からの相対で `/` 区切り
+    /// （データの場所を移しても使える）。この項目の無い記録は、済んでいないとみなす。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    files: Option<Vec<String>>,
+}
+
+/// 記録を読む。無い、または読めなければ `None`。
+fn read_record(path: &Path) -> Option<CompletionRecord> {
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// 記録したファイルのうち、最初に欠けているもの（`shared` の下のパス）。
+/// 一覧の無い記録は `record_path` を、安全でない値はその値をそのまま返す（どちらも済んでいない扱い）。
+fn first_missing(record: &CompletionRecord, record_path: &Path, shared: &Path) -> Option<PathBuf> {
+    let Some(files) = &record.files else {
+        return Some(record_path.to_path_buf());
+    };
+    files.iter().find_map(|rel| {
+        if !is_safe_relative(rel) {
+            return Some(PathBuf::from(rel));
+        }
+        let path = shared.join(rel);
+        (!path.is_file()).then_some(path)
+    })
+}
+
+/// `shared` の下のパスを、記録に書く相対の形（`/` 区切り）にする。下になければ `InvalidMetadata`。
+fn shared_relative(shared: &Path, path: &Path) -> Result<String, CoreError> {
+    let rel = path
+        .strip_prefix(shared)
+        .ok()
+        .and_then(|rel| {
+            rel.components()
+                .map(|c| match c {
+                    std::path::Component::Normal(part) => part.to_str(),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .filter(|parts| !parts.is_empty())
+        .map(|parts| parts.join("/"));
+    rel.filter(|rel| is_safe_relative(rel)).ok_or_else(|| {
+        invalid(format!(
+            "loader file {} is outside the shared directory",
+            path.display()
+        ))
+    })
+}
+
+/// 起動用。完了記録だけを読み（ネットワークにもインストーラにも触れない）、導入で置いたファイルがすべてあるか確かめる。
+/// 記録が無い、読めない、一覧を持たないときは記録のパスの、ファイルが欠けていればそのパスの `LoaderFilesMissing`。
+pub fn check_installed_files(env: &InstallEnv, inst: &Instance) -> Result<(), CoreError> {
+    let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
+    let record_path = env.paths.versions_dir().join(&id).join(RECORD_FILE);
+    let missing = match read_record(&record_path) {
+        Some(record) => first_missing(&record, &record_path, &env.paths.shared_dir()),
+        None => Some(record_path),
+    };
+    match missing {
+        Some(path) => Err(CoreError::LoaderFilesMissing {
+            path: path.display().to_string(),
+        }),
+        None => Ok(()),
+    }
 }
 
 impl CompletionRecord {
@@ -178,12 +244,17 @@ impl CompletionRecord {
     }
 }
 
-/// 記録が現在の入力と一致し、`generated` のファイルがすべてあるか。読めない記録は一致しないとみなす。
-fn is_complete(record_path: &Path, expected: &CompletionRecord, generated: &[PathBuf]) -> bool {
-    let recorded = std::fs::read(record_path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<CompletionRecord>(&bytes).ok());
-    recorded.is_some_and(|r| r.matches(expected)) && generated.iter().all(|p| p.is_file())
+/// 記録が現在の入力と一致し、記録したファイルと `generated` のファイルがすべてあるか。
+/// 読めない記録や、ファイルの一覧を持たない記録は済んでいないとみなす。
+fn is_complete(
+    record_path: &Path,
+    expected: &CompletionRecord,
+    generated: &[PathBuf],
+    shared: &Path,
+) -> bool {
+    read_record(record_path)
+        .is_some_and(|r| r.matches(expected) && first_missing(&r, record_path, shared).is_none())
+        && generated.iter().all(|p| p.is_file())
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), CoreError> {
@@ -280,9 +351,31 @@ async fn blocking<T: Send + 'static>(
         })?
 }
 
-/// ゲームのファイルと Java の用意が済んだ後に呼ぶ。完了記録が現在の入力と一致し、`generated` のファイルがすべてあれば何もしない。
+/// 完了記録に書くファイルの一覧（重複なく、名前の順）。`maven/` から展開したもの、processor の `outputs`、
+/// data の `[座標]` のうちいまあるもの（入力の取得物か processor の出力）を `shared` からの相対にする。
+fn installed_files(
+    shared: &Path,
+    provided: &[PathBuf],
+    planned: &[PlannedProcessor],
+    data_paths: &[PathBuf],
+) -> Result<Vec<String>, CoreError> {
+    let outputs = planned
+        .iter()
+        .flat_map(|p| p.outputs.iter().map(|o| &o.path));
+    let data = data_paths.iter().filter(|p| p.is_file());
+    let files: std::collections::BTreeSet<String> = provided
+        .iter()
+        .chain(outputs)
+        .chain(data)
+        .map(|path| shared_relative(shared, path))
+        .collect::<Result<_, _>>()?;
+    Ok(files.into_iter().collect())
+}
+
+/// ゲームのファイルと Java の用意が済んだ後に呼ぶ。完了記録が現在の入力と一致し、記録したファイルと
+/// `generated` のファイルがすべてあれば何もしない。
 /// そうでなければ、`profile_dir` の `lock_path` を取り、インストール用のライブラリを取得し、`maven/` と資源を展開し、
-/// processor を実行し、`generated` を確かめ、最後に完了記録を書く。
+/// processor を実行し、`generated` を確かめ、最後に置いたファイルの一覧を含む完了記録を書く。
 pub async fn finish_install(
     env: &InstallEnv,
     inst: &Instance,
@@ -302,8 +395,10 @@ pub async fn finish_install(
         minecraft_jar_sha1: version.downloads.client.sha1.clone(),
         java_major,
         completed_at: 0,
+        files: None,
     };
-    if is_complete(&record_path, &expected, generated) {
+    let root = env.paths.shared_dir();
+    if is_complete(&record_path, &expected, generated, &root) {
         return Ok(());
     }
 
@@ -312,7 +407,7 @@ pub async fn finish_install(
         _ = token.cancelled() => return Err(CoreError::Cancelled),
         guard = lock_path(&profile_dir) => guard,
     };
-    if is_complete(&record_path, &expected, generated) {
+    if is_complete(&record_path, &expected, generated, &root) {
         return Ok(());
     }
     // 古い記録は、すべてが済むまで残さない
@@ -337,7 +432,7 @@ pub async fn finish_install(
     let libraries_dir = env.paths.libraries_dir();
     let installer_path = installer.path.clone();
     let libs = libraries_dir.clone();
-    blocking(move || extract_maven(&installer_path, &libs).map(|_| ())).await?;
+    let provided = blocking(move || extract_maven(&installer_path, &libs)).await?;
 
     // 資源は導入ごとの作業場所に展開し、終わったら（失敗や取り消しでも）消す
     let staging = StagingDir::create(&env.paths)?;
@@ -355,7 +450,6 @@ pub async fn finish_install(
     })
     .await?;
 
-    let root = env.paths.shared_dir();
     let minecraft_jar = client_jar_path(&env.paths, &inst.mc_version);
     let ctx = DataContext {
         libraries_dir: &libraries_dir,
@@ -366,6 +460,7 @@ pub async fn finish_install(
         resources: &resources,
     };
     let planned = plan_processors(&profile, &ctx)?;
+    let data_paths = data_libraries(&profile, &ctx)?;
     run_processors(java, &planned, token, |done, total| {
         handle.set_progress(
             u32::try_from(done).unwrap_or(u32::MAX),
@@ -380,8 +475,10 @@ pub async fn finish_install(
             path: missing.display().to_string(),
         });
     }
+    let files = installed_files(&root, &provided, &planned, &data_paths)?;
     let record = CompletionRecord {
         completed_at: now_ms(),
+        files: Some(files),
         ..expected
     };
     let bytes = serde_json::to_vec_pretty(&record).map_err(|e| CoreError::Unexpected {
@@ -427,12 +524,16 @@ mod tests {
             minecraft_jar_sha1: jar.into(),
             java_major: major,
             completed_at: at,
+            files: Some(Vec::new()),
         }
     }
 
     #[test]
     fn completion_record_format_and_match() {
-        let r = record("aa", "bb", 17, 5);
+        let r = CompletionRecord {
+            files: Some(vec!["libraries/a/b.jar".into()]),
+            ..record("aa", "bb", 17, 5)
+        };
         let json: serde_json::Value = serde_json::to_value(&r).unwrap();
         assert_eq!(
             json,
@@ -440,34 +541,119 @@ mod tests {
                 "installerSha1": "aa",
                 "minecraftJarSha1": "bb",
                 "javaMajor": 17,
-                "completedAt": 5
+                "completedAt": 5,
+                "files": ["libraries/a/b.jar"]
             })
         );
-        // 完了の時刻は比べない
+        // 完了の時刻とファイルの一覧は比べない
         assert!(r.matches(&record("AA", "bb", 17, 0)));
         assert!(!r.matches(&record("ab", "bb", 17, 5)));
         assert!(!r.matches(&record("aa", "bc", 17, 5)));
         assert!(!r.matches(&record("aa", "bb", 21, 5)));
+        // 一覧の無い古い形も読める
+        let old: CompletionRecord = serde_json::from_value(serde_json::json!({
+            "installerSha1": "aa", "minecraftJarSha1": "bb", "javaMajor": 17, "completedAt": 5
+        }))
+        .unwrap();
+        assert_eq!(old.files, None);
     }
 
     #[test]
     fn is_complete_needs_the_record_and_every_generated_file() {
         let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join(RECORD_FILE);
+        let shared = temp.path();
+        let path = shared.join(RECORD_FILE);
         let expected = record("aa", "bb", 17, 0);
-        let file = temp.path().join("client.jar");
-        assert!(!is_complete(&path, &expected, &[]));
+        let file = shared.join("client.jar");
+        assert!(!is_complete(&path, &expected, &[], shared));
         std::fs::write(&path, b"{broken").unwrap();
-        assert!(!is_complete(&path, &expected, &[]));
+        assert!(!is_complete(&path, &expected, &[], shared));
         std::fs::write(
             &path,
             serde_json::to_vec(&record("aa", "bb", 17, 9)).unwrap(),
         )
         .unwrap();
-        assert!(is_complete(&path, &expected, &[]));
-        assert!(!is_complete(&path, &expected, std::slice::from_ref(&file)));
+        assert!(is_complete(&path, &expected, &[], shared));
+        assert!(!is_complete(
+            &path,
+            &expected,
+            std::slice::from_ref(&file),
+            shared
+        ));
         std::fs::write(&file, b"x").unwrap();
-        assert!(is_complete(&path, &expected, &[file]));
+        assert!(is_complete(&path, &expected, &[file], shared));
+    }
+
+    #[test]
+    fn is_complete_needs_every_recorded_file_and_the_list() {
+        let temp = tempfile::tempdir().unwrap();
+        let shared = temp.path();
+        let path = shared.join(RECORD_FILE);
+        let expected = record("aa", "bb", 17, 0);
+        let write = |files: Option<Vec<&str>>| {
+            let r = CompletionRecord {
+                files: files.map(|f| f.into_iter().map(String::from).collect()),
+                ..record("aa", "bb", 17, 9)
+            };
+            std::fs::write(&path, serde_json::to_vec(&r).unwrap()).unwrap();
+        };
+        write(Some(vec!["libraries/x/patched.jar"]));
+        assert!(!is_complete(&path, &expected, &[], shared));
+        assert_eq!(
+            first_missing(&read_record(&path).unwrap(), &path, shared),
+            Some(shared.join("libraries/x/patched.jar"))
+        );
+        std::fs::create_dir_all(shared.join("libraries/x")).unwrap();
+        std::fs::write(shared.join("libraries/x/patched.jar"), b"p").unwrap();
+        assert!(is_complete(&path, &expected, &[], shared));
+        // 一覧の無い記録は済んでいない
+        write(None);
+        assert!(!is_complete(&path, &expected, &[], shared));
+        // 安全でない値は欠けている扱い
+        write(Some(vec!["../outside.jar"]));
+        assert!(!is_complete(&path, &expected, &[], shared));
+    }
+
+    #[test]
+    fn installed_files_are_shared_relative_and_deduplicated() {
+        let shared = PathBuf::from("data").join("shared");
+        let libs = shared.join("libraries");
+        let temp = tempfile::tempdir().unwrap();
+        let existing = temp.path().join("shared/libraries/c/c.jar");
+        std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
+        std::fs::write(&existing, b"c").unwrap();
+        let planned = PlannedProcessor {
+            name: "p".into(),
+            jar: libs.join("p.jar"),
+            classpath: Vec::new(),
+            args: Vec::new(),
+            outputs: vec![data::ExpectedOutput {
+                path: libs.join("b").join("b.jar"),
+                sha1: None,
+            }],
+        };
+        let files = installed_files(
+            &shared,
+            &[libs.join("a").join("a.jar"), libs.join("b").join("b.jar")],
+            &[planned],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(files, ["libraries/a/a.jar", "libraries/b/b.jar"]);
+        // data の値は、いまあるものだけ
+        let tshared = temp.path().join("shared");
+        let files = installed_files(
+            &tshared,
+            &[],
+            &[],
+            &[existing.clone(), tshared.join("libraries/missing.jar")],
+        )
+        .unwrap();
+        assert_eq!(files, ["libraries/c/c.jar"]);
+        // shared の外は `InvalidMetadata`
+        let err =
+            installed_files(&shared, &[PathBuf::from("elsewhere/x.jar")], &[], &[]).unwrap_err();
+        assert_eq!(err.code(), "meta.invalid");
     }
 
     fn lib(value: serde_json::Value) -> Library {

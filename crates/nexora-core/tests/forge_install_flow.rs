@@ -379,6 +379,21 @@ async fn forge_install_runs_processors_and_pins_profile() {
     assert_eq!(record["minecraftJarSha1"], sha1_hex(b"client-jar"));
     assert_eq!(record["installerSha1"].as_str().unwrap().len(), 40);
     assert!(record["completedAt"].as_i64().unwrap() > 0);
+    // 導入で置いたファイル（`maven/` の 2 つと、data の PATCHED）を shared からの相対で記録する
+    let files: Vec<&str> = record["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    for lib in [
+        forge_lib(None),
+        forge_lib(Some("universal")),
+        forge_lib(Some("client")),
+    ] {
+        let rel = format!("libraries/{lib}");
+        assert!(files.contains(&rel.as_str()), "{rel} not in {files:?}");
+    }
     let libs = h.shared().join("libraries");
     // processor の出力と、`maven/` から置いたもの
     assert_eq!(
@@ -538,6 +553,58 @@ async fn launch_fails_with_loader_files_missing() {
     assert_eq!(h.calls(), 2);
     let launch = h.launch_offline(&id).await;
     assert_eq!(launch.state, TaskState::Succeeded, "{:?}", launch.error);
+}
+
+#[tokio::test]
+async fn missing_installer_provided_file_fails_launch_and_reinstalls() {
+    let h = harness(None).await;
+    let (id, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    h.seed();
+    // `maven/` から置いたもののうち、ゲームのライブラリに無い（`generated` に入らない）もの
+    let universal = h
+        .shared()
+        .join("libraries")
+        .join(forge_lib(Some("universal")));
+    std::fs::remove_file(&universal).unwrap();
+
+    let launch = h.launch_offline(&id).await;
+    assert_eq!(launch.state, TaskState::Failed);
+    let error = launch.error.unwrap();
+    assert_eq!(error.code, "install.loader_files_missing");
+    let path = format!("{:?}", error.params.get("path"));
+    assert!(
+        path.contains("forge-1.16.5-36.2.39-universal.jar"),
+        "{path}"
+    );
+    assert_eq!(h.state(&id), InstanceState::Broken);
+
+    // 完了記録は入力と一致するが、ファイルが欠けているので processor をもう一度動かす
+    let task = h.launcher.launch_instance(&id, true).unwrap();
+    let again = wait(&h.tasks, &task).await;
+    assert_eq!(again.kind, "install");
+    assert_eq!(again.state, TaskState::Succeeded, "{:?}", again.error);
+    assert_eq!(h.calls(), 2);
+    assert!(universal.is_file());
+    let launch = h.launch_offline(&id).await;
+    assert_eq!(launch.state, TaskState::Succeeded, "{:?}", launch.error);
+}
+
+#[tokio::test]
+async fn record_without_the_file_list_is_reinstalled() {
+    let h = harness(None).await;
+    let (_, first) = h.create("one").await;
+    assert_eq!(first.state, TaskState::Succeeded, "{:?}", first.error);
+    let mut record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.record()).unwrap()).unwrap();
+    record.as_object_mut().unwrap().remove("files");
+    std::fs::write(h.record(), record.to_string()).unwrap();
+    let (_, second) = h.create("two").await;
+    assert_eq!(second.state, TaskState::Succeeded, "{:?}", second.error);
+    assert_eq!(h.calls(), 2);
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.record()).unwrap()).unwrap();
+    assert!(record["files"].is_array());
 }
 
 #[tokio::test]
