@@ -102,7 +102,17 @@ describe("CreateInstanceDialog", () => {
     await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
     fireEvent.change(nameInput(dialog), { target: { value: "My World" } });
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create" })));
-    expect(createInstance).toHaveBeenCalledWith("My World", "1.21.5");
+    expect(createInstance).toHaveBeenCalledWith({
+      name: "My World",
+      mcVersion: "1.21.5",
+      loader: "vanilla",
+      loaderVersion: null,
+      memoryMode: "auto",
+      memoryMb: null,
+      javaMode: "auto",
+      javaPath: null,
+      jvmArgs: "",
+    });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // 一覧を見ている画面（ホーム）があれば取り直される
     expect(client.getQueryState(INSTANCES_KEY)?.isInvalidated).toBe(true);

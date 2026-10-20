@@ -8,22 +8,46 @@ import {
   duplicateInstance,
   getSkinVariant,
   launchInstance,
+  listLoaderGameVersions,
+  listLoaderVersions,
   openInstanceFolder,
   stopInstance,
   updateInstance,
 } from "./commands";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
+import type { NewInstance } from "../bindings/NewInstance";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue("t1") }));
 
 afterEach(() => vi.clearAllMocks());
 
 describe("createInstance", () => {
-  it("sends a vanilla request", async () => {
-    await createInstance("World", "1.21.5");
-    expect(invoke).toHaveBeenLastCalledWith("create_instance", {
-      request: { name: "World", mcVersion: "1.21.5", loader: "vanilla" },
-    });
+  it("sends the whole request", async () => {
+    const request: NewInstance = {
+      name: "World",
+      mcVersion: "1.21.5",
+      loader: "fabric",
+      loaderVersion: "0.16.0",
+      memoryMode: "auto",
+      memoryMb: null,
+      javaMode: "auto",
+      javaPath: null,
+      jvmArgs: "",
+    };
+    await createInstance(request);
+    expect(invoke).toHaveBeenLastCalledWith("create_instance", { request });
+  });
+});
+
+describe("loader versions", () => {
+  it("lists game versions for a loader", async () => {
+    await listLoaderGameVersions("fabric");
+    expect(invoke).toHaveBeenLastCalledWith("list_loader_game_versions", { loader: "fabric" });
+  });
+
+  it("lists loader versions for a game version", async () => {
+    await listLoaderVersions("quilt", "1.20.1");
+    expect(invoke).toHaveBeenLastCalledWith("list_loader_versions", { loader: "quilt", mcVersion: "1.20.1" });
   });
 });
 

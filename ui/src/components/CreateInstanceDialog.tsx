@@ -88,7 +88,21 @@ function CreateForm({ onDone }: { onDone: () => void }) {
 
   const submit = () => {
     if (version === null || create.isPending) return;
-    create.mutate({ name, mcVersion: version }, { onSuccess: onDone });
+    // 暫定: ローダーの選択は Task 8 で足す
+    create.mutate(
+      {
+        name,
+        mcVersion: version,
+        loader: "vanilla",
+        loaderVersion: null,
+        memoryMode: "auto",
+        memoryMb: null,
+        javaMode: "auto",
+        javaPath: null,
+        jvmArgs: "",
+      },
+      { onSuccess: onDone },
+    );
   };
 
   return (

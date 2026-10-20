@@ -13,6 +13,7 @@ use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::CreatedInstance;
+use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::task::TaskSnapshot;
@@ -127,6 +128,35 @@ pub async fn list_versions(state: State<'_, AppState>) -> CmdResult<Vec<VersionE
     services
         .launcher
         .list_versions()
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// ローダーが対応するゲームの版（新しい順）。
+#[tauri::command]
+pub async fn list_loader_game_versions(
+    state: State<'_, AppState>,
+    loader: LoaderKind,
+) -> CmdResult<Vec<String>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_loader_game_versions(loader)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// ゲームの版に使えるローダーの版（新しい順）。
+#[tauri::command]
+pub async fn list_loader_versions(
+    state: State<'_, AppState>,
+    loader: LoaderKind,
+    mc_version: String,
+) -> CmdResult<Vec<LoaderVersionEntry>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_loader_versions(loader, &mc_version)
         .await
         .map_err(ErrorPayload::from)
 }
