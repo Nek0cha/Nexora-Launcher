@@ -335,7 +335,7 @@
       "resourcepack": "Resource packs",
       "shader": "Shaders"
     },
-    "running": "You can't change content while the game is running.",
+    "busy": "You can't change content while the instance is running, installing or being duplicated.",
     "excluded": "Not covered by this filter: {{count}}",
     "excludedShow": "Show",
     "excludedHide": "Hide",

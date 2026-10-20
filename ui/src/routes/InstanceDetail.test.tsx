@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addContentFiles,
   identifyContent,
   listContent,
   listContentCategories,
@@ -12,13 +13,16 @@ import {
   systemMemoryMb,
   updateInstance,
 } from "../api/commands";
-import { onFilesDropped } from "../api/dragDrop";
+import { type DragDropHandlers, onFilesDropped } from "../api/dragDrop";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
+import type { ContentItem } from "../bindings/ContentItem";
 import type { RunningSession } from "../bindings/RunningSession";
+import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { ToastRegion } from "../components/toast/ToastRegion";
 import { clearToasts } from "../components/toast/useToast";
 import { RUNNING_KEY } from "../features/play/useGameSync";
+import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
 import InstanceDetail from "./InstanceDetail";
 
@@ -47,7 +51,10 @@ const instance = (patch: Partial<Instance> = {}): Instance => ({
   ...patch,
 });
 
-function mount(list: Instance[], { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null } = {}) {
+function mount(
+  list: Instance[],
+  { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null, tasks = [] as TaskSnapshot[] } = {},
+) {
   // null は物理メモリの取得に失敗する場合
   if (totalMb === null) vi.mocked(systemMemoryMb).mockRejectedValue(new Error("no memory"));
   else vi.mocked(systemMemoryMb).mockResolvedValue(totalMb);
@@ -55,6 +62,7 @@ function mount(list: Instance[], { id = "i1", running = [] as RunningSession[], 
   vi.mocked(listRunning).mockResolvedValue(running);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   client.setQueryData(RUNNING_KEY, running);
+  client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[`/instances/${id}`]}>
@@ -311,6 +319,57 @@ describe("InstanceDetail", () => {
     await press(screen.getByRole("tab", { name: "Content" }));
     await press(screen.getByRole("tab", { name: "Settings" }));
     expect((nameInput() as HTMLInputElement).value).toBe("Creative");
+  });
+
+  describe("content is locked while the instance is busy", () => {
+    const sodium: ContentItem = {
+      kind: "mod", relPath: "sodium.jar", fileName: "sodium.jar", enabled: true, size: 1, sha1: "s1",
+      provider: "local", projectId: null, versionId: null, pinned: false, installedAs: "explicit",
+      name: "Sodium", versionNumber: null, description: null, iconUrl: null, hasLocalIcon: false,
+      clientSide: null, serverSide: null, categories: [], dependencies: [], identified: false,
+    };
+    const duplicateTask: TaskSnapshot = {
+      id: "d1", kind: "duplicate", instanceId: "i1", state: "running", phase: null, progress: { current: 1, total: 2 },
+      revision: 1, error: null, createdAt: 0, updatedAt: 0,
+    };
+
+    async function openContent(options: Parameters<typeof mount>[1], list = [instance()]) {
+      let handlers: DragDropHandlers | null = null;
+      vi.mocked(listContent).mockImplementation(async (_id, kind) => (kind === "mod" ? [sodium] : []));
+      vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+      vi.mocked(listContentCategories).mockResolvedValue([]);
+      vi.mocked(onFilesDropped).mockImplementation(async (h) => {
+        handlers = h;
+        return () => {};
+      });
+      mount(list, options);
+      await press(await screen.findByRole("tab", { name: "Content" }));
+      await screen.findByRole("button", { name: "Enable Sodium" });
+      await waitFor(() => expect(handlers).not.toBeNull());
+      return handlers!;
+    }
+
+    async function expectLocked(handlers: DragDropHandlers) {
+      expect(screen.getByText(/You can't change content while/)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
+      await act(async () => handlers.drop(["C:\\Downloads\\a.jar"]));
+      expect(addContentFiles).not.toHaveBeenCalled();
+    }
+
+    it("while installing", async () => {
+      await expectLocked(await openContent({}, [instance({ state: "installing" })]));
+    });
+
+    it("while a duplicate task is active", async () => {
+      await expectLocked(await openContent({ tasks: [duplicateTask] }));
+    });
+
+    it("but not after the duplicate task finished", async () => {
+      await openContent({ tasks: [{ ...duplicateTask, state: "succeeded" }] });
+      expect(screen.queryByText(/You can't change content while/)).toBeNull();
+      expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(false);
+    });
   });
 
   it("folder_open_failure_is_a_toast", async () => {

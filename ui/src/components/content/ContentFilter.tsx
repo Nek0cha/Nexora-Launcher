@@ -63,15 +63,36 @@ function ChipGroup<T extends string>(props: {
   );
 }
 
+/** 名前で絞り込む入力。絞り込みの部品の中にも、一覧の上の行にも置ける。 */
+export function ContentSearchField(props: { value: string; onChange: (query: string) => void; className?: string }) {
+  const { t } = useTranslation();
+  return (
+    <SearchField
+      aria-label={t("content.filter.search")}
+      value={props.value}
+      onChange={props.onChange}
+      className={`relative flex items-center ${props.className ?? ""}`}
+    >
+      <IconSearch aria-hidden className="pointer-events-none absolute left-3 size-4 text-text-muted" />
+      <Input
+        placeholder={t("content.filter.search")}
+        className={`${inputBase} w-full pl-9 [&::-webkit-search-cancel-button]:hidden`}
+      />
+    </SearchField>
+  );
+}
+
 /**
  * 絞り込みの部品。一覧には依存しない（5-4 の検索画面でも使う）。
  * `categories` が null（取得できない）ならカテゴリを、`showStatus` が偽なら状態を出さない。
+ * `showSearch` が偽なら名前の入力を出さない（呼び出し側が ContentSearchField を別の場所に置く）。
  */
 export function ContentFilter(props: {
   state: FilterState;
   onChange: (next: FilterState) => void;
   categories: string[] | null;
   showStatus: boolean;
+  showSearch?: boolean;
 }) {
   const { t } = useTranslation();
   const { state, onChange } = props;
@@ -79,18 +100,9 @@ export function ContentFilter(props: {
 
   return (
     <div className="flex flex-col gap-4">
-      <SearchField
-        aria-label={t("content.filter.search")}
-        value={state.query}
-        onChange={(query) => onChange({ ...state, query })}
-        className="relative flex items-center"
-      >
-        <IconSearch aria-hidden className="pointer-events-none absolute left-3 size-4 text-text-muted" />
-        <Input
-          placeholder={t("content.filter.search")}
-          className={`${inputBase} w-full pl-9 [&::-webkit-search-cancel-button]:hidden`}
-        />
-      </SearchField>
+      {(props.showSearch ?? true) && (
+        <ContentSearchField value={state.query} onChange={(query) => onChange({ ...state, query })} />
+      )}
       <ChipGroup
         label={t("content.filter.client")}
         options={sideOptions}

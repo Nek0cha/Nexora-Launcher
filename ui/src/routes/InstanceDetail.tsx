@@ -36,7 +36,9 @@ import {
 } from "../features/instances/settingsForm";
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
+import { activeDuplicate } from "../features/instances/duplicateState";
 import { useRunning } from "../features/play/useGameSync";
+import { useTasks } from "../features/tasks/useTasks";
 import { ContentTab } from "./ContentTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -87,6 +89,7 @@ export default function InstanceDetail() {
   const { id } = useParams();
   const { data, error } = useInstances();
   const running = useRunning();
+  const tasks = useTasks();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
   const [tab, setTab] = useState<DetailTab>("settings");
@@ -116,6 +119,9 @@ export default function InstanceDetail() {
     );
 
   const isRunning = running?.some((s) => s.instanceId === instance.id) ?? false;
+  // コンテンツを変えられないのは、起動中、インストール中、複製中（複製元として読まれている）のとき
+  const contentLocked =
+    isRunning || instance.state === "installing" || activeDuplicate(tasks, instance.id) !== undefined;
 
   // コンテンツのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
   const layout = tab === "content" ? "h-full min-h-[34rem] max-w-5xl" : "max-w-2xl";
@@ -172,7 +178,7 @@ export default function InstanceDetail() {
         </TabPanel>
         {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
         <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
-          <ContentTab key={instance.id} instance={instance} running={isRunning} />
+          <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
         </TabPanel>
       </Tabs>
     </div>

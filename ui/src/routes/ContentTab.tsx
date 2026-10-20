@@ -9,7 +9,7 @@ import type { ContentKind } from "../bindings/ContentKind";
 import type { Instance } from "../bindings/Instance";
 import type { RejectReason } from "../bindings/RejectReason";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ContentFilter } from "../components/content/ContentFilter";
+import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
 import { ContentList } from "../components/content/ContentList";
 import { ROW_SIZE } from "../components/content/ContentRow";
 import { FailureNotice } from "../components/FailureNotice";
@@ -70,9 +70,9 @@ function baseName(path: string): string {
 
 /**
  * インスタンスの詳細の「コンテンツ」タブ（spec 5.2〜5.7）。MOD、リソースパック、シェーダーのサブタブに分け、
- * 有効無効、削除、ドロップによる追加を行う。起動中（`running`）は変更できない。
+ * 有効無効、削除、ドロップによる追加を行う。起動中、インストール中、複製中（`busy`）は変更できない。
  */
-export function ContentTab({ instance, running }: { instance: Instance; running: boolean }) {
+export function ContentTab({ instance, busy: locked }: { instance: Instance; busy: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [kind, setKind] = useState<ContentKind>("mod");
@@ -107,7 +107,7 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
 
   // 一覧の行とドロップの受け口は 1 度だけ作るので、最新の値はここから読む
   const latest = useRef({
-    running,
+    locked,
     kind,
     dialogOpen,
     mods: [] as ContentItem[],
@@ -118,7 +118,7 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
   });
   useLayoutEffect(() => {
     latest.current = {
-      running,
+      locked,
       kind,
       dialogOpen,
       mods: lists.mod.data ?? [],
@@ -165,7 +165,7 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
   // 行の操作。行を描き直さずに済むよう、関数は作り直さない
   const onToggle = useCallback(
     (item: ContentItem) => {
-      if (latest.current.running) return;
+      if (latest.current.locked) return;
       // 依存の警告は MOD を無効にするときだけ。有効にするときは警告しない
       if (item.kind === "mod" && item.enabled) {
         const dependents = dependentsOf(latest.current.mods, item);
@@ -181,7 +181,7 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
   );
 
   const onRemove = useCallback((item: ContentItem) => {
-    if (latest.current.running) return;
+    if (latest.current.locked) return;
     const dependents = item.kind === "mod" ? dependentsOf(latest.current.mods, item) : [];
     setDialog({ type: "remove", item, dependents });
     setDialogOpen(true);
@@ -189,7 +189,7 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
 
   // ファイルのドロップ。受け口はウィンドウ全体に 1 つなので、開いているサブタブの種類で追加する
   useEffect(() => {
-    const blocked = () => latest.current.running || latest.current.dialogOpen || adding.current;
+    const blocked = () => latest.current.locked || latest.current.dialogOpen || adding.current;
     let disposed = false;
     let unlisten: (() => void) | null = null;
     onFilesDropped({
@@ -219,6 +219,11 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
 
   const confirm = () => {
     if (!dialog) return;
+    // 確認の間に起動やインストールが始まったときは、何もせずに閉じる
+    if (locked) {
+      closeDialog();
+      return;
+    }
     if (dialog.type === "disable") {
       closeDialog();
       toggle(dialog.item);
@@ -234,11 +239,11 @@ export function ContentTab({ instance, running }: { instance: Instance; running:
     }
   };
 
-  const busy = running || setEnabled.isPending || remove.isPending;
+  const busy = locked || setEnabled.isPending || remove.isPending;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-4">
-      {running && <Notice tone="info">{t("content.running")}</Notice>}
+      {locked && <Notice tone="info">{t("content.busy")}</Notice>}
       <Tabs
         selectedKey={kind}
         onSelectionChange={(key) => setKind(key as ContentKind)}
@@ -309,6 +314,10 @@ function KindPanel(props: {
   const items = query.data;
   const { visible, excluded } = useMemo(() => applyFilter(items ?? [], filter), [items, filter]);
   const metadata = isMetadataFiltered(filter);
+  // メタデータの絞り込みを外したら、対象外の行を閉じた状態に戻す（付け直したときにいきなり開かない）
+  useEffect(() => {
+    if (!metadata) setShowExcluded(false);
+  }, [metadata]);
 
   // 操作の直後の取り直しの失敗では、手元の一覧を使い続ける。何も無いときだけ失敗を出す
   if (!items && query.error)
@@ -321,16 +330,25 @@ function KindPanel(props: {
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
-      {/* 絞り込みは左の列に置く（Modrinth の検索画面と同じ並び）。長いときはこの列の中でスクロールする */}
-      <div className="scroll-thin min-h-0 overflow-auto pr-1">
+      {/* 項目の絞り込みは左の列に置く（Modrinth の検索画面と同じ並び）。長いときはこの列の中でスクロールする */}
+      <div data-testid="content-facets" className="scroll-thin min-h-0 overflow-auto pr-1">
         <ContentFilter
           state={filter}
           onChange={props.onFilterChange}
           categories={categories.data ?? null}
           showStatus
+          showSearch={false}
         />
       </div>
       <div className="flex min-h-0 flex-col gap-2">
+        {/* 一覧の上の行。名前の入力を置く（5-4 で「Modrinth から追加」などのボタンもここに並べる） */}
+        <div className="flex shrink-0 items-center gap-2 pb-1">
+          <ContentSearchField
+            value={filter.query}
+            onChange={(query) => props.onFilterChange({ ...filter, query })}
+            className="min-w-0 flex-1"
+          />
+        </div>
         {metadata && excluded.length > 0 && (
           <div className="flex items-center gap-3 px-3 text-sm text-text-muted">
             <span>{t("content.excluded", { count: excluded.length })}</span>

@@ -335,7 +335,7 @@
       "resourcepack": "リソースパック",
       "shader": "シェーダー"
     },
-    "running": "ゲームの起動中は変更できません。",
+    "busy": "起動中、インストール中、複製中のインスタンスは変更できません。",
     "excluded": "絞り込みの対象外 {{count}} 件",
     "excludedShow": "表示",
     "excludedHide": "隠す",

@@ -115,14 +115,16 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function mount(running = false) {
+function mount(busy = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(
+  const tree = (b: boolean) => (
     <QueryClientProvider client={client}>
-      <ContentTab instance={instance} running={running} />
+      <ContentTab instance={instance} busy={b} />
       <ToastRegion />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const { rerender } = render(tree(busy));
+  return { setBusy: (b: boolean) => rerender(tree(b)) };
 }
 
 const subTab = (name: RegExp) => screen.getByRole("tab", { name });
@@ -230,10 +232,10 @@ describe("ContentTab", () => {
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
   });
 
-  it("controls and drops are disabled while the instance is running", async () => {
+  it("controls and drops are disabled while the instance is busy", async () => {
     mount(true);
     await ready();
-    expect(screen.getByText("You can't change content while the game is running.")).toBeTruthy();
+    expect(screen.getByText("You can't change content while the instance is running, installing or being duplicated.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
     act(() => handlers!.enter());
@@ -291,6 +293,49 @@ describe("ContentTab", () => {
     act(() => handlers!.enter());
     await act(async () => handlers!.drop(["C:\\Downloads\\a.jar"]));
     expect(screen.queryByText("Drop here to add")).toBeNull();
+  });
+
+  it("confirming after the instance became busy skips the change and closes the dialog", async () => {
+    const { setBusy } = mount();
+    await ready();
+    await press(screen.getByRole("button", { name: "Remove Sodium" }));
+    const dialog = await screen.findByRole("alertdialog");
+    setBusy(true);
+    await press(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(removeContent).not.toHaveBeenCalled();
+    setBusy(false);
+    await press(screen.getByRole("button", { name: "Enable Fabric API" }));
+    const warn = await screen.findByRole("alertdialog");
+    setBusy(true);
+    await press(within(warn).getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(setContentEnabled).not.toHaveBeenCalled();
+  });
+
+  it("the name search sits above the list, outside the facet column", async () => {
+    mount();
+    await ready();
+    const search = screen.getByRole("searchbox", { name: "Filter by name" });
+    const facets = screen.getByTestId("content-facets");
+    expect(facets.contains(screen.getByRole("toolbar", { name: "Client side" }))).toBe(true);
+    expect(facets.contains(search)).toBe(false);
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+  });
+
+  it("the excluded rows close again when the metadata filter is cleared", async () => {
+    mount();
+    await ready();
+    const required = () =>
+      within(screen.getByRole("toolbar", { name: "Client side" })).getByRole("button", { name: "Required" });
+    fireEvent.click(required());
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(screen.getByRole("button", { name: "Enable Mystery" })).toBeTruthy();
+    // 絞り込みを外してからもう一度付けると、対象外の行は閉じた状態に戻る
+    fireEvent.click(required());
+    fireEvent.click(required());
+    expect(screen.getByRole("button", { name: "Show" })).toBeTruthy();
+    expect(screen.queryByRole("grid", { name: "Content not covered by this filter" })).toBeNull();
   });
 
   it("stops listening for drops when unmounted", async () => {

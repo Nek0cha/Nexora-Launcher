@@ -4,7 +4,9 @@ import { emptyFilter, type FilterState } from "../../features/content/contentFil
 import i18n from "../../i18n";
 import { ContentFilter } from "./ContentFilter";
 
-function mount(props: { state?: FilterState; categories?: string[] | null; showStatus?: boolean } = {}) {
+function mount(
+  props: { state?: FilterState; categories?: string[] | null; showStatus?: boolean; showSearch?: boolean } = {},
+) {
   const onChange = vi.fn<(next: FilterState) => void>();
   render(
     <ContentFilter
@@ -12,6 +14,7 @@ function mount(props: { state?: FilterState; categories?: string[] | null; showS
       onChange={onChange}
       categories={props.categories === undefined ? ["optimization", "adventure"] : props.categories}
       showStatus={props.showStatus ?? true}
+      showSearch={props.showSearch}
     />,
   );
   return onChange;
@@ -30,6 +33,12 @@ describe("ContentFilter", () => {
     const onChange = mount();
     fireEvent.change(screen.getByRole("searchbox", { name: "Filter by name" }), { target: { value: "sod" } });
     expect(onChange).toHaveBeenLastCalledWith({ ...emptyFilter, query: "sod" });
+  });
+
+  it("can leave out the search box", () => {
+    mount({ showSearch: false });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getByRole("toolbar", { name: "Client side" })).toBeTruthy();
   });
 
   it("toggling a category emits it", () => {
