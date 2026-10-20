@@ -33,7 +33,18 @@
     "launchingPercent": "起動中 {{percent}}%",
     "stop": "停止",
     "forceStop": "強制終了",
-    "waitingExit": "終了を待っています"
+    "waitingExit": "終了を待っています",
+    "step": {
+      "resolving": "情報を取得中",
+      "verifying": "ファイルを確認中",
+      "verifyingPercent": "ファイルを確認中 {{percent}}%",
+      "downloading": "ダウンロード中",
+      "downloadingPercent": "ダウンロード中 {{percent}}%",
+      "buildingLoader": "ローダーを構築中",
+      "buildingLoaderCount": "ローダーを構築中 {{done}}/{{total}}",
+      "finishing": "仕上げ中",
+      "launching": "起動中"
+    }
   },
   "create": {
     "open": "インスタンスを作成",

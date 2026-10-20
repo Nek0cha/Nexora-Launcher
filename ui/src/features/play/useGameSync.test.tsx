@@ -108,7 +108,7 @@ describe("useGameSync", () => {
     await flush();
     invalidate.mockClear();
     const done: TaskSnapshot = {
-      id: "t1", kind: "install", instanceId: "i1", state: "succeeded", progress: { current: 1, total: 1 },
+      id: "t1", kind: "install", instanceId: "i1", state: "succeeded", phase: null, progress: { current: 1, total: 1 },
       revision: 1, error: null, createdAt: 0, updatedAt: 1,
     };
     await act(async () => {

@@ -48,7 +48,7 @@ function setTask(id: string, state: TaskSnapshot["state"], error: ErrorPayload |
   act(() => {
     client.setQueryData(TASKS_KEY, (t: Record<string, TaskSnapshot> | undefined) => ({
       ...t,
-      [id]: { id, kind: "login", instanceId: null, state, progress: { current: 0, total: 0 }, revision: 1, error, createdAt: 0, updatedAt: 0 },
+      [id]: { id, kind: "login", instanceId: null, state, phase: null, progress: { current: 0, total: 0 }, revision: 1, error, createdAt: 0, updatedAt: 0 },
     }));
   });
 }

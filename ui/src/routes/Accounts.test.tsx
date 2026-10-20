@@ -197,7 +197,7 @@ describe("Accounts", () => {
 
     act(() => {
       client.setQueryData(TASKS_KEY, {
-        L1: { id: "L1", kind: "login", instanceId: null, state: "succeeded", progress: { current: 0, total: 0 }, revision: 1, error: null, createdAt: 0, updatedAt: 0 },
+        L1: { id: "L1", kind: "login", instanceId: null, state: "succeeded", phase: null, progress: { current: 0, total: 0 }, revision: 1, error: null, createdAt: 0, updatedAt: 0 },
       });
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

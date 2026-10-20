@@ -41,7 +41,7 @@ const instance = (id: string, name: string, patch: Partial<Instance> = {}): Inst
 });
 
 const duplicateTask = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
-  id: "d1", kind: "duplicate", instanceId: "i1", state: "running", progress: { current: 40, total: 100 },
+  id: "d1", kind: "duplicate", instanceId: "i1", state: "running", phase: null, progress: { current: 40, total: 100 },
   revision: 1, error: null, createdAt: 0, updatedAt: 0, ...patch,
 });
 
@@ -68,7 +68,7 @@ const row = (name: string) => screen.findByRole("listitem", { name });
 const toasts = () => screen.getByRole("region", { name: "Notifications" });
 
 const launchTask = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
-  id: "l1", kind: "launch", instanceId: "i1", state: "running", progress: { current: 10, total: 100 },
+  id: "l1", kind: "launch", instanceId: "i1", state: "running", phase: null, progress: { current: 10, total: 100 },
   revision: 1, error: null, createdAt: 0, updatedAt: 0, ...patch,
 });
 

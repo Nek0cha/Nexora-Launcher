@@ -26,7 +26,7 @@ function mount() {
 }
 
 const snapshot = (id: string, state: TaskSnapshot["state"], error: TaskSnapshot["error"] = null): TaskSnapshot => ({
-  id, kind: "login", instanceId: null, state, progress: { current: 0, total: 0 }, revision: 1, error,
+  id, kind: "login", instanceId: null, state, phase: null, progress: { current: 0, total: 0 }, revision: 1, error,
   createdAt: 0, updatedAt: 0,
 });
 

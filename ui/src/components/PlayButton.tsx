@@ -24,6 +24,7 @@ import { loginPrompt } from "../features/login/loginState";
 import { useLastExits, useRunning } from "../features/play/useGameSync";
 import { usePlay } from "../features/play/usePlay";
 import { useStopFlow } from "../features/play/useStopFlow";
+import { phaseKey, phaseLabel, type PhaseLabel, type ProgressView } from "../features/tasks/taskTable";
 import { useTasks } from "../features/tasks/useTasks";
 import { FailureNotice } from "./FailureNotice";
 import { useToast } from "./toast/useToast";
@@ -61,24 +62,45 @@ function formatElapsed(ms: number): string {
 
 const NUMBER_MARK = "\u0000";
 
-/** 「準備中 37%」の数字だけを等幅にし、2 桁分の幅を確保して、桁が変わっても文字が動かないようにする（100% は完了の表示に変わる）。 */
-function PreparingLabel({ percent, labelKey }: { percent: number; labelKey: "play.preparingPercent" | "play.launchingPercent" }) {
+/**
+ * 「ダウンロード中 37%」「ローダーを構築中 2/5」の数字だけを等幅にし、桁が変わっても文字が動かないようにする。
+ * % は 2 桁分の幅を確保する（100% は完了の表示に変わる）。
+ * 一覧の行の小さなボタン（small）では、段階の名前と数が 1 行に収まるよう文字を小さくする。
+ */
+function PreparingLabel({ label, small }: { label: PhaseLabel; small: boolean }) {
   const { t } = useTranslation();
-  const [before, after = ""] = t(labelKey, { percent: NUMBER_MARK }).split(NUMBER_MARK);
+  const names = Object.keys(label.values);
+  const marked = Object.fromEntries(names.map((name, i) => [name, `${NUMBER_MARK}${i}${NUMBER_MARK}`]));
+  // 印で挟んだ番号のところで分ける。奇数番目が数の番号になる
+  const parts = String(t(label.key as never, marked as never)).split(NUMBER_MARK);
   return (
-    <span>
-      {before}
-      <span className="tabular inline-block min-w-[2ch] text-right">{percent}</span>
-      {after}
+    <span className={`whitespace-nowrap ${small ? "text-xs" : ""}`}>
+      {parts.map((part, i) => {
+        if (i % 2 === 0) return part;
+        const name = names[Number(part)] ?? "";
+        return (
+          <span key={i} className={`tabular inline-block text-right ${name === "percent" ? "min-w-[2ch]" : ""}`}>
+            {label.values[name]}
+          </span>
+        );
+      })}
     </span>
+  );
+}
+
+/** 段階の無いタスクは、インストールと起動で文言を分けた % で見せる。 */
+function labelOf(phase: Phase, progress: ProgressView): PhaseLabel {
+  return (
+    phaseLabel(progress) ?? {
+      key: phase === "install" ? "play.preparingPercent" : "play.launchingPercent",
+      values: { percent: progress.percent ?? 0 },
+    }
   );
 }
 
 // 重ねた層。同じマスに置き、不透明度を既存の長さとイージングで切り替える
 const layer =
   "col-start-1 row-start-1 transition-opacity duration-(--duration-fast) ease-out-quint motion-reduce:transition-none";
-
-const phaseLabelKey = (phase: Phase) => (phase === "install" ? "play.preparingPercent" : "play.launchingPercent");
 
 export function PlayButton({
   instance,
@@ -118,14 +140,23 @@ export function PlayButton({
     const a = announcement(prev.current, state, snapshot?.state);
     prev.current = state;
     if (!a) return;
-    setMessage(a.key === "play.announce.progress" ? t(a.key, { percent: a.percent }) : t(a.key));
+    setMessage(
+      a.key === "play.announce.progress"
+        ? t(a.key, { percent: a.percent })
+        : a.key === "play.announce.phase"
+          ? t(phaseKey(a.phase) as never)
+          : t(a.key),
+    );
   }, [state, snapshot?.state, t]);
 
   // キャンセルを送ってから応答が来るまでも「キャンセルしています」として扱い、重ねて送らない
   const view: PlayState =
     state.kind === "preparing" && cancel.isPending ? { ...state, kind: "cancelling" } : state;
   const active = view.kind === "preparing" || view.kind === "cancelling";
-  const percent = active ? view.percent : 0;
+  const percent = active ? view.progress.percent : null;
+  // 全体の分からない段階（情報の取得、ローダーの構築、仕上げなど）では、バーは動きだけで進んでいることを示す
+  const indeterminate = active && percent === null;
+  const label = view.kind === "preparing" ? labelOf(view.phase, view.progress) : null;
   // 押しても何も起きない状態。isDisabled にするとフォーカスが外れるため、フォーカスは残して押下だけを無視する
   const inert =
     view.kind === "cancelling" || view.kind === "checking" || (view.kind === "playing" && stop === "waiting");
@@ -209,7 +240,7 @@ export function PlayButton({
           : null;
 
   // 進捗の面は準備中だけ見せる。完了では満ちた位置のまま消し、キャンセルと失敗では巻き戻しながら消す
-  const fillScale = active ? percent / 100 : view.kind === "playing" ? 1 : 0;
+  const fillScale = active ? (percent ?? 0) / 100 : view.kind === "playing" ? 1 : 0;
 
   return (
     <div className={`flex flex-col gap-3 ${row ? "items-end" : "items-start"}`}>
@@ -249,9 +280,12 @@ export function PlayButton({
             <>
               <span
                 aria-hidden
+                data-testid="play-fill"
+                data-indeterminate={indeterminate || undefined}
                 className="play-fill absolute inset-0 bg-accent"
-                style={{ transform: `scaleX(${fillScale})`, opacity: active ? 1 : 0 }}
+                style={{ transform: `scaleX(${indeterminate ? 0 : fillScale})`, opacity: active ? 1 : 0 }}
               />
+              {indeterminate && <span aria-hidden className="play-indeterminate absolute inset-y-0 left-0 bg-accent" />}
               <span
                 aria-hidden
                 className={`relative flex items-center justify-center gap-2 ${active ? "text-accent-ink" : ""}`}
@@ -292,8 +326,8 @@ export function PlayButton({
                       </span>
                     )}
                   </span>
-                ) : view.kind === "preparing" ? (
-                  <PreparingLabel percent={percent} labelKey={phaseLabelKey(view.phase)} />
+                ) : label ? (
+                  <PreparingLabel label={label} small={row} />
                 ) : (
                   <>
                     {Icon && <Icon className={row ? "size-4" : "size-5"} />}
@@ -305,9 +339,9 @@ export function PlayButton({
           );
         }}
       </Button>
-      {view.kind === "preparing" && (
+      {label && (
         <span id={describedBy} className="sr-only">
-          {t(phaseLabelKey(view.phase), { percent })}
+          {t(label.key as never, label.values)}
         </span>
       )}
       {view.kind === "playing" && (

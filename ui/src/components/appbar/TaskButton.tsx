@@ -1,9 +1,9 @@
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconDownload from "~icons/ph/download-simple";
-import { activeCount, isTerminal } from "../../features/tasks/taskTable";
+import { activeCount, isTerminal, progressView } from "../../features/tasks/taskTable";
 import { useTasks } from "../../features/tasks/useTasks";
-import { percentOf, TaskList } from "../TaskList";
+import { TaskList } from "../TaskList";
 
 const popoverClass = [
   "scroll-thin max-h-[28rem] w-80 overflow-auto rounded-lg border border-line bg-surface-2 p-2 shadow-float",
@@ -53,9 +53,12 @@ export function TaskButton() {
   const { t } = useTranslation();
   const tasks = useTasks();
   const count = activeCount(tasks);
-  const known = Object.values(tasks).filter((task) => !isTerminal(task) && task.progress.total > 0);
-  const percent =
-    known.length > 0 ? Math.floor(known.reduce((sum, task) => sum + percentOf(task), 0) / known.length) : null;
+  // 全体の分かる段階のタスクだけを平均する（ローダーの構築などは数えない）
+  const known = Object.values(tasks)
+    .filter((task) => !isTerminal(task))
+    .map((task) => progressView(task).percent)
+    .filter((percent): percent is number => percent !== null);
+  const percent = known.length > 0 ? Math.floor(known.reduce((sum, p) => sum + p, 0) / known.length) : null;
   const label = count > 0 ? t("tasks.runningLabel", { count }) : t("tasks.title");
 
   return (

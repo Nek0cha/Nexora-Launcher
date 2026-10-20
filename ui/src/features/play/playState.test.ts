@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Instance } from "../../bindings/Instance";
+import type { TaskPhase } from "../../bindings/TaskPhase";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
 import { announcement, latestInstanceTask, playStateFrom, type PlayInputs } from "./playState";
 
@@ -12,7 +13,7 @@ const instance: Instance = {
 
 function task(state: TaskSnapshot["state"], extra: Partial<TaskSnapshot> = {}): TaskSnapshot {
   return {
-    id: "t1", kind: "launch", instanceId: "i1", state, progress: { current: 25, total: 100 },
+    id: "t1", kind: "launch", instanceId: "i1", state, phase: null, progress: { current: 25, total: 100 },
     revision: 1, error: null, createdAt: 0, updatedAt: 1000, ...extra,
   };
 }
@@ -37,12 +38,21 @@ describe("playStateFrom", () => {
     expect(playStateFrom(inputs({ instance: { ...instance, state: "installing" } }))).toEqual({ kind: "needsInstall" });
   });
   it("shows install and launch progress with their phase", () => {
+    const progress = { phase: null, percent: 25, count: null };
     expect(playStateFrom(inputs({ task: task("running", { kind: "install" }) })))
-      .toEqual({ kind: "preparing", phase: "install", percent: 25, taskId: "t1" });
+      .toEqual({ kind: "preparing", phase: "install", progress, taskId: "t1" });
     expect(playStateFrom(inputs({ task: task("queued") })))
-      .toEqual({ kind: "preparing", phase: "launch", percent: 25, taskId: "t1" });
+      .toEqual({ kind: "preparing", phase: "launch", progress, taskId: "t1" });
     expect(playStateFrom(inputs({ task: task("cancelling") })))
-      .toEqual({ kind: "cancelling", phase: "launch", percent: 25, taskId: "t1" });
+      .toEqual({ kind: "cancelling", phase: "launch", progress, taskId: "t1" });
+  });
+  it("carries the task phase and its own progress", () => {
+    expect(playStateFrom(inputs({ task: task("running", { phase: "downloading", progress: { current: 63, total: 100 } }) })))
+      .toMatchObject({ kind: "preparing", progress: { phase: "downloading", percent: 63, count: null } });
+    expect(playStateFrom(inputs({ task: task("running", { phase: "building_loader", progress: { current: 2, total: 5 } }) })))
+      .toMatchObject({ kind: "preparing", progress: { phase: "building_loader", percent: null, count: { done: 2, total: 5 } } });
+    expect(playStateFrom(inputs({ task: task("running", { phase: "resolving", progress: { current: 0, total: 0 } }) })))
+      .toMatchObject({ kind: "preparing", progress: { phase: "resolving", percent: null, count: null } });
   });
   it("is playing while a session is running, even after the task succeeded", () => {
     const running = { instanceId: "i1", pid: 1, launchedAt: 500 };
@@ -78,15 +88,30 @@ describe("latestInstanceTask", () => {
 });
 
 describe("announcement", () => {
-  const preparing = { kind: "preparing", phase: "launch", percent: 0, taskId: "t1" } as const;
+  const preparing = {
+    kind: "preparing", phase: "launch", progress: { phase: null, percent: 0, count: null }, taskId: "t1",
+  } as const;
+  const at = (phase: TaskPhase, percent: number | null) =>
+    ({ ...preparing, progress: { phase, percent, count: null } });
   it("announces start, progress, playing, failure, crash and cancellation", () => {
     expect(announcement({ kind: "ready" }, preparing)).toEqual({ key: "play.announce.started" });
-    expect(announcement(preparing, { ...preparing, percent: 50 })).toEqual({ key: "play.announce.progress", percent: 50 });
+    expect(announcement(preparing, { ...preparing, progress: { ...preparing.progress, percent: 50 } }))
+      .toEqual({ key: "play.announce.progress", percent: 50 });
     expect(announcement(preparing, { kind: "playing", launchedAt: 0 })).toEqual({ key: "play.announce.playing" });
     expect(announcement(preparing, { kind: "failed", error: null })).toEqual({ key: "play.announce.failed" });
     expect(announcement({ kind: "playing", launchedAt: 0 }, { kind: "crashed", exitCode: 1 })).toEqual({ key: "play.announce.crashed" });
     expect(announcement(preparing, { kind: "ready" }, "cancelled")).toEqual({ key: "play.announce.cancelled" });
     expect(announcement(preparing, { kind: "ready" }, "succeeded")).toEqual({ key: "play.announce.done" });
     expect(announcement({ kind: "ready" }, { kind: "ready" })).toBeNull();
+  });
+  it("announces a new phase once, and quarter steps only within the same phase", () => {
+    expect(announcement(at("verifying", 80), at("downloading", 0))).toEqual({ key: "play.announce.phase", phase: "downloading" });
+    // 段階が変わって数え直した直後の 25% は、前の段階の続きではない
+    expect(announcement(at("downloading", 0), at("downloading", 30))).toEqual({ key: "play.announce.progress", percent: 25 });
+    expect(announcement(at("downloading", 30), at("downloading", 40))).toBeNull();
+    expect(announcement(at("downloading", 90), at("building_loader", null))).toEqual({ key: "play.announce.phase", phase: "building_loader" });
+    expect(announcement(at("building_loader", null), at("building_loader", null))).toBeNull();
+    // 始めた知らせが先（段階の知らせは重ねない）
+    expect(announcement({ kind: "ready" }, at("resolving", null))).toEqual({ key: "play.announce.started" });
   });
 });

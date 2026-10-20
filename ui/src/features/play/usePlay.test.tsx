@@ -29,7 +29,7 @@ function setup(tasks: TaskSnapshot[] = []) {
 }
 
 const task = (kind: string, state: TaskSnapshot["state"], instanceId = "i1"): TaskSnapshot => ({
-  id: `${kind}-${instanceId}`, kind, instanceId, state, progress: { current: 1, total: 10 }, revision: 1,
+  id: `${kind}-${instanceId}`, kind, instanceId, state, phase: null, progress: { current: 1, total: 10 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0,
 });
 

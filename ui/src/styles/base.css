@@ -73,6 +73,19 @@ html[data-material="on"] {
     transform var(--duration-base) var(--ease-out-quint),
     opacity var(--duration-base) var(--ease-out-quint);
 }
+/* 全体の分からない段階のバー。帯を左から右へ流し続け、止まっていないことだけを示す */
+.play-indeterminate {
+  width: 40%;
+  animation: play-indeterminate 1.4s var(--ease-in-out-quart) infinite;
+}
+@keyframes play-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .play-press,
   .play-press[data-pressed]:not([aria-disabled="true"]) {
@@ -85,6 +98,12 @@ html[data-material="on"] {
   }
   .play-fill {
     transition: none;
+  }
+  /* 動かさず、面全体を薄く塗って進行中であることだけを示す */
+  .play-indeterminate {
+    width: 100%;
+    animation: none;
+    opacity: 0.4;
   }
 }
 

@@ -33,7 +33,18 @@
     "launchingPercent": "Launching {{percent}}%",
     "stop": "Stop",
     "forceStop": "Force stop",
-    "waitingExit": "Waiting for the game to close"
+    "waitingExit": "Waiting for the game to close",
+    "step": {
+      "resolving": "Fetching info",
+      "verifying": "Verifying files",
+      "verifyingPercent": "Verifying files {{percent}}%",
+      "downloading": "Downloading",
+      "downloadingPercent": "Downloading {{percent}}%",
+      "buildingLoader": "Building loader",
+      "buildingLoaderCount": "Building loader {{done}}/{{total}}",
+      "finishing": "Finishing",
+      "launching": "Launching"
+    }
   },
   "create": {
     "open": "Create instance",
