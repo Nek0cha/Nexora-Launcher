@@ -254,6 +254,22 @@ pub fn extract_maven(
     Ok(provided)
 }
 
+/// jar の中の 1 エントリを `dest` に展開する。既にあるファイルは上書きしない（同じ版の再導入のため）。
+/// 名前が安全でない、またはエントリが無ければ、何も書かずに `InvalidMetadata`。
+pub fn extract_entry_to(installer: &Path, entry: &str, dest: &Path) -> Result<(), CoreError> {
+    if !is_safe_relative(entry) {
+        return Err(invalid(format!(
+            "{}: entry {entry:?} has an unsafe path",
+            installer.display()
+        )));
+    }
+    let bytes = read_named(&mut open(installer)?, installer, entry)?;
+    if std::fs::symlink_metadata(dest).is_err() {
+        write_atomic(dest, &bytes)?;
+    }
+    Ok(())
+}
+
 /// `/data/client.lzma` のような資源を `dest_dir/<名前>` に展開してパスを返す。
 pub fn extract_resource(
     installer: &Path,
@@ -449,5 +465,39 @@ mod tests {
         make_jar(&jar, &[("data/client.lzma", b"ok")]);
         let err = extract_resource(&jar, "/data/server.lzma", &temp.path().join("w")).unwrap_err();
         assert_eq!(err.code(), "meta.invalid");
+    }
+
+    #[test]
+    fn extract_entry_to_writes_the_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let jar = temp.path().join("i.jar");
+        make_jar(&jar, &[("forge-x-universal.jar", b"jar"), ("other", b"no")]);
+        let dest = temp.path().join("libs/net/x/forge-x.jar");
+        extract_entry_to(&jar, "forge-x-universal.jar", &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"jar");
+    }
+
+    #[test]
+    fn extract_entry_to_keeps_an_existing_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let jar = temp.path().join("i.jar");
+        make_jar(&jar, &[("a.jar", b"new")]);
+        let dest = temp.path().join("a.jar.out");
+        std::fs::write(&dest, b"old").unwrap();
+        extract_entry_to(&jar, "a.jar", &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"old");
+    }
+
+    #[test]
+    fn extract_entry_to_rejects_unsafe_and_missing_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let jar = temp.path().join("i.jar");
+        make_jar(&jar, &[("../x", b"x"), ("ok.jar", b"ok")]);
+        let dest = temp.path().join("out/f.jar");
+        for name in ["../x", "/x", r"a", "C:/x", "", "missing.jar"] {
+            let err = extract_entry_to(&jar, name, &dest).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{name:?}");
+        }
+        assert!(!dest.exists());
     }
 }

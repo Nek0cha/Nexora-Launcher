@@ -71,6 +71,8 @@ pub struct LoaderProfile {
     pub inherits_from: String,
     pub main_class: String,
     pub arguments: Option<Arguments>,
+    /// 旧形式（1.12.2 以前の Forge）の起動引数。完全な置き換えで、`arguments` とは併用しない。
+    pub minecraft_arguments: Option<String>,
     #[serde(default)]
     pub libraries: Vec<Library>,
 }

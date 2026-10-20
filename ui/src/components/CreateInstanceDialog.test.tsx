@@ -33,7 +33,7 @@ const created: CreatedInstance = {
   taskId: "t1",
 };
 
-// ローダーのタブの試験に使う一覧。Forge は実物と同じく 1.16.5 以降だけ。Fabric はこの試験では 1.16.5 と 1.8.9 に対応しないものとする
+// ローダーのタブの試験に使う一覧。Forge は実物と同じく 1.8.9〜1.12.2 と 1.16.5 以降だけ。Fabric はこの試験では 1.16.5 と 1.8.9 に対応しないものとする
 const LOADER_TEST_VERSIONS = [
   { id: "1.21.5", releaseTime: "2025-03-25T00:00:00Z" },
   { id: "1.21.4", releaseTime: "2024-12-03T00:00:00Z" },

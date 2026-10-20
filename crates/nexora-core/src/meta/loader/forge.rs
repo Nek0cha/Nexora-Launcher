@@ -145,9 +145,10 @@ fn at_least(mc: &str, min: &[u64]) -> bool {
     parts >= min
 }
 
-/// Forge の対応範囲（1.16.5 以降。数で比べ、スナップショットは対象外）。
+/// Forge の対応範囲（1.16.5 以降と、旧形式の 1.8.9 以上 1.12.2 以下。数で比べ、スナップショットは対象外）。
+/// 1.7.10 以前は asset index が `legacy` で導入できず、1.13〜1.16.4 は対象にしない。
 pub fn forge_supported(mc: &str) -> bool {
-    at_least(mc, &[1, 16, 5])
+    at_least(mc, &[1, 16, 5]) || (at_least(mc, &[1, 8, 9]) && !at_least(mc, &[1, 12, 3]))
 }
 
 /// NeoForge の対応範囲（1.20.1 以降。数で比べ、スナップショットは対象外）。
@@ -272,7 +273,23 @@ mod tests {
     fn support_ranges() {
         assert!(forge_supported("1.16.5"));
         assert!(!forge_supported("1.16.4"));
-        assert!(!forge_supported("1.12.2"));
+        // 旧形式（1.8.9〜1.12.2）
+        for mc in [
+            "1.8.9", "1.9.4", "1.10.2", "1.11.2", "1.12", "1.12.1", "1.12.2",
+        ] {
+            assert!(forge_supported(mc), "{mc}");
+        }
+        for mc in [
+            "1.8",
+            "1.7.10",
+            "1.13",
+            "1.13.2",
+            "1.14.4",
+            "1.12.3",
+            "1.8.9-pre",
+        ] {
+            assert!(!forge_supported(mc), "{mc}");
+        }
         assert!(forge_supported("1.21.1"));
         assert!(forge_supported("1.21"));
         assert!(forge_supported("1.21.11"));
@@ -315,6 +332,23 @@ mod tests {
         );
         assert_eq!(
             code(LoaderKind::Neoforge, "1.20.1", "21.1.172"),
+            unsupported
+        );
+        // 旧形式
+        assert_eq!(
+            code(LoaderKind::Forge, "1.12.2", "1.12.2-14.23.5.2859"),
+            Ok(())
+        );
+        assert_eq!(
+            code(LoaderKind::Forge, "1.8.9", "1.8.9-11.15.1.2318-1.8.9"),
+            Ok(())
+        );
+        assert_eq!(
+            code(LoaderKind::Forge, "1.13.2", "1.13.2-25.0.219"),
+            unsupported
+        );
+        assert_eq!(
+            code(LoaderKind::Neoforge, "1.12.2", "1.12.2-14.23.5.2859"),
             unsupported
         );
         // Fabric と Quilt は確かめない

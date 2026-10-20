@@ -112,6 +112,14 @@ spec 0 の 5.3 節のとおり、インストーラを取得して展開し、`i
 - 実機で確認するバージョンは、1.8.9 と 1.12.2 を最優先とする。それ以外の 1.8.9〜1.12.2 は、導入できたものだけを選べるようにする（4.2 節と同じ扱い）。
 - NeoForge は 1.20.1 以降のみであり、旧形式の対象ではない。
 
+調査結果（2026-10-20、1.8.9 は 11.15.1.2318、1.12.2 は 14.23.5.2859 と 2864 のインストーラを取得して確認した）：
+
+- 1.8.9：`install_profile.json` は `install` と `versionInfo` が入れ子の旧形式。Forge 本体はインストーラ直下の universal jar（`install.filePath`）で、`install.path` の座標のライブラリとして置く。ライブラリは `downloads` を持たず、`url`（Forge の Maven）だけを持つか、`url` を持たない（Mojang の `libraries.minecraft.net` のもの）。`clientreq` が `false` のものがある。起動は LaunchWrapper と `--tweakClass FMLTweaker` で、引数は `minecraftArguments` の文字列。
+- 1.12.2：`spec: 0`、`processors` と `data` は空で、`version.json` が別ファイル。Forge 本体はインストーラの `maven/` にあり、`version.json` のライブラリは `downloads` を持つ（Forge 本体の `url` は空）。起動引数は `minecraftArguments` の文字列で、LaunchWrapper を使う。
+- したがって 1.12.2 は 5-2a の導入にほぼ乗り、1.8.9 だけが入れ子の旧形式のアダプターを必要とする。どちらも `minecraftArguments` を重ね合わせる処理が要る。
+- 1.8.9 より前（1.7.10 以前）は asset index が `legacy`（virtual）で、既存の `plan_game` が対応しないため対象外とする。
+- 1.8.9〜1.12.1 の中間ビルドの形式は未確認。
+
 ## 5. 5-3：コンテンツタブ
 
 ### 5.1 インスタンスの詳細の構成

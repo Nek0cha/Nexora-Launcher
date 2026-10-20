@@ -296,12 +296,13 @@ async fn lists_forge_game_versions() {
     let server = MockServer::start().await;
     serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
     let h = forge_harness(&server);
-    // 順序の当てにならない Maven から、重複なし、新しい順、対応範囲（1.16.5 以降、26.x を含む）
+    // 順序の当てにならない Maven から、重複なし、新しい順、対応範囲（1.16.5 以降と 1.8.9〜1.12.2、26.x を含む）
     assert_eq!(
         h.meta.game_versions(LoaderKind::Forge).await.unwrap(),
         vec![
             "26.3", "26.2", "26.1.2", "26.1", "1.21.11", "1.21.10", "1.21.8", "1.21.5", "1.21.4",
-            "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.16.5"
+            "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.16.5", "1.12.2", "1.11",
+            "1.10.2"
         ]
     );
 }
@@ -354,10 +355,23 @@ async fn forge_versions_with_the_real_promotions_fixture() {
         .await
         .unwrap();
     assert_eq!(flags(&v), vec![("1.20.1-47.3.0", false)]);
-    // 形の合わない版（1.10.2-...-failtests など）は黙って落とす。対応外の 1.12.2 は空
+    // 旧形式の 1.12.2 も一覧に出る（実物の recommended の 2859 は切り詰めた Maven に無い）。ビルド番号の新しい順
     let v = h
         .meta
         .loader_versions(LoaderKind::Forge, "1.12.2")
+        .await
+        .unwrap();
+    assert_eq!(
+        flags(&v),
+        vec![
+            ("1.12.2-14.23.5.2847", false),
+            ("1.12.2-14.23.4.2720-4627", false)
+        ]
+    );
+    // 対応範囲の外（1.13〜1.16.4）は空
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.14.4")
         .await
         .unwrap();
     assert!(v.is_empty(), "{v:?}");
