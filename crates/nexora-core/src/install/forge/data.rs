@@ -1,7 +1,7 @@
 //! `install_profile.json` の `data` を解決し、クライアントで実行する processor を計画する。副作用を持たない。
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::error::CoreError;
 use crate::install::forge::profile::InstallProfile;
@@ -116,10 +116,20 @@ struct Expanded {
     text: String,
     /// パスのトークンを 1 つ以上含む。
     has_path: bool,
-    /// 先頭が、`root` の中のパスに展開されたトークンである。
-    rooted: bool,
-    /// トークンの外の、profile が書いた部分。
-    literals: Vec<String>,
+    /// profile が書いた部分（トークンの外の文字列と、`'...'` などの文字列の値）の、
+    /// パスのトークンで区切られた連なり。値と文字列が続けて `..` を作る場合も 1 つとして見る。
+    profile_runs: Vec<String>,
+    /// 最初のパスのトークンより後に、profile が書いた部分があり、そこに `:` を含む。
+    colon_after_path: bool,
+}
+
+impl Expanded {
+    /// パスのトークンを含むとき、profile が書いた部分が `..` で上に出たり、
+    /// `:`（Windows のドライブや代替データストリーム）で別の場所を指したりしないか。
+    fn escapes(&self) -> bool {
+        self.has_path
+            && (self.colon_after_path || self.profile_runs.iter().any(|r| has_parent_segment(r)))
+    }
 }
 
 /// `[group:artifact:version[:classifier][@ext]]` の形なら、括弧の中身。
@@ -200,12 +210,23 @@ impl Resolver<'_> {
     }
 
     /// `{名前}` を（文字列のどこにあっても）1 回の走査で展開する。展開した値の中はもう一度展開しない。
+    /// パスに profile の文字列を続けたもの（`{ROOT}/run.sh`）は、Windows では `\` と `/` が混ざるが、
+    /// どちらも区切りとして扱われる。
     fn expand(&self, s: &str) -> Result<Expanded, CoreError> {
         let mut out = Expanded {
             text: String::new(),
             has_path: false,
-            rooted: false,
-            literals: Vec::new(),
+            profile_runs: Vec::new(),
+            colon_after_path: false,
+        };
+        let mut run = String::new();
+        // profile が書いた部分を足す
+        let push_profile = |out: &mut Expanded, run: &mut String, text: &str| {
+            if out.has_path && text.contains(':') {
+                out.colon_after_path = true;
+            }
+            run.push_str(text);
+            out.text.push_str(text);
         };
         let mut rest = s;
         while let Some(start) = rest.find('{') {
@@ -215,33 +236,30 @@ impl Resolver<'_> {
                     "install profile has an unclosed token in {s:?}"
                 )));
             };
-            out.literals.push(literal.into());
-            out.text.push_str(literal);
+            push_profile(&mut out, &mut run, literal);
             match self.token(&after[1..end])? {
                 Value::Path(path) => {
-                    if out.text.is_empty() {
-                        out.rooted = path.starts_with(self.ctx.root);
-                    }
+                    out.profile_runs.push(std::mem::take(&mut run));
                     out.has_path = true;
                     out.text.push_str(path_str(&path)?);
                 }
-                Value::Text(text) => out.text.push_str(&text),
+                Value::Text(text) => push_profile(&mut out, &mut run, &text),
             }
             rest = &after[end + 1..];
         }
-        out.literals.push(rest.into());
-        out.text.push_str(rest);
+        push_profile(&mut out, &mut run, rest);
+        out.profile_runs.push(run);
         Ok(out)
     }
 
     /// processor の引数。`[座標]` はライブラリのパスにし、パスのトークンを含むものは
-    /// profile が書いた部分に `..` が無いことを確かめる。パスでない引数はそのまま。
+    /// profile が書いた部分が上に出ないことを確かめる。パスのトークンを含まない引数はそのまま。
     fn argument(&self, arg: &str) -> Result<String, CoreError> {
         if let Some(coord) = coordinate(arg) {
             return Ok(path_str(&self.library(coord)?)?.to_string());
         }
         let expanded = self.expand(arg)?;
-        if expanded.has_path && expanded.literals.iter().any(|l| has_parent_segment(l)) {
+        if expanded.escapes() {
             return Err(invalid(format!(
                 "install profile argument {arg:?} leaves its directory"
             )));
@@ -249,17 +267,23 @@ impl Resolver<'_> {
         Ok(expanded.text)
     }
 
-    /// `outputs` のキー。`root` の中のパスでなければ `InvalidMetadata`。
+    /// `outputs` のキー。`root` の下の通常の区切りだけからなるパスでなければ `InvalidMetadata`。
+    /// `Path::starts_with` は `..` を解決しないため、`root` から先の各部分を確かめる。
     fn output_path(&self, key: &str) -> Result<PathBuf, CoreError> {
         if let Some(coord) = coordinate(key) {
             return self.library(coord);
         }
         let expanded = self.expand(key)?;
         let path = PathBuf::from(&expanded.text);
-        if !expanded.rooted
-            || expanded.literals.iter().any(|l| has_parent_segment(l))
-            || !path.starts_with(self.ctx.root)
-        {
+        let inside = !expanded.escapes()
+            && path.strip_prefix(self.ctx.root).is_ok_and(|rel| {
+                rel.components().next().is_some()
+                    && rel.components().all(|c| match c {
+                        Component::Normal(part) => part.to_str().is_some_and(|p| !p.contains(':')),
+                        _ => false,
+                    })
+            });
+        if !inside {
             return Err(invalid(format!(
                 "install profile output {key:?} is outside the shared directory"
             )));
@@ -692,6 +716,38 @@ mod tests {
             let err = plan_processors(&profile, &env.ctx()).unwrap_err();
             assert_eq!(err.code(), "meta.invalid", "{processor}");
         }
+        // `data` の引用符の値も profile が書いたもので、`..` や `:` を含めば root の外に出うる
+        let data = serde_json::json!({
+            "UP": {"client": "'..'", "server": ""},
+            "DOT": {"client": "'.'", "server": ""},
+            "ESC": {"client": "'/../x'", "server": ""},
+            "DRIVE": {"client": "'C:'", "server": ""},
+        });
+        for processor in [
+            serde_json::json!({"jar": "a:tool:1", "outputs": {"{ROOT}/{UP}/{UP}/evil.jar": ""}}),
+            serde_json::json!({"jar": "a:tool:1", "outputs": {"{ROOT}{ESC}": ""}}),
+            serde_json::json!({"jar": "a:tool:1", "outputs": {"{ROOT}/.{DOT}/x": ""}}),
+            serde_json::json!({"jar": "a:tool:1", "outputs": {"{ROOT}/{DRIVE}/x": ""}}),
+            serde_json::json!({"jar": "a:tool:1", "outputs": {"{ROOT}/a:b": ""}}),
+            serde_json::json!({"jar": "a:tool:1", "args": ["{ROOT}/{UP}/x"]}),
+            serde_json::json!({"jar": "a:tool:1", "args": ["--to={ROOT}{ESC}"]}),
+            serde_json::json!({"jar": "a:tool:1", "args": ["{ROOT}/.{DOT}/x"]}),
+            serde_json::json!({"jar": "a:tool:1", "args": ["{ROOT}/{DRIVE}/x"]}),
+            serde_json::json!({"jar": "a:tool:1", "args": ["{ROOT}/a:b"]}),
+        ] {
+            let profile = single(data.clone(), processor.clone());
+            let err = plan_processors(&profile, &env.ctx()).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{processor}");
+        }
+        // パスのトークンを含まない引数は、`..` を含む値を展開してもそのまま
+        let profile = single(
+            data,
+            serde_json::json!({"jar": "a:tool:1", "args": ["{UP}", "--from={UP}/x", "{DRIVE}"]}),
+        );
+        assert_eq!(
+            plan_processors(&profile, &env.ctx()).unwrap()[0].args,
+            ["..", "--from=../x", "C:"]
+        );
         // `data` の座標が壊れていても同じ
         let profile = single(
             serde_json::json!({"BAD": {"client": "[a:c:..]", "server": ""}}),
