@@ -52,6 +52,11 @@ fn read_entry(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// 先頭の UTF-8 BOM（EF BB BF）を外す。メモ帳などで保存されたメタデータに付いていることがある。
+fn strip_bom(bytes: &[u8]) -> &[u8] {
+    bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes)
+}
+
 /// png のシグネチャを持ち、1 MiB 以下のものだけ返す。
 fn read_icon(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
     let name = name.trim_start_matches("./").trim_start_matches('/');
@@ -70,7 +75,7 @@ fn clean_version(s: Option<&str>) -> Option<String> {
 
 fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
     if let Some(bytes) = read_entry(zip, "fabric.mod.json")
-        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
+        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(strip_bom(&bytes))
     {
         let icon = v.get("icon").and_then(|i| i.as_str()).map(String::from);
         return LocalMeta {
@@ -81,7 +86,7 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
         };
     }
     if let Some(bytes) = read_entry(zip, "quilt.mod.json")
-        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
+        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(strip_bom(&bytes))
     {
         let loader = v.get("quilt_loader");
         let meta = loader.and_then(|l| l.get("metadata"));
@@ -102,7 +107,7 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
         let Some(bytes) = read_entry(zip, entry) else {
             continue;
         };
-        let Ok(text) = String::from_utf8(bytes) else {
+        let Ok(text) = std::str::from_utf8(strip_bom(&bytes)) else {
             continue;
         };
         let Ok(table) = text.parse::<toml::Table>() else {
@@ -130,7 +135,7 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
 
 fn read_resource_pack(zip: &mut ZipArchive<File>) -> LocalMeta {
     let description = read_entry(zip, "pack.mcmeta")
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(strip_bom(&b)).ok())
         .and_then(|v| {
             let d = v.get("pack")?.get("description")?;
             let text = match d {
@@ -232,6 +237,69 @@ displayName = "Second"
             assert_eq!(m.version.as_deref(), Some("2.0"));
             assert_eq!(m.description.as_deref(), Some("Desc"));
             assert_eq!(m.icon_png.as_deref(), Some(icon.as_slice()));
+        }
+    }
+
+    fn with_bom(body: &[u8]) -> Vec<u8> {
+        let mut v = b"\xEF\xBB\xBF".to_vec();
+        v.extend_from_slice(body);
+        v
+    }
+
+    #[test]
+    fn reads_json_metadata_with_a_utf8_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let fabric = dir.path().join("f.jar");
+        make_zip(
+            &fabric,
+            &[("fabric.mod.json", &with_bom(br#"{"name":"Fab"}"#))],
+        );
+        assert_eq!(
+            read_local_meta(ContentKind::Mod, &fabric).name.as_deref(),
+            Some("Fab")
+        );
+
+        let quilt = dir.path().join("q.jar");
+        make_zip(
+            &quilt,
+            &[(
+                "quilt.mod.json",
+                &with_bom(br#"{"quilt_loader":{"metadata":{"name":"Qui"}}}"#),
+            )],
+        );
+        assert_eq!(
+            read_local_meta(ContentKind::Mod, &quilt).name.as_deref(),
+            Some("Qui")
+        );
+
+        let pack = dir.path().join("r.zip");
+        make_zip(
+            &pack,
+            &[(
+                "pack.mcmeta",
+                &with_bom(br#"{"pack":{"description":"Packed"}}"#),
+            )],
+        );
+        assert_eq!(
+            read_local_meta(ContentKind::ResourcePack, &pack)
+                .description
+                .as_deref(),
+            Some("Packed")
+        );
+    }
+
+    #[test]
+    fn reads_toml_metadata_with_a_utf8_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = with_bom(b"[[mods]]\ndisplayName = \"Tom\"\n");
+        for entry in ["META-INF/mods.toml", "META-INF/neoforge.mods.toml"] {
+            let p = dir.path().join("t.jar");
+            make_zip(&p, &[(entry, &body)]);
+            assert_eq!(
+                read_local_meta(ContentKind::Mod, &p).name.as_deref(),
+                Some("Tom"),
+                "{entry}"
+            );
         }
     }
 
