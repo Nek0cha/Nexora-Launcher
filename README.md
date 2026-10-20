@@ -14,12 +14,14 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - A running instance can be stopped from the launcher (a graceful close first, with a force-stop prompt if it does not exit); the app has its own title bar, toast notifications, a memory slider, and buttons that open an instance's folders
 - Fabric and Quilt instances can be created, installed and launched
 - Forge (Minecraft 1.8.9–1.12.2, 1.16.5–1.21.x and 26.x) and NeoForge (1.20.1–1.21.x and 26.x) instances can be created, installed and launched by the code. They are implemented and covered by automated tests that use a fake Java; verification on a real machine is still pending
+- An instance's content tab lists its mods, resource packs and shaders, which can be enabled, disabled, removed, filtered, and added by drag and drop; files are identified on Modrinth by their hash
 - Planned: legacy Forge (1.8.9 to 1.12.2), content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
 
 - Players sign in with their own Microsoft account in the system browser. The launcher uses the authorization code flow with PKCE, and does not use a client secret.
 - There is no backend server. All authentication happens on the player's device.
+- When an instance's content tab is opened, the launcher sends the SHA-1 hashes of the installed mods, resource packs and shaders to api.modrinth.com to identify them. These are read-only lookups and include no account data.
 - The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
 - Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
 - Release builds require an account that owns Minecraft: Java Edition.
@@ -37,7 +39,8 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
 - 独自のタイトルバー、トースト通知、メモリのスライダー、インスタンスのフォルダを開くボタンがあります。
 - インスタンスの詳細にコンテンツタブがあり、MOD、リソースパック、シェーダーを一覧できます。
   - 有効と無効を切り替えられます（ファイル名に `.disabled` を付け外しします）。ファイルのドラッグ＆ドロップで追加でき、削除もできます。
-  - 名前、クライアント／サーバー、カテゴリ、状態で絞り込めます。MOD は、ファイルのハッシュから Modrinth 上の情報を調べて表示します。
+  - 名前、クライアント／サーバー、カテゴリ、状態で絞り込めます。MOD、リソースパック、シェーダーは、ファイルのハッシュから Modrinth 上の情報を調べて表示します。
+  - コンテンツタブを開くと、入っている MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります（情報を読み取るだけで、アカウントの情報は送りません）。
   - Modrinth での検索、インストール、更新は次のフェーズ（5-4）で追加します。
 
 ## 開発環境
