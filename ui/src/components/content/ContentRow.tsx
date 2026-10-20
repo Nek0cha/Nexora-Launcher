@@ -46,22 +46,25 @@ const knobClass = [
 
 /** 行のアイコン。Modrinth の URL、jar の中のアイコン、既定の絵の順に使う。 */
 function RowIcon({ item }: { item: ContentItem }) {
-  // URL が読めなかった（オフラインなど）ときは既定の絵に戻す
-  const [failed, setFailed] = useState(false);
+  // URL が読めなかった（オフラインなど）ときは jar の中のアイコンへ、それも読めなければ既定の絵に戻す
+  const [remoteFailed, setRemoteFailed] = useState(false);
+  const [localFailed, setLocalFailed] = useState(false);
   const local = useQuery({
     queryKey: ["content-icon", item.sha1],
     queryFn: () => getContentIcon(item.sha1),
     staleTime: Infinity,
-    enabled: item.iconUrl === null && item.hasLocalIcon,
+    enabled: (item.iconUrl === null || remoteFailed) && item.hasLocalIcon,
   });
-  const src = item.iconUrl ?? local.data ?? null;
-  if (src !== null && !failed)
+  const remote = remoteFailed ? null : item.iconUrl;
+  const src = remote ?? (localFailed ? null : (local.data ?? null));
+  if (src !== null)
     return (
       <img
+        key={src}
         src={src}
         alt=""
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => (remote !== null ? setRemoteFailed(true) : setLocalFailed(true))}
         className="size-8 shrink-0 rounded-sm object-cover"
       />
     );

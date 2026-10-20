@@ -127,4 +127,18 @@ describe("ContentList", () => {
     expect(document.querySelector("img[src='https://cdn.example/b.png']")).not.toBeNull();
     expect(vi.mocked(getContentIcon).mock.calls).toEqual([["local"]]);
   });
+
+  it("falls back to the local icon when the icon URL fails to load", async () => {
+    vi.mocked(getContentIcon).mockClear();
+    mount([item({ sha1: "offline", iconUrl: "https://cdn.example/a.png", hasLocalIcon: true })]);
+    const remote = document.querySelector("img[src='https://cdn.example/a.png']");
+    expect(remote).not.toBeNull();
+    expect(getContentIcon).not.toHaveBeenCalled();
+    fireEvent.error(remote!);
+    await waitFor(() => expect(document.querySelector("img[src^='data:']")).not.toBeNull());
+    expect(vi.mocked(getContentIcon).mock.calls).toEqual([["offline"]]);
+    // jar の中のアイコンも読めなければ、既定の絵に戻す
+    fireEvent.error(document.querySelector("img[src^='data:']")!);
+    await waitFor(() => expect(document.querySelector("img")).toBeNull());
+  });
 });
