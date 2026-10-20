@@ -12,6 +12,9 @@ pub struct VersionJson {
     pub kind: String,
     pub main_class: String,
     pub inherits_from: Option<String>,
+    /// クライアントの jar を持つバージョンの id。無ければ `id` 自身の jar を使う。
+    #[serde(default)]
+    pub jar: Option<String>,
     pub arguments: Option<Arguments>,
     pub minecraft_arguments: Option<String>,
     pub asset_index: AssetIndexRef,

@@ -1,5 +1,7 @@
 //! ローダー（Fabric、Quilt など）の種類とメタデータ。
 
+pub mod merge;
+
 use std::cmp::Ordering;
 use std::path::PathBuf;
 

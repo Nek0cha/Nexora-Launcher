@@ -111,6 +111,23 @@ pub fn plan_game(
             if on_classpath.insert(path.clone()) {
                 classpath.push(path);
             }
+        } else if let Some(base) = lib.url.as_deref() {
+            // ローダーのライブラリ：その項目の Maven リポジトリから取る
+            let rel = maven_path(&lib.name).ok_or_else(|| CoreError::InvalidMetadata {
+                message: format!("library {} has no path", lib.name),
+            })?;
+            let base = base.strip_suffix('/').unwrap_or(base);
+            let path = libraries_dir.join(&rel);
+            downloads.push(DownloadItem {
+                url: format!("{base}/{rel}"),
+                path: path.clone(),
+                size: lib.size,
+                sha1: lib.sha1.clone(),
+                executable: false,
+            });
+            if on_classpath.insert(path.clone()) {
+                classpath.push(path);
+            }
         }
         // 旧形式の natives：classifier の jar を展開して使う
         if let Some(classifier) = lib.natives.as_ref().and_then(|n| n.get(env.os.as_str())) {
@@ -146,7 +163,7 @@ pub fn plan_game(
     }
 
     let client = &version.downloads.client;
-    let client_path = client_jar_path(paths, &version.id);
+    let client_path = client_jar_path(paths, version.jar.as_deref().unwrap_or(&version.id));
     downloads.push(DownloadItem {
         url: client.url.clone(),
         path: client_path.clone(),
@@ -412,6 +429,88 @@ mod tests {
             "install.unsupported_profile"
         );
         assert!(check_profile(&fixture("1.8.9")).is_ok());
+    }
+
+    #[test]
+    fn plan_uses_the_jar_id_for_the_client_jar() {
+        let mut v = fixture("1.21.5");
+        v.id = "fabric-loader-0.16.10-1.20.1".into();
+        v.jar = Some("1.20.1".into());
+        let plan = plan_game(
+            &v,
+            &empty_index(),
+            &env(OsName::Windows, "x86_64"),
+            &root(),
+            RESOURCES_URL,
+        )
+        .unwrap();
+        assert_eq!(
+            rel(plan.classpath.last().unwrap()),
+            "shared/versions/1.20.1/1.20.1.jar"
+        );
+        let client = plan
+            .downloads
+            .iter()
+            .find(|d| d.url == v.downloads.client.url)
+            .unwrap();
+        assert_eq!(client.path, *plan.classpath.last().unwrap());
+    }
+
+    #[test]
+    fn plan_downloads_url_only_libraries() {
+        let mut v = fixture("1.21.5");
+        v.libraries.push(
+            serde_json::from_value(serde_json::json!({
+                "name": "org.ow2.asm:asm:9.7.1",
+                "url": "https://maven.fabricmc.net/",
+                "sha1": "f0ed132a49244b042cd0e15702ab9f2ce3cc8436",
+                "size": 126093
+            }))
+            .unwrap(),
+        );
+        v.libraries.push(
+            serde_json::from_value(serde_json::json!({
+                "name": "net.fabricmc:intermediary:1.20.1",
+                "url": "https://maven.fabricmc.net/"
+            }))
+            .unwrap(),
+        );
+        let plan = plan_game(
+            &v,
+            &empty_index(),
+            &env(OsName::Windows, "x86_64"),
+            &root(),
+            RESOURCES_URL,
+        )
+        .unwrap();
+
+        let asm = plan
+            .downloads
+            .iter()
+            .find(|d| d.url == "https://maven.fabricmc.net/org/ow2/asm/asm/9.7.1/asm-9.7.1.jar")
+            .unwrap();
+        assert_eq!(
+            rel(&asm.path),
+            "shared/libraries/org/ow2/asm/asm/9.7.1/asm-9.7.1.jar"
+        );
+        assert_eq!(
+            asm.sha1.as_deref(),
+            Some("f0ed132a49244b042cd0e15702ab9f2ce3cc8436")
+        );
+        assert_eq!(asm.size, Some(126093));
+        assert!(plan.classpath.contains(&asm.path));
+
+        let intermediary = plan
+            .downloads
+            .iter()
+            .find(|d| {
+                d.url
+                    == "https://maven.fabricmc.net/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1.jar"
+            })
+            .unwrap();
+        assert_eq!(intermediary.sha1, None);
+        assert_eq!(intermediary.size, None);
+        assert!(plan.classpath.contains(&intermediary.path));
     }
 
     #[test]
