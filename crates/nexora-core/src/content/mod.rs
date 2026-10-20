@@ -4,6 +4,7 @@
 #[allow(dead_code)]
 pub(crate) mod store;
 
+pub mod ops;
 pub mod scan;
 
 use serde::{Deserialize, Serialize};

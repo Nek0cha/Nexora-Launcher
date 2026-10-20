@@ -15,7 +15,7 @@ use crate::db::Db;
 use crate::error::CoreError;
 use crate::net::hash::hex;
 
-const DISABLED_SUFFIX: &str = ".disabled";
+pub(super) const DISABLED_SUFFIX: &str = ".disabled";
 
 /// 走査で行がどれだけ動いたか。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub struct ScanReport {
     pub removed: usize,
 }
 
-fn io_error(path: &Path, source: std::io::Error) -> CoreError {
+pub(super) fn io_error(path: &Path, source: std::io::Error) -> CoreError {
     CoreError::Io {
         path: path.display().to_string(),
         source,
@@ -57,15 +57,15 @@ pub(super) fn hash_file(path: &Path) -> std::io::Result<(String, String)> {
 }
 
 /// ディスク上の 1 ファイル分。
-struct DiskFile {
-    rel_path: String,
-    enabled: bool,
-    size: u64,
-    mtime_ms: i64,
+pub(super) struct DiskFile {
+    pub rel_path: String,
+    pub enabled: bool,
+    pub size: u64,
+    pub mtime_ms: i64,
 }
 
 /// ファイル名から有効か無効かを決める。種類の拡張子でなければ `None`。
-fn classify(name: &str, kind: ContentKind) -> Option<bool> {
+pub(super) fn classify(name: &str, kind: ContentKind) -> Option<bool> {
     let ext = format!(".{}", kind.ext());
     if name.len() > ext.len() && name.ends_with(&ext) {
         return Some(true);
@@ -78,11 +78,19 @@ fn classify(name: &str, kind: ContentKind) -> Option<bool> {
 }
 
 /// 有効と無効を入れ替えたときのファイル名。
-fn toggled(rel_path: &str) -> String {
+pub(super) fn toggled(rel_path: &str) -> String {
     match rel_path.strip_suffix(DISABLED_SUFFIX) {
         Some(enabled) => enabled.to_string(),
         None => format!("{rel_path}{DISABLED_SUFFIX}"),
     }
+}
+
+/// 更新時刻を UNIX 時刻のミリ秒で返す。1970 年より前なら 0。
+pub(super) fn mtime_ms(meta: &std::fs::Metadata) -> std::io::Result<i64> {
+    Ok(meta
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64))
 }
 
 /// `game_dir/<kind.dir()>/` の直下の通常ファイルを集める。ディレクトリが無ければ空。
@@ -115,10 +123,7 @@ fn list_disk(
             continue;
         };
         let meta = entry.metadata().map_err(|e| io_error(&path, e))?;
-        let modified = meta.modified().map_err(|e| io_error(&path, e))?;
-        let mtime_ms = modified
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis() as i64);
+        let mtime_ms = mtime_ms(&meta).map_err(|e| io_error(&path, e))?;
         files.push(DiskFile {
             rel_path: format!("{}/{name}", kind.dir()),
             enabled,
@@ -130,7 +135,7 @@ fn list_disk(
 }
 
 /// まだ特定されていない行を作る。行の組み立てはここに集める。
-fn local_row(kind: ContentKind, file: &DiskFile, sha1: String, sha512: String) -> Row {
+pub(super) fn local_row(kind: ContentKind, file: &DiskFile, sha1: String, sha512: String) -> Row {
     let file_name = file
         .rel_path
         .rsplit('/')
