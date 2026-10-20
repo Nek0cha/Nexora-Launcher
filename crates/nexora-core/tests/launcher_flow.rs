@@ -14,8 +14,11 @@ use nexora_core::db::Db;
 use nexora_core::error::ParamValue;
 use nexora_core::install::{Urls, now_ms};
 use nexora_core::instance::folder::FolderKind;
-use nexora_core::instance::{self, InstanceSettings, InstanceState, JavaMode, MemoryMode};
+use nexora_core::instance::{
+    self, InstanceSettings, InstanceState, JavaMode, MemoryMode, NewInstance,
+};
 use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
+use nexora_core::meta::loader::LoaderKind;
 use nexora_core::paths::AppPaths;
 use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
 use secrecy::SecretString;
@@ -23,8 +26,9 @@ use uuid::Uuid;
 use wiremock::MockServer;
 
 use common::{
-    FAKE_JAVA, FakeMojang, FixedProbe, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, REFRESH_2,
-    RecordingGame, XUID, auth_urls, hits_on, http, mount_chain, mount_refresh,
+    FABRIC_VERSION, FAKE_JAVA, FakeLoaderMeta, FakeMojang, FixedProbe, Ownership, PROFILE_ID,
+    PROFILE_NAME, QUILT_VERSION, REFRESH_1, REFRESH_2, RecordingGame, XUID, auth_urls, hits_on,
+    http, mount_chain, mount_refresh,
 };
 
 #[cfg(unix)]
@@ -61,10 +65,13 @@ async fn harness_with(fake: &FakeMojang) -> Harness {
     paths.ensure_dirs().unwrap();
     let tasks = TaskManager::new(Arc::new(Silent));
     let game = Arc::new(RecordingGame::default());
+    let loaders = FakeLoaderMeta::start(fake).await;
     let urls = Urls {
         manifest: fake.manifest_url(),
         runtime_index: fake.runtime_index_url(),
         resources: fake.resources_url(),
+        fabric_meta: loaders.fabric_url(),
+        quilt_meta: loaders.quilt_url(),
     };
     let db = Db::open_in_memory().unwrap();
     let auth_server = MockServer::start().await;
@@ -129,7 +136,13 @@ impl Harness {
 
     /// インスタンスを作り、インストールが終わるまで待つ。
     async fn installed(&self) -> String {
-        let created = self.launcher.create_instance("x", "1.99-test").unwrap();
+        self.installed_with(&NewInstance::vanilla("x", "1.99-test"))
+            .await
+    }
+
+    /// new のインスタンスを作り、インストールが成功するまで待つ。
+    async fn installed_with(&self, new: &NewInstance) -> String {
+        let created = self.launcher.create_instance(new).unwrap();
         let snap = wait(&self.tasks, &created.task_id).await;
         assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
         created.instance.id
@@ -214,7 +227,10 @@ async fn stop_instance_of_missing_instance_is_not_found() {
 async fn instance_folder_creates_missing_dirs_under_the_game_dir() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     let game = h.launcher.instance_folder(id, FolderKind::Game).unwrap();
@@ -234,7 +250,10 @@ async fn instance_folder_creates_missing_dirs_under_the_game_dir() {
 async fn instance_folder_logs_is_the_game_log_dir_and_is_created() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     let expected = AppPaths::from_root(h._temp.path()).game_logs_dir().join(id);
@@ -259,7 +278,10 @@ async fn instance_folder_of_missing_instance_is_not_found() {
 async fn create_installs_and_play_during_install_reuses_the_task() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("テスト", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("テスト", "1.99-test"))
+        .unwrap();
     assert_eq!(created.instance.state, InstanceState::Installing);
     let again = h
         .launcher
@@ -281,7 +303,10 @@ async fn create_installs_and_play_during_install_reuses_the_task() {
 async fn repeated_play_during_install_creates_no_other_task() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     let id = &created.instance.id;
     // インストールの途中で何度押しても、同じインストールのタスクを返す
     for _ in 0..5 {
@@ -299,7 +324,10 @@ async fn repeated_play_during_install_creates_no_other_task() {
 async fn repeated_play_reuses_the_launch_task() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     let first = h.launcher.launch_instance(id, false).unwrap();
@@ -319,7 +347,10 @@ async fn repeated_play_reuses_the_launch_task() {
 async fn launch_is_refused_while_running() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     h.launcher
         .db()
@@ -342,7 +373,10 @@ async fn launch_is_refused_while_running() {
 async fn install_is_refused_while_running() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     instance::set_state(h.launcher.db(), id, InstanceState::Broken).unwrap();
@@ -356,7 +390,10 @@ async fn install_is_refused_while_running() {
 async fn delete_is_refused_while_running() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     insert_running(&h.launcher, id, 1);
@@ -369,7 +406,10 @@ async fn delete_is_refused_while_running() {
 async fn delete_is_refused_while_task_is_live_but_stale_installing_row_is_deletable() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     let id = &created.instance.id;
     // インストールのタスクが動いている間
     let err = h.launcher.delete_instance(id).await.unwrap_err();
@@ -386,7 +426,10 @@ async fn delete_is_refused_while_task_is_live_but_stale_installing_row_is_deleta
 async fn update_instance_works_while_running() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     insert_running(&h.launcher, id, 1);
@@ -408,7 +451,10 @@ async fn update_instance_works_while_running() {
 async fn delete_rechecks_after_taking_the_instance_lock() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = created.instance.id.clone();
     // 起動の処理がロックを持っている間に削除が待ち、その間にゲームが起動した状況
@@ -429,7 +475,10 @@ async fn delete_rechecks_after_taking_the_instance_lock() {
 async fn delete_removes_a_ready_instance() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     h.launcher.delete_instance(id).await.unwrap();
@@ -643,7 +692,10 @@ async fn duplicate_rechecks_after_taking_the_instance_lock() {
 async fn duplicate_is_refused_while_installing_but_not_for_a_stale_row() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     let id = &created.instance.id;
     // インストールのタスクが動いている間
     let err = h.launcher.duplicate_instance(id).unwrap_err();
@@ -671,7 +723,10 @@ async fn duplicate_of_missing_instance_is_not_found() {
 async fn reattach_runs_only_once() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     // 存在しない PID の記録は、引き継ぎのときに終了済みとして片付けられる
@@ -691,7 +746,10 @@ async fn reattach_runs_only_once() {
 async fn play_launches_the_game_and_records_the_session() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     let id = &created.instance.id;
     let task = h.launcher.launch_instance(id, false).unwrap();
@@ -719,7 +777,10 @@ async fn play_launches_the_game_and_records_the_session() {
 async fn installed_instance_launches_offline() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     wait(&h.tasks, &created.task_id).await;
     drop(fake);
     let task = h
@@ -734,7 +795,10 @@ async fn installed_instance_launches_offline() {
 async fn failed_spawn_does_not_update_last_played() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake).await;
-    let created = h.launcher.create_instance("x", "1.99-test").unwrap();
+    let created = h
+        .launcher
+        .create_instance(&NewInstance::vanilla("x", "1.99-test"))
+        .unwrap();
     let installed = wait(&h.tasks, &created.task_id).await;
     assert_eq!(
         installed.state,
@@ -1081,4 +1145,154 @@ async fn missing_manual_java_fails_before_downloading() {
     assert_eq!(error.params.get("path"), Some(&ParamValue::Str(missing)));
     assert_eq!(fake.server.received_requests().await.unwrap().len(), before);
     assert!(h.game.started.lock().unwrap().is_empty());
+}
+
+// ---- Fabric と Quilt（フェーズ 5） ----
+
+fn with_loader(kind: LoaderKind, version: &str) -> NewInstance {
+    NewInstance {
+        loader: kind,
+        loader_version: Some(version.into()),
+        ..NewInstance::vanilla("x", "1.99-test")
+    }
+}
+
+/// ローダーのプロファイルの固定先とライブラリの置き場所。
+fn loader_files(h: &Harness, kind: &str, group: &str, version: &str) -> [std::path::PathBuf; 2] {
+    let paths = AppPaths::from_root(h._temp.path());
+    let id = format!("{kind}-loader-{version}-1.99-test");
+    [
+        paths.versions_dir().join(&id).join(format!("{id}.json")),
+        paths.libraries_dir().join(format!(
+            "{group}/{kind}-loader/{version}/{kind}-loader-{version}.jar"
+        )),
+    ]
+}
+
+#[tokio::test]
+async fn fabric_instance_installs_the_loader_profile_and_library() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h
+        .installed_with(&with_loader(LoaderKind::Fabric, FABRIC_VERSION))
+        .await;
+    for file in loader_files(&h, "fabric", "net/fabricmc", FABRIC_VERSION) {
+        assert!(file.is_file(), "{}", file.display());
+    }
+    let inst = instance::get(h.launcher.db(), &id).unwrap();
+    assert_eq!(inst.state, InstanceState::Ready);
+    assert_eq!(inst.loader, LoaderKind::Fabric);
+}
+
+#[tokio::test]
+async fn quilt_instance_installs() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h
+        .installed_with(&with_loader(LoaderKind::Quilt, QUILT_VERSION))
+        .await;
+    for file in loader_files(&h, "quilt", "org/quiltmc", QUILT_VERSION) {
+        assert!(file.is_file(), "{}", file.display());
+    }
+    assert_eq!(
+        instance::get(h.launcher.db(), &id).unwrap().state,
+        InstanceState::Ready
+    );
+}
+
+#[tokio::test]
+async fn loader_profile_failure_marks_the_instance_broken() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    // FakeLoaderMeta が配らない版のプロファイルは 404 になる
+    let created = h
+        .launcher
+        .create_instance(&with_loader(LoaderKind::Fabric, "9.9.9"))
+        .unwrap();
+    let snap = wait(&h.tasks, &created.task_id).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    // 失敗の理由は、プロファイルの取得の 404 である
+    assert_eq!(
+        snap.error.as_ref().unwrap().code,
+        "net.http_status",
+        "{:?}",
+        snap.error
+    );
+    assert_eq!(
+        instance::get(h.launcher.db(), &created.instance.id)
+            .unwrap()
+            .state,
+        InstanceState::Broken
+    );
+}
+
+#[tokio::test]
+async fn fabric_instance_launches_offline_from_pinned_files() {
+    let fake = FakeMojang::start().await;
+    let h = harness_with(&fake).await;
+    let id = h
+        .installed_with(&with_loader(LoaderKind::Fabric, FABRIC_VERSION))
+        .await;
+    h.seed(now_ms() - DAY_MS);
+    // Mojang とローダーの配信（同じサーバー）を止める
+    drop(fake);
+    let task = h.launcher.launch_instance(&id, true).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_reached_spawn(&snap);
+}
+
+/// 引数を 1 つずつ `arg[...]` の形で 1 行に出力する偽の Java。
+#[cfg(unix)]
+fn args_java(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join("args-java");
+    let script = b"#!/bin/sh\nfor a in \"$@\"; do printf 'arg[%s]\\n' \"$a\"; done\n";
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn fabric_instance_launches_with_the_loader_main_class() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let id = h
+        .installed_with(&with_loader(LoaderKind::Fabric, FABRIC_VERSION))
+        .await;
+    let java = args_java(h._temp.path());
+    instance::update_settings(
+        h.launcher.db(),
+        &id,
+        &settings(MemoryMode::Auto, None, Some(java.display().to_string()), ""),
+    )
+    .unwrap();
+    let task = h.launcher.launch_instance(&id, false).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    assert_eq!(h.game.wait_exit(&id).await, Some(0));
+    let args = h.game.messages();
+    let has = |a: &str| args.iter().any(|m| m == &format!("arg[{a}]"));
+    assert!(
+        has("net.fabricmc.loader.impl.launch.knot.KnotClient"),
+        "{args:?}"
+    );
+    assert!(!has("net.minecraft.client.main.Main"), "{args:?}");
+    // 空白を含む引数は分けずに 1 つのまま渡す
+    assert!(
+        has("-DFabricMcEmu= net.minecraft.client.main.Main "),
+        "{args:?}"
+    );
+    let cp = args
+        .iter()
+        .position(|m| m == "arg[-cp]")
+        .and_then(|i| args.get(i + 1))
+        .unwrap_or_else(|| panic!("no classpath: {args:?}"));
+    let [_, library] = loader_files(&h, "fabric", "net/fabricmc", FABRIC_VERSION);
+    let client = AppPaths::from_root(h._temp.path())
+        .versions_dir()
+        .join("1.99-test")
+        .join("1.99-test.jar");
+    assert!(cp.contains(&library.display().to_string()), "{cp}");
+    assert!(cp.contains(&client.display().to_string()), "{cp}");
 }

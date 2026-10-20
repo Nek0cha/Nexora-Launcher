@@ -13,6 +13,7 @@ use ts_rs::TS;
 
 use crate::db::Db;
 use crate::error::CoreError;
+use crate::meta::loader::{LoaderKind, is_safe_version};
 use crate::paths::AppPaths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -43,10 +44,11 @@ impl InstanceState {
 }
 
 /// メモリ割り当ての方式。DB には `auto`、`manual` で保存する。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum MemoryMode {
+    #[default]
     Auto,
     Manual,
 }
@@ -68,10 +70,11 @@ impl MemoryMode {
 }
 
 /// Java の選び方。DB には `auto`、`manual` で保存する。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum JavaMode {
+    #[default]
     Auto,
     Manual,
 }
@@ -113,6 +116,47 @@ pub struct Instance {
     pub java_mode: JavaMode,
     pub java_path: Option<String>,
     pub jvm_args: String,
+    pub loader: LoaderKind,
+    pub loader_version: Option<String>,
+}
+
+/// 新しいインスタンスの作成に必要な値。詳細設定は省略すると自動になる。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct NewInstance {
+    pub name: String,
+    pub mc_version: String,
+    pub loader: LoaderKind,
+    #[serde(default)]
+    pub loader_version: Option<String>,
+    #[serde(default)]
+    pub memory_mode: MemoryMode,
+    #[serde(default)]
+    pub memory_mb: Option<u32>,
+    #[serde(default)]
+    pub java_mode: JavaMode,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub jvm_args: String,
+}
+
+impl NewInstance {
+    /// バニラで、詳細設定がすべて自動のインスタンス。
+    pub fn vanilla(name: &str, mc_version: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            mc_version: mc_version.to_string(),
+            loader: LoaderKind::Vanilla,
+            loader_version: None,
+            memory_mode: MemoryMode::Auto,
+            memory_mb: None,
+            java_mode: JavaMode::Auto,
+            java_path: None,
+            jvm_args: String::new(),
+        }
+    }
 }
 
 /// 設定画面から更新できる項目。
@@ -128,15 +172,22 @@ pub struct InstanceSettings {
     pub jvm_args: String,
 }
 
-const COLUMNS: &str = "id, name, dir_name, mc_version, state, created_at, last_played_at,      play_time_ms, memory_mode, memory_mb, java_mode, java_path, jvm_args";
+const COLUMNS: &str = "id, name, dir_name, mc_version, state, created_at, last_played_at,      play_time_ms, memory_mode, memory_mb, java_mode, java_path, jvm_args, loader,      loader_version";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
     let state: String = row.get(4)?;
     let memory_mode: String = row.get(8)?;
     let java_mode: String = row.get(10)?;
     let jvm_args: Option<String> = row.get(12)?;
+    let loader: String = row.get(13)?;
+    let id: String = row.get(0)?;
+    // 未知のローダーは Vanilla として扱うが、黙って読み替えないよう警告を残す
+    let loader = LoaderKind::parse(&loader).unwrap_or_else(|| {
+        tracing::warn!(instance_id = %id, loader = %loader, "unknown loader; treating as vanilla");
+        LoaderKind::Vanilla
+    });
     Ok(Instance {
-        id: row.get(0)?,
+        id,
         name: row.get(1)?,
         dir_name: row.get(2)?,
         mc_version: row.get(3)?,
@@ -149,6 +200,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
         java_mode: JavaMode::parse(&java_mode),
         java_path: row.get(11)?,
         jvm_args: jvm_args.unwrap_or_default(),
+        loader,
+        loader_version: row.get(14)?,
     })
 }
 
@@ -179,15 +232,41 @@ fn unused_dir_name(
 }
 
 /// 行を追加し、ゲームディレクトリを作る。名前が空白だけならバージョン名を使う。
+/// 検証は設定の更新と同じ規則で、行を追加する前に行う。
+/// 未対応のローダーは `UnsupportedProfile`、バニラ以外でローダーのバージョンがなければ
+/// `InvalidInstanceSetting`（`loaderVersion`）にする。バニラのときはローダーのバージョンを捨てる。
+/// バージョンの値が空、または区切り文字（`/`、`\`、`:`）や `..` を含むなら、
+/// `InvalidInstanceSetting`（`mcVersion` または `loaderVersion`）にする。
 pub fn create(
     db: &Db,
     paths: &AppPaths,
-    name: &str,
-    mc_version: &str,
+    new: &NewInstance,
     now_ms: i64,
 ) -> Result<Instance, CoreError> {
-    let name = match name.trim() {
-        "" => mc_version.to_string(),
+    if !new.loader.is_supported() {
+        return Err(CoreError::UnsupportedProfile {
+            reason: format!("loader {} is not supported yet", new.loader.as_str()),
+        });
+    }
+    // バージョンはプロファイルやキャッシュのパスと URL に入るため、区切り文字や `..` を含むものを弾く
+    if !is_safe_version(&new.mc_version) {
+        return Err(invalid("mcVersion"));
+    }
+    let loader_version = match new.loader {
+        LoaderKind::Vanilla => None,
+        _ => match new.loader_version.as_deref().map(str::trim) {
+            Some(version) if is_safe_version(version) => Some(version.to_string()),
+            _ => return Err(invalid("loaderVersion")),
+        },
+    };
+    let (memory_mb, java_path) = normalize_advanced(
+        new.memory_mode,
+        new.memory_mb,
+        new.java_mode,
+        new.java_path.as_deref(),
+    )?;
+    let name = match new.name.trim() {
+        "" => new.mc_version.clone(),
         trimmed => trimmed.to_string(),
     };
     let base = dir_name::sanitize(&name);
@@ -197,27 +276,37 @@ pub fn create(
             id: uuid::Uuid::now_v7().to_string(),
             name,
             dir_name: unused_dir_name(conn, &instances_dir, &base)?,
-            mc_version: mc_version.to_string(),
+            mc_version: new.mc_version.clone(),
             state: InstanceState::Installing,
             created_at: now_ms,
             last_played_at: None,
             play_time_ms: 0,
-            memory_mode: MemoryMode::Auto,
-            memory_mb: None,
-            java_mode: JavaMode::Auto,
-            java_path: None,
-            jvm_args: String::new(),
+            memory_mode: new.memory_mode,
+            memory_mb,
+            java_mode: new.java_mode,
+            java_path,
+            jvm_args: new.jvm_args.clone(),
+            loader: new.loader,
+            loader_version,
         };
         conn.execute(
-            "INSERT INTO instances (id, name, dir_name, mc_version, state, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO instances (id, name, dir_name, mc_version, state, created_at,
+                 loader, loader_version, memory_mode, memory_mb, java_mode, java_path, jvm_args)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 instance.id,
                 instance.name,
                 instance.dir_name,
                 instance.mc_version,
                 instance.state.as_str(),
-                instance.created_at
+                instance.created_at,
+                instance.loader.as_str(),
+                instance.loader_version,
+                instance.memory_mode.as_str(),
+                instance.memory_mb,
+                instance.java_mode.as_str(),
+                instance.java_path,
+                instance.jvm_args
             ],
         )?;
         Ok(instance)
@@ -365,8 +454,8 @@ pub fn duplicate_row(
         conn.execute(
             "INSERT INTO instances (id, name, dir_name, mc_version, state, created_at,
                  last_played_at, play_time_ms, memory_mode, memory_mb, java_mode, java_path,
-                 jvm_args)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, ?7, ?8, ?9, ?10, ?11)",
+                 jvm_args, loader, loader_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, 0, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 instance.id,
                 instance.name,
@@ -378,7 +467,9 @@ pub fn duplicate_row(
                 instance.memory_mb,
                 instance.java_mode.as_str(),
                 instance.java_path,
-                instance.jvm_args
+                instance.jvm_args,
+                instance.loader.as_str(),
+                instance.loader_version
             ],
         )?;
         Ok(instance)
@@ -399,6 +490,31 @@ fn invalid(field: &str) -> CoreError {
     }
 }
 
+/// メモリと Java の設定を検証し、手動用の値を正規化する。
+/// 自動のときは手動用の値を捨て、手動のときはメモリの範囲と Java のパスの空白を確かめる。
+fn normalize_advanced(
+    memory_mode: MemoryMode,
+    memory_mb: Option<u32>,
+    java_mode: JavaMode,
+    java_path: Option<&str>,
+) -> Result<(Option<u32>, Option<String>), CoreError> {
+    let memory_mb = match memory_mode {
+        MemoryMode::Auto => None,
+        MemoryMode::Manual => match memory_mb {
+            Some(mb) if (MEMORY_MIN_MB..=MEMORY_MAX_MB).contains(&mb) => Some(mb),
+            _ => return Err(invalid("memoryMb")),
+        },
+    };
+    let java_path = match java_mode {
+        JavaMode::Auto => None,
+        JavaMode::Manual => match java_path.map(str::trim) {
+            Some(path) if !path.is_empty() => Some(path.to_string()),
+            _ => return Err(invalid("javaPath")),
+        },
+    };
+    Ok((memory_mb, java_path))
+}
+
 /// 設定を検証して保存する。名前を変えてもフォルダ名は変えない。
 /// 自動のときは手動用の値（メモリ量、Java のパス）を捨てる。
 pub fn update_settings(
@@ -410,20 +526,12 @@ pub fn update_settings(
     if name.is_empty() {
         return Err(invalid("name"));
     }
-    let memory_mb = match settings.memory_mode {
-        MemoryMode::Auto => None,
-        MemoryMode::Manual => match settings.memory_mb {
-            Some(mb) if (MEMORY_MIN_MB..=MEMORY_MAX_MB).contains(&mb) => Some(mb),
-            _ => return Err(invalid("memoryMb")),
-        },
-    };
-    let java_path = match settings.java_mode {
-        JavaMode::Auto => None,
-        JavaMode::Manual => match settings.java_path.as_deref().map(str::trim) {
-            Some(path) if !path.is_empty() => Some(path.to_string()),
-            _ => return Err(invalid("javaPath")),
-        },
-    };
+    let (memory_mb, java_path) = normalize_advanced(
+        settings.memory_mode,
+        settings.memory_mb,
+        settings.java_mode,
+        settings.java_path.as_deref(),
+    )?;
     let changed = db.with_conn(|conn| {
         Ok(conn.execute(
             "UPDATE instances SET name = ?1, memory_mode = ?2, memory_mb = ?3,
@@ -460,7 +568,7 @@ mod tests {
     #[test]
     fn create_inserts_row_and_directory() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "日本語", "1.21.5", 100).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("日本語", "1.21.5"), 100).unwrap();
         assert_eq!(inst.name, "日本語");
         assert_eq!(inst.dir_name, "日本語");
         assert_eq!(inst.mc_version, "1.21.5");
@@ -475,7 +583,7 @@ mod tests {
     #[test]
     fn blank_name_defaults_to_version() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "   ", "1.8.9", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("   ", "1.8.9"), 1).unwrap();
         assert_eq!(inst.name, "1.8.9");
         assert_eq!(inst.dir_name, "1.8.9");
     }
@@ -483,8 +591,8 @@ mod tests {
     #[test]
     fn duplicate_names_get_distinct_directories() {
         let (_t, paths, db) = setup();
-        let a = create(&db, &paths, "World", "1.21.5", 1).unwrap();
-        let b = create(&db, &paths, "world", "1.21.5", 2).unwrap();
+        let a = create(&db, &paths, &NewInstance::vanilla("World", "1.21.5"), 1).unwrap();
+        let b = create(&db, &paths, &NewInstance::vanilla("world", "1.21.5"), 2).unwrap();
         assert_eq!(a.dir_name, "World");
         assert_eq!(b.dir_name, "world (2)");
     }
@@ -493,16 +601,16 @@ mod tests {
     fn existing_folder_on_disk_is_avoided() {
         let (_t, paths, db) = setup();
         std::fs::create_dir_all(paths.instances_dir().join("Taken")).unwrap();
-        let inst = create(&db, &paths, "Taken", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("Taken", "1.21.5"), 1).unwrap();
         assert_eq!(inst.dir_name, "Taken (2)");
     }
 
     #[test]
     fn list_orders_by_last_played_then_created() {
         let (_t, paths, db) = setup();
-        let old = create(&db, &paths, "old", "1.21.5", 1).unwrap();
-        let new = create(&db, &paths, "new", "1.21.5", 2).unwrap();
-        let played = create(&db, &paths, "played", "1.21.5", 0).unwrap();
+        let old = create(&db, &paths, &NewInstance::vanilla("old", "1.21.5"), 1).unwrap();
+        let new = create(&db, &paths, &NewInstance::vanilla("new", "1.21.5"), 2).unwrap();
+        let played = create(&db, &paths, &NewInstance::vanilla("played", "1.21.5"), 0).unwrap();
         record_launch(&db, &played.id, 50).unwrap();
         let ids: Vec<_> = list(&db).unwrap().into_iter().map(|i| i.id).collect();
         assert_eq!(ids, vec![played.id, new.id, old.id]);
@@ -511,7 +619,7 @@ mod tests {
     #[test]
     fn state_and_play_time_updates() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         set_state(&db, &inst.id, InstanceState::Ready).unwrap();
         add_play_time(&db, &inst.id, 1500).unwrap();
         add_play_time(&db, &inst.id, 500).unwrap();
@@ -553,7 +661,7 @@ mod tests {
     #[test]
     fn defaults_after_create() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         assert_eq!(inst.memory_mode, MemoryMode::Auto);
         assert_eq!(inst.memory_mb, None);
         assert_eq!(inst.java_mode, JavaMode::Auto);
@@ -565,7 +673,7 @@ mod tests {
     #[test]
     fn update_settings_changes_fields_and_keeps_dir_name() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "old", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("old", "1.21.5"), 1).unwrap();
         let updated = update_settings(
             &db,
             &inst.id,
@@ -592,7 +700,7 @@ mod tests {
     #[test]
     fn update_settings_auto_clears_manual_values() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         let mut s = settings("x");
         s.memory_mb = Some(2048);
         s.java_path = Some("java".into());
@@ -604,7 +712,7 @@ mod tests {
     #[test]
     fn update_settings_rejects_blank_name() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         let err = update_settings(&db, &inst.id, &settings("   ")).unwrap_err();
         assert_eq!(err.code(), "instance.invalid_setting");
         assert_eq!(invalid_field(err), "name");
@@ -613,7 +721,7 @@ mod tests {
     #[test]
     fn update_settings_rejects_manual_memory_out_of_range() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         for mb in [None, Some(511), Some(65537)] {
             let mut s = settings("x");
             s.memory_mode = MemoryMode::Manual;
@@ -632,7 +740,7 @@ mod tests {
     #[test]
     fn update_settings_rejects_manual_java_without_path() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         for path in [None, Some("   ".to_string())] {
             let mut s = settings("x");
             s.java_mode = JavaMode::Manual;
@@ -645,7 +753,7 @@ mod tests {
     #[test]
     fn delete_removes_dir_and_row() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         let dir = game_dir(&paths, &inst);
         std::fs::write(dir.join("options.txt"), "a").unwrap();
         // 共有のファイルと、後始末の対象を用意する
@@ -670,7 +778,7 @@ mod tests {
     #[test]
     fn delete_without_dir_removes_row() {
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         std::fs::remove_dir_all(game_dir(&paths, &inst)).unwrap();
         delete(&db, &paths, &inst.id).unwrap();
         assert_eq!(get(&db, &inst.id).unwrap_err().code(), "instance.not_found");
@@ -690,7 +798,7 @@ mod tests {
     fn delete_keeps_row_when_dir_removal_fails() {
         use std::os::unix::fs::PermissionsExt;
         let (_t, paths, db) = setup();
-        let inst = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let inst = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         let dir = game_dir(&paths, &inst);
         let parent = paths.instances_dir();
         let writable = std::fs::metadata(&parent).unwrap().permissions();
@@ -709,7 +817,7 @@ mod tests {
     #[test]
     fn duplicate_row_copies_settings_and_resets_play_stats() {
         let (_t, paths, db) = setup();
-        let src = create(&db, &paths, "World", "1.21.5", 1).unwrap();
+        let src = create(&db, &paths, &NewInstance::vanilla("World", "1.21.5"), 1).unwrap();
         update_settings(
             &db,
             &src.id,
@@ -753,7 +861,7 @@ mod tests {
     #[test]
     fn duplicate_row_is_installing_whatever_the_source_state() {
         let (_t, paths, db) = setup();
-        let src = create(&db, &paths, "x", "1.21.5", 1).unwrap();
+        let src = create(&db, &paths, &NewInstance::vanilla("x", "1.21.5"), 1).unwrap();
         for state in [
             InstanceState::Installing,
             InstanceState::Ready,
@@ -779,5 +887,163 @@ mod tests {
         let (_t, _paths, db) = setup();
         let err = update_settings(&db, "nope", &settings("x")).unwrap_err();
         assert_eq!(err.code(), "instance.not_found");
+    }
+
+    fn fabric(version: Option<&str>) -> NewInstance {
+        NewInstance {
+            loader: LoaderKind::Fabric,
+            loader_version: version.map(str::to_string),
+            ..NewInstance::vanilla("x", "1.20.1")
+        }
+    }
+
+    fn row_count(db: &Db) -> i64 {
+        db.with_conn(|conn| Ok(conn.query_row("SELECT COUNT(*) FROM instances", [], |r| r.get(0))?))
+            .unwrap()
+    }
+
+    #[test]
+    fn create_stores_loader_and_version() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, &fabric(Some("0.16.10")), 1).unwrap();
+        assert_eq!(inst.loader, LoaderKind::Fabric);
+        assert_eq!(inst.loader_version.as_deref(), Some("0.16.10"));
+        assert_eq!(get(&db, &inst.id).unwrap(), inst);
+    }
+
+    #[test]
+    fn create_applies_advanced_settings() {
+        let (_t, paths, db) = setup();
+        let new = NewInstance {
+            memory_mode: MemoryMode::Manual,
+            memory_mb: Some(4096),
+            java_mode: JavaMode::Manual,
+            java_path: Some("/j".into()),
+            jvm_args: "-Dfoo=bar".into(),
+            ..NewInstance::vanilla("x", "1.20.1")
+        };
+        let inst = create(&db, &paths, &new, 1).unwrap();
+        let stored = get(&db, &inst.id).unwrap();
+        assert_eq!(stored.memory_mode, MemoryMode::Manual);
+        assert_eq!(stored.memory_mb, Some(4096));
+        assert_eq!(stored.java_mode, JavaMode::Manual);
+        assert_eq!(stored.java_path.as_deref(), Some("/j"));
+        assert_eq!(stored.jvm_args, "-Dfoo=bar");
+    }
+
+    #[test]
+    fn create_validates_like_update_settings() {
+        let (_t, paths, db) = setup();
+        let bad_memory = NewInstance {
+            memory_mode: MemoryMode::Manual,
+            memory_mb: Some(100),
+            ..NewInstance::vanilla("x", "1.20.1")
+        };
+        let err = create(&db, &paths, &bad_memory, 1).unwrap_err();
+        assert_eq!(invalid_field(err), "memoryMb");
+        let bad_java = NewInstance {
+            java_mode: JavaMode::Manual,
+            java_path: Some("   ".into()),
+            ..NewInstance::vanilla("x", "1.20.1")
+        };
+        let err = create(&db, &paths, &bad_java, 1).unwrap_err();
+        assert_eq!(invalid_field(err), "javaPath");
+        assert_eq!(row_count(&db), 0);
+        assert!(
+            std::fs::read_dir(paths.instances_dir())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn create_requires_loader_version_for_non_vanilla() {
+        let (_t, paths, db) = setup();
+        for version in [None, Some("  ")] {
+            let err = create(&db, &paths, &fabric(version), 1).unwrap_err();
+            assert_eq!(invalid_field(err), "loaderVersion");
+        }
+        assert_eq!(row_count(&db), 0);
+        let vanilla = NewInstance {
+            loader_version: Some("0.16.10".into()),
+            ..NewInstance::vanilla("x", "1.20.1")
+        };
+        let inst = create(&db, &paths, &vanilla, 1).unwrap();
+        assert_eq!(inst.loader_version, None);
+        assert_eq!(get(&db, &inst.id).unwrap().loader_version, None);
+    }
+
+    #[test]
+    fn unknown_loader_in_the_row_reads_as_vanilla() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, &fabric(Some("0.16.10")), 1).unwrap();
+        db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE instances SET loader = 'liteloader' WHERE id = ?1",
+                [&inst.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(get(&db, &inst.id).unwrap().loader, LoaderKind::Vanilla);
+    }
+
+    #[test]
+    fn create_rejects_unsafe_versions_before_touching_anything() {
+        let (_t, paths, db) = setup();
+        for bad in ["..", "../x", "a/b", r"a\b", r"..\..\x", "a:b", "1..2"] {
+            let err = create(&db, &paths, &fabric(Some(bad)), 1).unwrap_err();
+            assert_eq!(invalid_field(err), "loaderVersion", "{bad:?}");
+            let new = NewInstance {
+                mc_version: bad.to_string(),
+                ..fabric(Some("0.16.10"))
+            };
+            let err = create(&db, &paths, &new, 1).unwrap_err();
+            assert_eq!(invalid_field(err), "mcVersion", "{bad:?}");
+            // バニラでも、バージョンはパスに使われるため同じ規則で弾く
+            let err = create(&db, &paths, &NewInstance::vanilla("x", bad), 1).unwrap_err();
+            assert_eq!(invalid_field(err), "mcVersion", "{bad:?}");
+        }
+        let err = create(&db, &paths, &NewInstance::vanilla("x", ""), 1).unwrap_err();
+        assert_eq!(invalid_field(err), "mcVersion");
+        assert_eq!(row_count(&db), 0);
+        assert!(
+            std::fs::read_dir(paths.instances_dir())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn create_rejects_unsupported_loader() {
+        let (_t, paths, db) = setup();
+        for loader in [LoaderKind::Forge, LoaderKind::Neoforge] {
+            let new = NewInstance {
+                loader,
+                loader_version: Some("1.0".into()),
+                ..NewInstance::vanilla("x", "1.20.1")
+            };
+            let err = create(&db, &paths, &new, 1).unwrap_err();
+            assert_eq!(err.code(), "install.unsupported_profile");
+        }
+        assert_eq!(row_count(&db), 0);
+        assert!(
+            std::fs::read_dir(paths.instances_dir())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn duplicate_row_keeps_loader() {
+        let (_t, paths, db) = setup();
+        let src = create(&db, &paths, &fabric(Some("0.16.10")), 1).unwrap();
+        let copy = duplicate_row(&db, &paths, &src.id, 2).unwrap();
+        assert_eq!(copy.loader, LoaderKind::Fabric);
+        assert_eq!(copy.loader_version.as_deref(), Some("0.16.10"));
+        assert_eq!(get(&db, &copy.id).unwrap(), copy);
     }
 }

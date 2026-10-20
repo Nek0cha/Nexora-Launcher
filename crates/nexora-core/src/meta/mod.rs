@@ -1,5 +1,6 @@
 //! ゲームとローダーのメタデータ。
 
+pub mod loader;
 pub mod mojang;
 
 use std::path::Path;

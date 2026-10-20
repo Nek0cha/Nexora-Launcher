@@ -138,6 +138,8 @@ pub fn run() {
             commands::get_task,
             commands::cancel_task,
             commands::list_versions,
+            commands::list_loader_game_versions,
+            commands::list_loader_versions,
             commands::list_instances,
             commands::create_instance,
             commands::launch_instance,

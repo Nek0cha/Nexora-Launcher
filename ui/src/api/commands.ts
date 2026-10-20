@@ -12,6 +12,9 @@ import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import type { AccountList } from "../bindings/AccountList";
 import type { FolderKind } from "../bindings/FolderKind";
 import type { LoginMethod } from "../bindings/LoginMethod";
+import type { LoaderKind } from "../bindings/LoaderKind";
+import type { LoaderVersionEntry } from "../bindings/LoaderVersionEntry";
+import type { NewInstance } from "../bindings/NewInstance";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -24,8 +27,11 @@ export const cancelTask = (taskId: string) => call<null>("cancel_task", { taskId
 
 export const listVersions = () => call<VersionEntry[]>("list_versions");
 export const listInstances = () => call<Instance[]>("list_instances");
-export const createInstance = (name: string, mcVersion: string) =>
-  call<CreatedInstance>("create_instance", { name, mcVersion });
+export const listLoaderGameVersions = (loader: LoaderKind) =>
+  call<string[]>("list_loader_game_versions", { loader });
+export const listLoaderVersions = (loader: LoaderKind, mcVersion: string) =>
+  call<LoaderVersionEntry[]>("list_loader_versions", { loader, mcVersion });
+export const createInstance = (request: NewInstance) => call<CreatedInstance>("create_instance", { request });
 export const updateInstance = (instanceId: string, settings: InstanceSettings) =>
   call<Instance>("update_instance", { instanceId, settings });
 export const deleteInstance = (instanceId: string) => call<null>("delete_instance", { instanceId });

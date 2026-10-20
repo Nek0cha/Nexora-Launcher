@@ -13,11 +13,11 @@ use crate::auth::service::AuthService;
 use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
-use crate::install::{InstallEnv, Urls, install, kib, now_ms};
+use crate::install::{InstallEnv, Urls, install, kib, now_ms, overlay_loader};
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
-use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
+use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode, NewInstance};
 use crate::java::verify::{JavaProbe, SystemProbe};
 use crate::java::{find_registered, finish_runtime, prepare_runtime, requirement};
 use crate::launch::argfile;
@@ -25,6 +25,7 @@ use crate::launch::args::{ArgInputs, CommandLine, WINDOWS_COMMAND_LIMIT, build_a
 use crate::launch::jvm_args;
 use crate::launch::natives::extract_natives;
 use crate::launch::process::{GameNotifier, GameProcesses, RunningSession, SpawnSpec};
+use crate::meta::loader::{LoaderKind, LoaderVersionEntry};
 use crate::meta::mojang::manifest::{
     VersionEntry, load_pinned_asset_index, load_pinned_version, release_versions,
 };
@@ -174,16 +175,29 @@ impl Launcher {
         release_versions(&self.env.meta.manifest().await?)
     }
 
+    /// ローダーが対応する Minecraft のバージョン（メタデータの順）。
+    pub async fn list_loader_game_versions(
+        &self,
+        kind: LoaderKind,
+    ) -> Result<Vec<String>, CoreError> {
+        self.env.loader.game_versions(kind).await
+    }
+
+    /// mc_version に使えるローダーの版（新しい順）。
+    pub async fn list_loader_versions(
+        &self,
+        kind: LoaderKind,
+        mc_version: &str,
+    ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
+        self.env.loader.loader_versions(kind, mc_version).await
+    }
+
     pub fn list_instances(&self) -> Result<Vec<Instance>, CoreError> {
         instance::list(&self.env.db)
     }
 
-    pub fn create_instance(
-        &self,
-        name: &str,
-        mc_version: &str,
-    ) -> Result<CreatedInstance, CoreError> {
-        let instance = instance::create(&self.env.db, &self.env.paths, name, mc_version, now_ms())?;
+    pub fn create_instance(&self, new: &NewInstance) -> Result<CreatedInstance, CoreError> {
+        let instance = instance::create(&self.env.db, &self.env.paths, new, now_ms())?;
         let task_id = self.start_install(&instance.id);
         Ok(CreatedInstance { instance, task_id })
     }
@@ -436,10 +450,11 @@ impl Launcher {
         };
         let token = handle.token();
         // 固定済みのメタデータだけで解決する。欠けていればそのときだけ取得する
-        let version = match load_pinned_version(&env.paths, &inst.mc_version)? {
+        let vanilla = match load_pinned_version(&env.paths, &inst.mc_version)? {
             Some(v) => v,
             None => env.meta.pin_version(&inst.mc_version, token).await?,
         };
+        let version = overlay_loader(env, &inst, vanilla, token).await?;
         check_profile(&version)?;
         let index = match load_pinned_asset_index(&env.paths, &version.asset_index.id)? {
             Some(i) => i,

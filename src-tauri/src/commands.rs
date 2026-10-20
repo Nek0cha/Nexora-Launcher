@@ -10,9 +10,10 @@ use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
-use nexora_core::instance::{Instance, InstanceSettings};
+use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::CreatedInstance;
+use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::task::TaskSnapshot;
@@ -131,6 +132,35 @@ pub async fn list_versions(state: State<'_, AppState>) -> CmdResult<Vec<VersionE
         .map_err(ErrorPayload::from)
 }
 
+/// ローダーが対応するゲームの版。並べ替えず、ローダーのメタデータの順で返す。
+#[tauri::command]
+pub async fn list_loader_game_versions(
+    state: State<'_, AppState>,
+    loader: LoaderKind,
+) -> CmdResult<Vec<String>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_loader_game_versions(loader)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// ゲームの版に使えるローダーの版（新しい順）。
+#[tauri::command]
+pub async fn list_loader_versions(
+    state: State<'_, AppState>,
+    loader: LoaderKind,
+    mc_version: String,
+) -> CmdResult<Vec<LoaderVersionEntry>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_loader_versions(loader, &mc_version)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
 #[tauri::command]
 pub async fn list_instances(state: State<'_, AppState>) -> CmdResult<Vec<Instance>> {
     let services = state.services()?;
@@ -141,13 +171,12 @@ pub async fn list_instances(state: State<'_, AppState>) -> CmdResult<Vec<Instanc
 #[tauri::command]
 pub async fn create_instance(
     state: State<'_, AppState>,
-    name: String,
-    mc_version: String,
+    request: NewInstance,
 ) -> CmdResult<CreatedInstance> {
     let services = state.services()?;
     services
         .launcher
-        .create_instance(&name, &mc_version)
+        .create_instance(&request)
         .map_err(ErrorPayload::from)
 }
 

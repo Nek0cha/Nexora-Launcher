@@ -12,6 +12,9 @@ pub struct VersionJson {
     pub kind: String,
     pub main_class: String,
     pub inherits_from: Option<String>,
+    /// クライアントの jar を持つバージョンの id。無ければ `id` 自身の jar を使う。
+    #[serde(default)]
+    pub jar: Option<String>,
     pub arguments: Option<Arguments>,
     pub minecraft_arguments: Option<String>,
     pub asset_index: AssetIndexRef,
@@ -81,6 +84,10 @@ pub struct Library {
     pub rules: Option<Vec<Rule>>,
     pub natives: Option<BTreeMap<String, String>>,
     pub extract: Option<Extract>,
+    /// ローダーのライブラリが持つ Maven リポジトリの基底 URL（Vanilla は持たない）。
+    pub url: Option<String>,
+    pub sha1: Option<String>,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

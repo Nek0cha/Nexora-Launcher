@@ -12,7 +12,8 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Microsoft sign-in is implemented; the Minecraft API review was passed on 2026-10-17
 - Instances can be created, duplicated, deleted and configured (memory, Java, JVM arguments), and the skin can be changed
 - A running instance can be stopped from the launcher (a graceful close first, with a force-stop prompt if it does not exit); the app has its own title bar, toast notifications, a memory slider, and buttons that open an instance's folders
-- Planned: mod loaders (Fabric, Quilt, Forge, NeoForge), content from Modrinth and CurseForge, and importing instances from other launchers
+- Fabric and Quilt instances can be created, installed and launched
+- Planned: Forge and NeoForge, content from Modrinth and CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
 
