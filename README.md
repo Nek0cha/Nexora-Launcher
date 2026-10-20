@@ -28,13 +28,17 @@ Nexora Launcher is not an official Minecraft product and is not approved by or a
 
 ## 概要（日本語）
 
-Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 4：インスタンス管理の UI とスキンの変更）。
+Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 5：ローダーと MOD の管理。コンテンツタブまで）。
 
 - インスタンスの一覧、作成、複製、削除ができます。
 - インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
 - アカウント画面からスキンを変更できます（Minecraft API の審査は 2026-10-17 に通っています）。
 - 起動中のインスタンスを、ランチャーから停止できます（まず閉じるよう頼み、終了しないときは強制終了の確認を出します）。
 - 独自のタイトルバー、トースト通知、メモリのスライダー、インスタンスのフォルダを開くボタンがあります。
+- インスタンスの詳細にコンテンツタブがあり、MOD、リソースパック、シェーダーを一覧できます。
+  - 有効と無効を切り替えられます（ファイル名に `.disabled` を付け外しします）。ファイルのドラッグ＆ドロップで追加でき、削除もできます。
+  - 名前、クライアント／サーバー、カテゴリ、状態で絞り込めます。MOD は、ファイルのハッシュから Modrinth 上の情報を調べて表示します。
+  - Modrinth での検索、インストール、更新は次のフェーズ（5-4）で追加します。
 
 ## 開発環境
 
@@ -104,6 +108,7 @@ pnpm --filter ui typecheck
 - 全体設計：`docs/specs/2026-10-15-nexora-architecture-design.md`
 - フェーズ 1 の設計：`docs/specs/2026-10-15-phase1-foundation-design.md`
 - フェーズ 4 の設計：`docs/specs/2026-10-19-phase4-instance-ui-design.md`
+- フェーズ 5 の設計：`docs/specs/2026-10-20-phase5-loaders-and-content-design.md`
 - 調査資料：`docs/research/`
 
 ## ライセンス
