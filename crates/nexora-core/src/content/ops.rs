@@ -191,16 +191,13 @@ fn add_one(
             return Err(io_error(&temp, e));
         }
     }
-    let placed = (|| {
-        if overwrite {
-            remove_if_exists(&disabled_path)?;
-        }
-        // 有効側があれば rename が置き換える
-        std::fs::rename(&temp, &enabled_path).map_err(|e| io_error(&enabled_path, e))
-    })();
-    if let Err(e) = placed {
+    // 有効側があれば rename が置き換える。置けてから無効側を消すので、失敗しても無効側は残る
+    if let Err(e) = std::fs::rename(&temp, &enabled_path) {
         let _ = std::fs::remove_file(&temp);
-        return Err(e);
+        return Err(io_error(&enabled_path, e));
+    }
+    if overwrite {
+        remove_if_exists(&disabled_path)?;
     }
 
     let prefix = kind.dir();
@@ -596,6 +593,26 @@ mod tests {
         assert_eq!(rows[0].item.rel_path, "mods/a.jar");
         assert_eq!(rows[0].item.sha1, sha1_hex(b"replacement"));
         assert_eq!(rows[0].item.size, 11);
+    }
+
+    #[test]
+    fn add_files_keeps_the_disabled_copy_when_the_overwrite_cannot_be_placed() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = db_with_instance();
+        let game = temp.path().join("game");
+        put(&game, "mods/a.jar.disabled", b"disabled");
+        // 有効側の名前にディレクトリがあると、rename は必ず失敗する
+        std::fs::create_dir_all(game.join("mods/a.jar/inner")).unwrap();
+        let source = put(temp.path(), "src/a.jar", b"replacement");
+
+        let result = add_files(&db, &game, "i1", ContentKind::Mod, &[source], true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read(game.join("mods/a.jar.disabled")).unwrap(),
+            b"disabled"
+        );
+        assert_eq!(names_in(&game.join("mods")), ["a.jar", "a.jar.disabled"]);
     }
 
     #[test]

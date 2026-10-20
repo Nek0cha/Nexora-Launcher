@@ -1,7 +1,5 @@
 //! インスタンスの中身（mod、リソースパック、シェーダー）の型。
 
-// 走査や操作の側から使われるまでは未使用になる。
-#[allow(dead_code)]
 pub(crate) mod store;
 
 pub mod identify;
