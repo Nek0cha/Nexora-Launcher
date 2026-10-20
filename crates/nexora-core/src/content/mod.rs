@@ -4,6 +4,7 @@
 #[allow(dead_code)]
 pub(crate) mod store;
 
+pub mod identify;
 pub mod local_meta;
 pub mod modrinth;
 pub mod ops;
