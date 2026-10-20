@@ -8,6 +8,7 @@ use crate::db::Db;
 use crate::error::CoreError;
 use crate::instance::{self, InstanceState};
 use crate::java::verify::JavaProbe;
+use crate::meta::loader::{FABRIC_META_URL, LoaderMeta, QUILT_META_URL};
 use crate::meta::mojang::manifest::{MANIFEST_URL, MojangMeta};
 use crate::meta::mojang::rules::RuleEnv;
 use crate::net::{Depth, Http, fetch_all};
@@ -20,6 +21,8 @@ pub struct Urls {
     pub manifest: String,
     pub runtime_index: String,
     pub resources: String,
+    pub fabric_meta: String,
+    pub quilt_meta: String,
 }
 
 impl Default for Urls {
@@ -28,6 +31,8 @@ impl Default for Urls {
             manifest: MANIFEST_URL.to_string(),
             runtime_index: crate::java::RUNTIME_INDEX_URL.to_string(),
             resources: plan::RESOURCES_URL.to_string(),
+            fabric_meta: FABRIC_META_URL.to_string(),
+            quilt_meta: QUILT_META_URL.to_string(),
         }
     }
 }
@@ -38,6 +43,7 @@ pub struct InstallEnv {
     pub db: Db,
     pub http: Http,
     pub meta: MojangMeta,
+    pub loader: LoaderMeta,
     pub urls: Urls,
     pub probe: Arc<dyn JavaProbe>,
 }
@@ -45,11 +51,18 @@ pub struct InstallEnv {
 impl InstallEnv {
     pub fn new(paths: AppPaths, db: Db, http: Http, urls: Urls, probe: Arc<dyn JavaProbe>) -> Self {
         let meta = MojangMeta::new(http.clone(), paths.clone(), urls.manifest.clone());
+        let loader = LoaderMeta::new(
+            http.clone(),
+            paths.clone(),
+            urls.fabric_meta.clone(),
+            urls.quilt_meta.clone(),
+        );
         Self {
             paths,
             db,
             http,
             meta,
+            loader,
             urls,
             probe,
         }

@@ -25,6 +25,7 @@ use crate::launch::args::{ArgInputs, CommandLine, WINDOWS_COMMAND_LIMIT, build_a
 use crate::launch::jvm_args;
 use crate::launch::natives::extract_natives;
 use crate::launch::process::{GameNotifier, GameProcesses, RunningSession, SpawnSpec};
+use crate::meta::loader::{LoaderKind, LoaderVersionEntry};
 use crate::meta::mojang::manifest::{
     VersionEntry, load_pinned_asset_index, load_pinned_version, release_versions,
 };
@@ -172,6 +173,23 @@ impl Launcher {
 
     pub async fn list_versions(&self) -> Result<Vec<VersionEntry>, CoreError> {
         release_versions(&self.env.meta.manifest().await?)
+    }
+
+    /// ローダーが対応する Minecraft のバージョン（メタデータの順）。
+    pub async fn list_loader_game_versions(
+        &self,
+        kind: LoaderKind,
+    ) -> Result<Vec<String>, CoreError> {
+        self.env.loader.game_versions(kind).await
+    }
+
+    /// mc_version に使えるローダーの版（新しい順）。
+    pub async fn list_loader_versions(
+        &self,
+        kind: LoaderKind,
+        mc_version: &str,
+    ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
+        self.env.loader.loader_versions(kind, mc_version).await
     }
 
     pub fn list_instances(&self) -> Result<Vec<Instance>, CoreError> {

@@ -81,6 +81,10 @@ pub struct Library {
     pub rules: Option<Vec<Rule>>,
     pub natives: Option<BTreeMap<String, String>>,
     pub extract: Option<Extract>,
+    /// ローダーのライブラリが持つ Maven リポジトリの基底 URL（Vanilla は持たない）。
+    pub url: Option<String>,
+    pub sha1: Option<String>,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

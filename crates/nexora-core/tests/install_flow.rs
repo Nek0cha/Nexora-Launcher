@@ -31,6 +31,7 @@ fn harness(fake: &FakeMojang) -> Harness {
         manifest: fake.manifest_url(),
         runtime_index: fake.runtime_index_url(),
         resources: fake.resources_url(),
+        ..Urls::default()
     };
     let env = InstallEnv::new(
         paths,

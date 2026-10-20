@@ -67,6 +67,7 @@ async fn harness_with(fake: &FakeMojang) -> Harness {
         manifest: fake.manifest_url(),
         runtime_index: fake.runtime_index_url(),
         resources: fake.resources_url(),
+        ..Urls::default()
     };
     let db = Db::open_in_memory().unwrap();
     let auth_server = MockServer::start().await;
