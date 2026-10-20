@@ -31,30 +31,47 @@ fn invalid(message: String) -> CoreError {
     CoreError::InvalidMetadata { message }
 }
 
-/// URL の最後の区切りを、保存するファイル名にする。http と https だけを認め、
-/// 英数字と `.`、`_`、`-`、`+` 以外を含む名前（`%` で符号化されたものを含む）、`.`、`..` は弾く。
-fn installer_file_name(url: &str) -> Result<String, CoreError> {
+/// 保存先の 1 区切りとして認める値か。英数字と `.`、`_`、`-`、`+` だけからなり、`.` と `..` ではないもの。
+/// `%` で符号化されたものも弾く。
+fn is_safe_cache_segment(s: &str) -> bool {
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'))
+}
+
+/// URL を、`installers_dir` からの相対パス（`<host>[_<port>]/<URL のパス>`）にする。http と https だけを認める。
+/// ファイル名だけで分けると、Forge と NeoForge の 1.20.1 系（どちらも `forge-1.20.1-...-installer.jar`）が
+/// 同じ場所を取り合うため、取得元の全体で分ける。
+fn installer_rel_path(url: &str) -> Result<String, CoreError> {
+    let unsafe_url = || invalid(format!("installer url {url:?} has an unsafe path"));
     let parsed =
         reqwest::Url::parse(url).map_err(|e| invalid(format!("installer url {url:?}: {e}")))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(invalid(format!("installer url {url:?} is not http")));
     }
-    let name = parsed
-        .path_segments()
-        .and_then(|mut s| s.next_back())
-        .unwrap_or_default();
-    let safe = !name.is_empty()
-        && name != "."
-        && name != ".."
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'));
-    if safe {
-        Ok(name.to_string())
+    let host = parsed.host_str().unwrap_or_default();
+    let host = match parsed.port() {
+        Some(port) => format!("{host}_{port}"),
+        None => host.to_string(),
+    };
+    let mut parts = vec![host];
+    parts.extend(
+        parsed
+            .path_segments()
+            .ok_or_else(unsafe_url)?
+            .map(str::to_string),
+    );
+    // ホストと、少なくとも 1 つのファイル名が要る
+    if parts.len() < 2 || !parts.iter().all(|s| is_safe_cache_segment(s)) {
+        return Err(unsafe_url());
+    }
+    let rel = parts.join("/");
+    if is_safe_relative(&rel) {
+        Ok(rel)
     } else {
-        Err(invalid(format!(
-            "installer url {url:?} has an unsafe file name"
-        )))
+        Err(unsafe_url())
     }
 }
 
@@ -94,7 +111,7 @@ async fn cancellable<T>(
     }
 }
 
-/// `cache/installers/<ファイル名>` に取得する。`<url>.sha1` を取得して照合し、合わなければファイルを残さず `HashMismatch`。
+/// `cache/installers/<host>[_<port>]/<URL のパス>` に取得する。`<url>.sha1` を取得して照合し、合わなければファイルを残さず `HashMismatch`。
 /// 取得済みで sha1 が一致するなら、ネットワークに出ない。`.sha1` の取得に失敗した場合は導入を失敗にする（照合なしでは取り込まない）。
 pub async fn fetch_installer(
     http: &Http,
@@ -105,12 +122,13 @@ pub async fn fetch_installer(
     if token.is_cancelled() {
         return Err(CoreError::Cancelled);
     }
-    let name = installer_file_name(url)?;
-    let dir = paths.installers_dir();
-    std::fs::create_dir_all(&dir).map_err(|s| io_err(&dir, s))?;
-    let path = dir.join(&name);
+    let rel = installer_rel_path(url)?;
+    let path = paths.installers_dir().join(&rel);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|s| io_err(dir, s))?;
+    }
     // 照合済みの sha1 の記録。インストーラと揃って在るときだけ、取得を省く
-    let record = dir.join(format!("{name}.sha1"));
+    let record = paths.installers_dir().join(format!("{rel}.sha1"));
 
     // 同じインストーラを取りに行くほかのタスクが終わるまで待つ
     let _guard = cancellable(token, async { Ok(lock_path(&path).await) }).await?;
@@ -179,8 +197,8 @@ pub fn read_entry(installer: &Path, name: &str) -> Result<Vec<u8>, CoreError> {
     read_named(&mut open(installer)?, installer, name)
 }
 
-/// `maven/<path>` のエントリを `libraries_dir/<path>` に展開し、書いたパスを返す。既存のファイルは上書きしない（同じ版の再導入のため）。
-/// 返すパスには、既に在ったために書かなかったものも含む（インストーラが置くライブラリの一覧として使えるように）。
+/// `maven/<path>` のエントリを `libraries_dir/<path>` に展開し、インストーラが置くパス（書いたもの、または既に在ったもの）を返す。
+/// 既存のファイルは上書きしない（同じ版の再導入のため）。
 pub fn extract_maven(installer: &Path, libraries_dir: &Path) -> Result<Vec<PathBuf>, CoreError> {
     let mut archive = open(installer)?;
     // 先にすべての名前を確かめ、1 つでも安全でなければ何も書かない
@@ -216,16 +234,17 @@ pub fn extract_maven(installer: &Path, libraries_dir: &Path) -> Result<Vec<PathB
         }
     }
 
-    let mut placed = Vec::new();
+    // 書いたもの、または既に在ったもの
+    let mut provided = Vec::new();
     for (name, rel) in files {
         let dest = libraries_dir.join(&rel);
         if std::fs::symlink_metadata(&dest).is_err() {
             let bytes = read_named(&mut archive, installer, &name)?;
             write_atomic(&dest, &bytes)?;
         }
-        placed.push(dest);
+        provided.push(dest);
     }
-    Ok(placed)
+    Ok(provided)
 }
 
 /// `/data/client.lzma` のような資源を `dest_dir/<名前>` に展開してパスを返す。
