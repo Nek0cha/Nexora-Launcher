@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import {
   Button,
   Input,
@@ -8,7 +7,6 @@ import {
   TabList,
   TabPanel,
   Tabs,
-  Text,
   TextField,
   Tooltip,
   TooltipTrigger,
@@ -18,34 +16,24 @@ import { Link, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
 import IconGame from "~icons/ph/folder-open";
 import IconScreenshots from "~icons/ph/image";
-import IconInfo from "~icons/ph/info";
 import IconMods from "~icons/ph/puzzle-piece";
 import IconWorlds from "~icons/ph/globe-hemisphere-west";
-import IconWarning from "~icons/ph/warning";
-import { openInstanceFolder, systemMemoryMb } from "../api/commands";
+import { openInstanceFolder } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { FolderKind } from "../bindings/FolderKind";
 import type { Instance } from "../bindings/Instance";
-import type { JavaMode } from "../bindings/JavaMode";
-import type { MemoryMode } from "../bindings/MemoryMode";
 import { FailureNotice } from "../components/FailureNotice";
-import { MemorySlider } from "../components/MemorySlider";
-import { NumberField } from "../components/NumberField";
-import { Select } from "../components/Select";
+import { InstanceAdvancedFields } from "../components/InstanceAdvancedFields";
+import { controlWidth, inputBase, Notice, Row } from "../components/settingsLayout";
 import { useToast } from "../components/toast/useToast";
 import { tooltipClass } from "../components/tooltip";
 import {
-  hasMemoryFlag,
   isDirty,
   isValid,
-  MEMORY_MAX_MB,
-  MEMORY_MIN_MB,
-  memoryError,
   type SettingsForm,
   toForm,
   toSettings,
 } from "../features/instances/settingsForm";
-import { SLIDER_STEP_MB, sliderMax } from "../features/instances/memorySlider";
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useRunning } from "../features/play/useGameSync";
@@ -58,17 +46,6 @@ const quietLink = [
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
   ring,
-].join(" ");
-
-// 右の列の幅。名前の欄と、自動／手動の選択欄で揃える
-const controlWidth = "w-60";
-
-const inputBase = [
-  "h-9 rounded-md border border-line-control bg-surface-1 px-3 text-text",
-  "placeholder:text-text-faint",
-  "transition-colors duration-(--duration-fast) ease-out-quint",
-  "data-hovered:border-text-muted",
-  "data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-accent",
 ].join(" ");
 
 const saveButton = [
@@ -183,21 +160,6 @@ export default function InstanceDetail() {
   );
 }
 
-// 1段の行は 44px、ラベルと説明の2段の行は 52px（アプリの設定の画面と同じ）
-function Row({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-11 flex-col justify-center gap-2 py-2">{children}</div>;
-}
-
-function Notice({ tone, children }: { tone: "info" | "warning"; children: ReactNode }) {
-  const Icon = tone === "warning" ? IconWarning : IconInfo;
-  return (
-    <p className="flex items-start gap-2 text-sm text-text">
-      <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${tone === "warning" ? "text-warning" : "text-text-muted"}`} />
-      <span>{children}</span>
-    </p>
-  );
-}
-
 function SettingsTab({ instance, running }: { instance: Instance; running: boolean }) {
   const { t } = useTranslation();
   const update = useUpdateInstance();
@@ -207,16 +169,9 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   // 保存の結果はトーストで出す
   const toast = useToast();
 
-  // 物理メモリの取得中や失敗のときは、数値の入力だけを出す
-  const { data: totalMb } = useQuery({ queryKey: ["system-memory-mb"], queryFn: systemMemoryMb, staleTime: Infinity });
-  const maxMb = totalMb === undefined ? null : sliderMax(totalMb);
 
   const dirty = isDirty(base, form);
   const canSave = dirty && isValid(form) && !update.isPending;
-  const modes = [
-    { id: "auto", label: t("instances.detail.modeAuto") },
-    { id: "manual", label: t("instances.detail.modeManual") },
-  ] as const;
 
   const change = (patch: Partial<SettingsForm>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -259,65 +214,7 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
             <Input className={`${inputBase} ${controlWidth}`} />
           </TextField>
         </Row>
-        <Row>
-          <Select<MemoryMode>
-            label={t("instances.detail.memory")}
-            value={form.memoryMode}
-            options={[...modes]}
-            onChange={(memoryMode) => change({ memoryMode })}
-            triggerClassName={controlWidth}
-          />
-          {form.memoryMode === "manual" && maxMb !== null && (
-            <MemorySlider
-              label={t("instances.detail.memorySlider")}
-              value={form.memoryMb}
-              min={MEMORY_MIN_MB}
-              max={maxMb}
-              step={SLIDER_STEP_MB}
-              onChange={(memoryMb) => change({ memoryMb })}
-            />
-          )}
-          {form.memoryMode === "manual" && (
-            <NumberField
-              label={t("instances.detail.memoryMb")}
-              description={t("instances.detail.memoryRange")}
-              value={form.memoryMb}
-              min={MEMORY_MIN_MB}
-              max={MEMORY_MAX_MB}
-              inputWidth="w-16"
-              onChange={(memoryMb) => change({ memoryMb })}
-            />
-          )}
-          {memoryError(form) && <Notice tone="warning">{t("instances.detail.memoryRange")}</Notice>}
-        </Row>
-        <Row>
-          <Select<JavaMode>
-            label={t("instances.detail.java")}
-            value={form.javaMode}
-            options={[...modes]}
-            onChange={(javaMode) => change({ javaMode })}
-            triggerClassName={controlWidth}
-          />
-          {form.javaMode === "manual" && (
-            <TextField value={form.javaPath} onChange={(javaPath) => change({ javaPath })} className="flex flex-col gap-1">
-              <Label className="text-text">{t("instances.detail.javaPath")}</Label>
-              <Input className={`${inputBase} w-full`} spellCheck={false} />
-              <Text slot="description" className="text-xs text-text-muted">
-                {t("instances.detail.javaPathHint")}
-              </Text>
-            </TextField>
-          )}
-        </Row>
-        <Row>
-          <TextField value={form.jvmArgs} onChange={(jvmArgs) => change({ jvmArgs })} className="flex flex-col gap-1">
-            <Label className="text-text">{t("instances.detail.jvmArgs")}</Label>
-            <Input className={`${inputBase} tabular w-full`} spellCheck={false} />
-            <Text slot="description" className="text-xs text-text-muted">
-              {t("instances.detail.jvmArgsHelp")}
-            </Text>
-          </TextField>
-          {hasMemoryFlag(form.jvmArgs) && <Notice tone="warning">{t("instances.detail.xmxWarning")}</Notice>}
-        </Row>
+        <InstanceAdvancedFields form={form} onChange={change} />
       </div>
       <div className="flex items-center gap-3">
         <Button type="submit" isDisabled={!canSave} isPending={update.isPending} className={saveButton}>
