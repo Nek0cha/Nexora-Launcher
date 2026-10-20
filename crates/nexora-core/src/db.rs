@@ -15,6 +15,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("../migrations/0001_init.sql")),
         M::up(include_str!("../migrations/0002_instances.sql")),
         M::up(include_str!("../migrations/0003_accounts.sql")),
+        M::up(include_str!("../migrations/0004_instance_contents.sql")),
     ])
 }
 
@@ -86,6 +87,7 @@ mod tests {
         for table in [
             "accounts",
             "app_settings",
+            "instance_contents",
             "instances",
             "java_runtimes",
             "running_sessions",
@@ -133,6 +135,7 @@ mod tests {
             M::up(include_str!("../migrations/0001_init.sql")),
             M::up(include_str!("../migrations/0002_instances.sql")),
             M::up(include_str!("../migrations/0003_accounts.sql")),
+            M::up(include_str!("../migrations/0004_instance_contents.sql")),
             M::up("CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;"),
         ]);
         let result = Db::open_with(&path, &broken);
@@ -146,7 +149,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
