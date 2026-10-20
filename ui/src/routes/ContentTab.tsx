@@ -21,6 +21,7 @@ import {
   emptyFilter,
   type FilterState,
   isMetadataFiltered,
+  sortByName,
 } from "../features/content/contentFilter";
 import {
   useAddFiles,
@@ -115,6 +116,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     t,
     setEnabled: setEnabled.mutate,
     add: add.mutate,
+    identify: identify.mutate,
   });
   useLayoutEffect(() => {
     latest.current = {
@@ -126,6 +128,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
       t,
       setEnabled: setEnabled.mutate,
       add: add.mutate,
+      identify: identify.mutate,
     };
   });
   // 追加の最中のドロップは受けない。状態の反映を待たずに止めるため ref で持つ
@@ -145,6 +148,8 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
       { kind: target, paths, overwrite },
       {
         onSuccess: (report) => {
+          // 入れたファイルにも、開いている間に名前、アイコン、依存を付ける
+          if (report.added.length > 0) latest.current.identify();
           for (const r of report.rejected)
             toast.show({ kind: "error", message: t("content.reject.message", { name: r.name, reason: rejectText(t, r.reason, target) }) });
           if (!overwrite && report.conflicts.length > 0) {
@@ -312,7 +317,9 @@ function KindPanel(props: {
   const categories = useCategories(kind);
   const [showExcluded, setShowExcluded] = useState(false);
   const items = query.data;
-  const { visible, excluded } = useMemo(() => applyFilter(items ?? [], filter), [items, filter]);
+  // 並びは画面に出す名前の順にする（DB はパスの順で返す）
+  const sorted = useMemo(() => sortByName(items ?? []), [items]);
+  const { visible, excluded } = useMemo(() => applyFilter(sorted, filter), [sorted, filter]);
   const metadata = isMetadataFiltered(filter);
   // メタデータの絞り込みを外したら、対象外の行を閉じた状態に戻す（付け直したときにいきなり開かない）
   useEffect(() => {

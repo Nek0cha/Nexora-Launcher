@@ -15,12 +15,15 @@ export function useContentList(instanceId: string, kind: ContentKind) {
   return useQuery({ queryKey: [...contentKey(instanceId), kind], queryFn: () => listContent(instanceId, kind) });
 }
 
-/** 未特定の中身を特定する。タブを開いたとき 1 回呼ぶ。失敗は黙って無視する。 */
+/**
+ * 未特定の中身を特定する。タブを開いたときと、ファイルを追加したあとに呼ぶ。失敗は黙って無視する。
+ * オフラインで失敗しても jar の中の名前やアイコンは書き終えているので、成否にかかわらず一覧を取り直す。
+ */
 export function useIdentifyContent(instanceId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => identifyContent(instanceId),
-    onSuccess: () => client.invalidateQueries({ queryKey: contentKey(instanceId) }),
+    onSettled: () => client.invalidateQueries({ queryKey: contentKey(instanceId) }),
     onError: () => {},
   });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContentItem } from "../../bindings/ContentItem";
-import { applyFilter, dependentsOf, emptyFilter, isMetadataFiltered } from "./contentFilter";
+import { applyFilter, dependentsOf, emptyFilter, isMetadataFiltered, sortByName } from "./contentFilter";
 
 function item(over: Partial<ContentItem>): ContentItem {
   return {
@@ -101,5 +101,24 @@ describe("dependentsOf", () => {
     const target = item({ relPath: "t", projectId: null });
     const other = item({ relPath: "o", dependencies: ["P"] });
     expect(dependentsOf([target, other], target)).toEqual([]);
+  });
+});
+
+describe("sortByName", () => {
+  it("orders by the shown name, ignoring case, and falls back to the file name", () => {
+    const zeta = item({ relPath: "mods/a.jar", fileName: "a.jar", name: "zeta" });
+    const alpha = item({ relPath: "mods/z.jar", fileName: "z.jar", name: "Alpha" });
+    const unnamed = item({ relPath: "mods/m.jar", fileName: "mystery.jar", name: null });
+    const beta = item({ relPath: "mods/b.jar", fileName: "b.jar", name: "beta" });
+    const input = [zeta, alpha, unnamed, beta];
+    expect(sortByName(input)).toEqual([alpha, beta, unnamed, zeta]);
+    // 元の配列は並べ替えない
+    expect(input).toEqual([zeta, alpha, unnamed, beta]);
+  });
+
+  it("breaks ties by the path so the order is stable", () => {
+    const b = item({ relPath: "mods/b.jar", name: "Same" });
+    const a = item({ relPath: "mods/a.jar", name: "same" });
+    expect(sortByName([b, a])).toEqual([a, b]);
   });
 });

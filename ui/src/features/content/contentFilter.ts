@@ -55,6 +55,18 @@ export function applyFilter(
   return { visible, excluded };
 }
 
+/**
+ * 画面に出す名前（無ければファイル名）の順に並べた新しい配列を返す。大文字と小文字は区別しない。
+ * 名前が同じなら `relPath` の順にして、並びがぶれないようにする。
+ */
+export function sortByName(items: ContentItem[]): ContentItem[] {
+  const key = (item: ContentItem) => (item.name ?? item.fileName).toLowerCase();
+  return items
+    .map((item) => ({ item, key: key(item) }))
+    .sort((a, b) => a.key.localeCompare(b.key) || a.item.relPath.localeCompare(b.item.relPath))
+    .map(({ item }) => item);
+}
+
 /** `target` に依存している、有効な行。プロジェクト ID が無ければ空。 */
 export function dependentsOf(items: ContentItem[], target: ContentItem): ContentItem[] {
   const id = target.projectId;

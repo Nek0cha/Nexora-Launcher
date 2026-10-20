@@ -338,6 +338,53 @@ describe("ContentTab", () => {
     expect(screen.queryByRole("grid", { name: "Content not covered by this filter" })).toBeNull();
   });
 
+  it("refetches the list even when identify fails offline", async () => {
+    vi.mocked(identifyContent).mockRejectedValue({ kind: "network", message: "offline" });
+    mount();
+    await ready();
+    // 特定は失敗の前に jar の中の名前を書いているので、失敗でも取り直す
+    await waitFor(() => expect(vi.mocked(listContent).mock.calls.filter(([, k]) => k === "mod").length).toBeGreaterThan(1));
+    expect(within(toasts()).queryByRole("alert")).toBeNull();
+  });
+
+  it("identifies again after an add that added files, including the overwrite re-add", async () => {
+    const added = item({ relPath: "new.jar", fileName: "new.jar", sha1: "n1", provider: "local", name: null, identified: false });
+    vi.mocked(addContentFiles)
+      .mockResolvedValueOnce({ added: [added], conflicts: ["sodium.jar"], rejected: [] })
+      .mockResolvedValueOnce({ added: [item()], conflicts: [], rejected: [] });
+    mount();
+    await ready();
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(1));
+    await act(async () => handlers!.drop(["C:\\Downloads\\new.jar", "C:\\Downloads\\sodium.jar"]));
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(2));
+    const dialog = await screen.findByRole("alertdialog");
+    await press(within(dialog).getByRole("button", { name: "Replace" }));
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(3));
+    expect(identifyContent).toHaveBeenLastCalledWith("i1");
+  });
+
+  it("does not identify again when an add added nothing", async () => {
+    vi.mocked(addContentFiles).mockResolvedValueOnce({
+      added: [], conflicts: [], rejected: [{ name: "notes.txt", reason: "wrongExtension" }],
+    });
+    mount();
+    await ready();
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(1));
+    await act(async () => handlers!.drop(["C:\\Downloads\\notes.txt"]));
+    await within(toasts()).findByRole("alert");
+    expect(identifyContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists rows by the shown name, ignoring case", async () => {
+    lists.mod = [...lists.mod, item({ relPath: "b.jar", fileName: "b.jar", sha1: "s9", name: null })];
+    mount();
+    await ready();
+    const names = within(screen.getByRole("grid"))
+      .getAllByRole("button", { name: /^Enable / })
+      .map((b) => b.getAttribute("aria-label"));
+    expect(names).toEqual(["Enable b.jar", "Enable Fabric API", "Enable Mod Menu", "Enable Mystery", "Enable Sodium"]);
+  });
+
   it("stops listening for drops when unmounted", async () => {
     mount();
     await ready();
