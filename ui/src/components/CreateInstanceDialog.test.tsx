@@ -33,16 +33,17 @@ const created: CreatedInstance = {
   taskId: "t1",
 };
 
-// ローダーのタブの試験に使う一覧。Fabric は 1.8.9 に対応しない
+// ローダーのタブの試験に使う一覧。Forge は実物と同じく 1.16.5 以降だけ。Fabric はこの試験では 1.16.5 と 1.8.9 に対応しないものとする
 const LOADER_TEST_VERSIONS = [
   { id: "1.21.5", releaseTime: "2025-03-25T00:00:00Z" },
   { id: "1.21.4", releaseTime: "2024-12-03T00:00:00Z" },
+  { id: "1.16.5", releaseTime: "2021-01-14T00:00:00Z" },
   { id: "1.8.9", releaseTime: "2015-12-09T00:00:00Z" },
 ];
 const GAME_VERSIONS: Partial<Record<LoaderKind, string[]>> = {
   fabric: ["1.21.5", "1.21.4", "1.20.1"],
   quilt: ["1.21.5", "1.21.4"],
-  forge: ["1.21.5", "1.21.4", "1.8.9"],
+  forge: ["1.21.5", "1.21.4", "1.16.5"],
   neoforge: ["1.21.5"],
 };
 const FORGE_VERSIONS = [
@@ -233,7 +234,8 @@ describe("CreateInstanceDialog", () => {
 
   it("gives a disabled tab's reason to assistive tech through aria-describedby", async () => {
     const dialog = await openWithLoaders();
-    await choose(dialog, /Version/, "1.8.9");
+    // 1.16.5 は Forge だけが対応する
+    await choose(dialog, /Version/, "1.16.5");
     await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(true));
     const fabric = tab(dialog, "Fabric");
     const id = fabric.getAttribute("aria-describedby");
@@ -244,7 +246,7 @@ describe("CreateInstanceDialog", () => {
     expect(tab(dialog, "Forge").getAttribute("aria-describedby")).toBeNull();
   });
 
-  it("marks the Fabric and Quilt tabs as loading until their lists arrive", async () => {
+  it("marks every loader tab as loading until its list arrives", async () => {
     vi.mocked(listVersions).mockResolvedValue(LOADER_TEST_VERSIONS);
     vi.mocked(listLoaderGameVersions).mockReturnValue(new Promise(() => {}));
     mount();
@@ -274,6 +276,8 @@ describe("CreateInstanceDialog", () => {
     await choose(dialog, /Version/, "1.8.9");
     await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(true));
     expect(tab(dialog, "Fabric").querySelector("[title]")?.getAttribute("title")).toBe("Not available for this version");
+    // 古いバージョンは Forge の対応範囲の外
+    expect(isDisabledTab(tab(dialog, "Forge"))).toBe(true);
 
     await choose(dialog, /Version/, "1.21.5");
     await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false));
