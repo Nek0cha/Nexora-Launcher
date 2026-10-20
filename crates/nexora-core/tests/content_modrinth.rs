@@ -160,3 +160,22 @@ async fn user_agent_names_the_app_and_a_contact() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn gives_up_after_a_second_429() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/version_files"))
+        .respond_with(ResponseTemplate::new(429).insert_header("X-Ratelimit-Reset", "0"))
+        .mount(&server)
+        .await;
+    let err = versions_by_hash(&http(), &server.uri(), &[HASH.to_string()])
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        nexora_core::error::CoreError::HttpStatus { status: 429, .. }
+    ));
+    // 最初と、待った後の 1 回だけ
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+}

@@ -137,7 +137,10 @@ impl Http {
                 Err(failure) => failure,
             };
             let limited = matches!(err, CoreError::HttpStatus { status: 429, .. });
-            if limited && !waited_for_limit {
+            if limited && waited_for_limit {
+                // 待った後の 429 は、通常の再試行に回さずそのまま返す
+                return Err(err);
+            } else if limited {
                 waited_for_limit = true;
                 let secs = reset
                     .unwrap_or(RATE_LIMIT_DEFAULT_SECS)
