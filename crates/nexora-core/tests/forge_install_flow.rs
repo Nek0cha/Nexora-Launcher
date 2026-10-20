@@ -131,7 +131,8 @@ fn install_profile(base: &str, minecraft: &str, processor_jar: &[u8]) -> String 
 }
 
 /// 入れ子の旧形式の install_profile.json（実物の 1.8.9 と同じ形。Forge 本体は URL を持たず、
-/// `forge-dep` は URL だけを持ち、`launchwrapper` は URL を持たない）。
+/// `forge-dep` は URL だけを持ち、サーバー専用のものは `clientreq` が偽）。URL を持たないライブラリが
+/// Mojang の取得元になることは、実ネットワークに出ないため `legacy.rs` の単体テストだけで確かめる。
 fn legacy_install_profile(base: &str, file_path: &str) -> String {
     serde_json::json!({
         "install": {
@@ -199,11 +200,12 @@ fn version_json(base: &str) -> String {
 }
 
 /// 偽のインストーラ。profile が None なら、正しい install_profile.json を入れる。
-fn installer(base: &str, profile: Option<&str>) -> Vec<u8> {
+/// `version` が Some なら、`version.json` をそれにする。
+fn installer(base: &str, profile: Option<&str>, version: Option<&str>) -> Vec<u8> {
     let processor_jar = processor_jar();
     let good = install_profile(base, MC, &processor_jar);
     let profile = profile.unwrap_or(&good);
-    let version = version_json(base);
+    let version = version.map_or_else(|| version_json(base), str::to_string);
     let forge = format!("maven/{}", forge_lib(None));
     let universal = format!("maven/{}", forge_lib(Some("universal")));
     zip_bytes(&[
@@ -237,15 +239,15 @@ struct Harness {
 
 /// profile が None なら正しいインストーラを配る。
 async fn harness(profile: Option<&str>) -> Harness {
-    harness_with(|_| profile.map(str::to_string)).await
+    harness_with(|_| (profile.map(str::to_string), None)).await
 }
 
 /// サーバーの URL から install_profile.json を作る版。
-async fn harness_with(profile: impl FnOnce(&str) -> Option<String>) -> Harness {
+async fn harness_with(profile: impl FnOnce(&str) -> (Option<String>, Option<String>)) -> Harness {
     let fake = FakeMojang::start_version(MC, &fake_java_bytes()).await;
     let u = fake.server.uri();
-    let profile = profile(&u);
-    let jar = installer(&u, profile.as_deref());
+    let (profile, version) = profile(&u);
+    let jar = installer(&u, profile.as_deref(), version.as_deref());
     serve(&fake.server, INSTALLER_ROUTE, &jar).await;
     serve(
         &fake.server,
@@ -304,7 +306,44 @@ async fn harness_with(profile: impl FnOnce(&str) -> Option<String>) -> Harness {
 
 /// 入れ子の旧形式のインストーラを配る harness。`file_path` は `install.filePath`。
 async fn harness_legacy(file_path: &str) -> Harness {
-    harness_with(|base| Some(legacy_install_profile(base, file_path))).await
+    harness_with(|base| (Some(legacy_install_profile(base, file_path)), None)).await
+}
+
+/// 1.12.2 の 2859 以降と同じ形（`spec: 0`、processor も data も無い）のインストーラを配る harness。
+async fn harness_spec0_without_processors() -> Harness {
+    harness_with(|base| {
+        let profile = serde_json::json!({
+            "spec": 0,
+            "profile": "forge",
+            "version": format!("{MC}-forge-36.2.39"),
+            "minecraft": MC,
+            "json": "/version.json",
+            "data": {},
+            "processors": [],
+            "libraries": []
+        });
+        // `client` の最終 jar を作る processor が無いので、version.json は Forge 本体と依存だけを持つ
+        let version = serde_json::json!({
+            "id": format!("{MC}-forge-36.2.39"),
+            "inheritsFrom": MC,
+            "type": "release",
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+            "minecraftArguments": "--tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker",
+            "libraries": [
+                { "name": format!("net.minecraftforge:forge:{FORGE}"),
+                  "downloads": { "artifact": {
+                      "path": forge_lib(None), "url": "",
+                      "sha1": sha1_hex(MAVEN_FORGE), "size": MAVEN_FORGE.len() } } },
+                { "name": "com.example:forge-dep:1.0",
+                  "downloads": { "artifact": {
+                      "path": "com/example/forge-dep/1.0/forge-dep-1.0.jar",
+                      "url": format!("{base}{DEP_ROUTE}"),
+                      "sha1": sha1_hex(DEP), "size": DEP.len() } } }
+            ]
+        });
+        (Some(profile.to_string()), Some(version.to_string()))
+    })
+    .await
 }
 
 fn forge_instance(name: &str) -> NewInstance {
@@ -607,6 +646,30 @@ async fn legacy_nested_installer_installs_the_universal_jar() {
     // processor は無く、作業場所も残らない
     assert_eq!(h.calls(), 0);
     assert!(h.staging_leftovers().is_empty());
+}
+
+#[tokio::test]
+async fn spec_zero_installer_without_processors_installs_the_maven_files() {
+    let h = harness_spec0_without_processors().await;
+    let (id, snap) = h.create("forge").await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    assert_eq!(h.state(&id), InstanceState::Ready);
+    let libs = h.shared().join("libraries");
+    assert_eq!(
+        std::fs::read(libs.join(forge_lib(None))).unwrap(),
+        MAVEN_FORGE
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.record()).unwrap()).unwrap();
+    let files: Vec<&str> = record["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    let rel = format!("libraries/{}", forge_lib(None));
+    assert!(files.contains(&rel.as_str()), "{rel} not in {files:?}");
+    assert_eq!(h.calls(), 0);
 }
 
 #[tokio::test]

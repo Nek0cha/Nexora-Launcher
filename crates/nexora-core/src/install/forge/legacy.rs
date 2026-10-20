@@ -83,6 +83,7 @@ pub fn parse_legacy_profile(bytes: &[u8]) -> Result<LegacyProfile, CoreError> {
         .and_then(Value::as_array)
         .ok_or_else(|| invalid("install_profile.json: versionInfo.libraries is missing".into()))?;
     let mut normalized = Vec::new();
+    let mut has_forge = false;
     for lib in libraries {
         let mut lib = lib.clone();
         let Some(object) = lib.as_object_mut() else {
@@ -97,6 +98,7 @@ pub fn parse_legacy_profile(bytes: &[u8]) -> Result<LegacyProfile, CoreError> {
             object.remove(key);
         }
         if object.get("name").and_then(Value::as_str) == Some(forge_path.as_str()) {
+            has_forge = true;
             object.remove("url");
             object.insert(
                 "downloads".into(),
@@ -106,6 +108,11 @@ pub fn parse_legacy_profile(bytes: &[u8]) -> Result<LegacyProfile, CoreError> {
             object.insert("url".into(), MOJANG_LIBRARIES.into());
         }
         normalized.push(lib);
+    }
+    if !has_forge {
+        return Err(invalid(format!(
+            "versionInfo has no library {forge_path}, so the universal jar would not be used"
+        )));
     }
     info.insert("libraries".into(), Value::Array(normalized));
     let profile_json = serde_json::to_vec_pretty(&value["versionInfo"])
@@ -252,6 +259,14 @@ mod tests {
     fn mismatched_minecraft_is_invalid() {
         let mut value: serde_json::Value = serde_json::from_slice(&fixture("forge-1.8.9")).unwrap();
         value["install"]["minecraft"] = "1.8".into();
+        let err = parse_legacy_profile(value.to_string().as_bytes()).unwrap_err();
+        assert_eq!(err.code(), "meta.invalid");
+    }
+
+    #[test]
+    fn a_profile_without_the_forge_library_is_invalid() {
+        let mut value: serde_json::Value = serde_json::from_slice(&fixture("forge-1.8.9")).unwrap();
+        value["install"]["path"] = "net.minecraftforge:forge:9.9.9".into();
         let err = parse_legacy_profile(value.to_string().as_bytes()).unwrap_err();
         assert_eq!(err.code(), "meta.invalid");
     }
