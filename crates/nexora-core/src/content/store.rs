@@ -66,23 +66,31 @@ fn read_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
     })
 }
 
-pub(crate) fn list(
-    db: &Db,
-    instance_id: &str,
-    kind: ContentKind,
-) -> Result<Vec<ContentItem>, CoreError> {
+/// 走査と照合のために、行を DB の列ごと読む。並びは `rel_path` 順。
+pub(crate) fn rows(db: &Db, instance_id: &str, kind: ContentKind) -> Result<Vec<Row>, CoreError> {
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM instance_contents
              WHERE instance_id = ?1 AND kind = ?2 ORDER BY rel_path"
         ))?;
         let rows = stmt.query_map(params![instance_id, kind.as_str()], read_row)?;
-        let mut items = Vec::new();
+        let mut out = Vec::new();
         for row in rows {
-            items.push(row?.item);
+            out.push(row?);
         }
-        Ok(items)
+        Ok(out)
     })
+}
+
+pub(crate) fn list(
+    db: &Db,
+    instance_id: &str,
+    kind: ContentKind,
+) -> Result<Vec<ContentItem>, CoreError> {
+    Ok(rows(db, instance_id, kind)?
+        .into_iter()
+        .map(|r| r.item)
+        .collect())
 }
 
 pub(crate) fn upsert(db: &Db, instance_id: &str, row: &Row) -> Result<(), CoreError> {

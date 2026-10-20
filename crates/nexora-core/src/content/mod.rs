@@ -4,6 +4,8 @@
 #[allow(dead_code)]
 pub(crate) mod store;
 
+pub mod scan;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
