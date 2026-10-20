@@ -52,11 +52,6 @@ impl LoaderKind {
             _ => None,
         }
     }
-
-    /// いまインストールして起動できるローダーか。
-    pub fn is_supported(self) -> bool {
-        true
-    }
 }
 
 /// ローダーの版の一覧の 1 件。一覧は新しい順に並べる。
@@ -256,7 +251,7 @@ impl LoaderMeta {
         }
     }
 
-    /// Forge と NeoForge の取得先を差し替える（試験用）。
+    /// Forge と NeoForge の取得先を設定する（`InstallEnv::new` が `Urls` の値で呼び、試験では偽物に向ける）。
     pub fn with_forge_urls(
         mut self,
         forge_maven: impl Into<String>,
@@ -375,6 +370,10 @@ impl LoaderMeta {
         mc_version: &str,
     ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
         check_version("Minecraft version", mc_version)?;
+        // 対応範囲の外のバージョンには、選べる版を出さない
+        if !forge::forge_supported(mc_version) {
+            return Ok(Vec::new());
+        }
         let mut versions: Vec<String> = self
             .forge_maven_versions()
             .await?
@@ -424,6 +423,9 @@ impl LoaderMeta {
         mc_version: &str,
     ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
         check_version("Minecraft version", mc_version)?;
+        if !forge::neoforge_supported(mc_version) {
+            return Ok(Vec::new());
+        }
         let (new, old) = self.neoforge_maven_versions().await?;
         // 新系統は `-` より後ろ（beta、alpha など）があれば試験版。並びは版で決める
         let mut new: Vec<String> = new
@@ -540,12 +542,6 @@ mod tests {
         assert_eq!(LoaderKind::parse("Fabric"), None);
         assert_eq!(LoaderKind::parse(""), None);
         assert_eq!(LoaderKind::parse("liteloader"), None);
-    }
-
-    #[test]
-    fn all_loaders_are_supported() {
-        let supported: Vec<_> = ALL.into_iter().filter(|k| k.is_supported()).collect();
-        assert_eq!(supported, ALL.to_vec());
     }
 
     const FABRIC_LOADERS: &str =

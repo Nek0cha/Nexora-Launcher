@@ -559,6 +559,72 @@ async fn concurrent_installs_of_same_version_run_processors_once() {
     assert_eq!(h.state(&b.instance.id), InstanceState::Ready);
 }
 
+/// Forge の Maven（`/forge/` の下）への要求の数。
+async fn forge_maven_hits(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path().starts_with("/forge/"))
+        .count()
+}
+
+#[tokio::test]
+async fn create_refuses_versions_outside_the_supported_range() {
+    let h = harness(None).await;
+    let cases = [
+        // 対応範囲（Forge は 1.16.5 以降）の外
+        (LoaderKind::Forge, "1.16.4", "1.16.4-35.1.37"),
+        // ローダーの版が別の Minecraft のバージョン向け
+        (LoaderKind::Forge, MC, "1.20.1-47.3.0"),
+        // NeoForge は 1.20.1 以降
+        (LoaderKind::Neoforge, "1.19.4", "1.19.4-45.1.0"),
+        (LoaderKind::Neoforge, "1.20.1", "21.1.172"),
+    ];
+    for (loader, mc, version) in cases {
+        let new = NewInstance {
+            loader,
+            loader_version: Some(version.into()),
+            ..NewInstance::vanilla("x", mc)
+        };
+        let err = h.launcher.create_instance(&new).unwrap_err();
+        assert_eq!(err.code(), "install.unsupported_profile", "{mc} {version}");
+    }
+    assert!(h.launcher.list_instances().unwrap().is_empty());
+    assert_eq!(forge_maven_hits(&h.fake.as_ref().unwrap().server).await, 0);
+}
+
+#[tokio::test]
+async fn install_refuses_a_loader_for_another_minecraft_version_without_fetching() {
+    let h = harness(None).await;
+    // 作った後に行が書き換えられた（古い版で作った行など）ものを、導入の時点でも断る
+    let inst = instance::create(
+        h.launcher.db(),
+        &h.paths,
+        &forge_instance("forge"),
+        now_ms(),
+    )
+    .unwrap();
+    h.launcher
+        .db()
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE instances SET loader_version = '1.20.1-47.3.0' WHERE id = ?1",
+                rusqlite::params![inst.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let task = h.launcher.launch_instance(&inst.id, true).unwrap();
+    let snap = wait(&h.tasks, &task).await;
+    assert_eq!(snap.kind, "install");
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "install.unsupported_profile");
+    assert_eq!(h.state(&inst.id), InstanceState::Broken);
+    assert_eq!(forge_maven_hits(&h.fake.as_ref().unwrap().server).await, 0);
+}
+
 impl Harness {
     fn pinned_json(&self) -> PathBuf {
         self.profile_dir().join(format!("forge-{FORGE}.json"))

@@ -233,21 +233,18 @@ fn unused_dir_name(
 
 /// 行を追加し、ゲームディレクトリを作る。名前が空白だけならバージョン名を使う。
 /// 検証は設定の更新と同じ規則で、行を追加する前に行う。
-/// 未対応のローダーは `UnsupportedProfile`、バニラ以外でローダーのバージョンがなければ
-/// `InvalidInstanceSetting`（`loaderVersion`）にする。バニラのときはローダーのバージョンを捨てる。
+/// バニラ以外でローダーのバージョンがなければ `InvalidInstanceSetting`（`loaderVersion`）にする。
+/// バニラのときはローダーのバージョンを捨てる。
 /// バージョンの値が空、または区切り文字（`/`、`\`、`:`）や `..` を含むなら、
 /// `InvalidInstanceSetting`（`mcVersion` または `loaderVersion`）にする。
+/// Forge と NeoForge は、対応範囲の外の Minecraft のバージョンや、別のバージョン向けのローダーの版を
+/// `UnsupportedProfile` にする。
 pub fn create(
     db: &Db,
     paths: &AppPaths,
     new: &NewInstance,
     now_ms: i64,
 ) -> Result<Instance, CoreError> {
-    if !new.loader.is_supported() {
-        return Err(CoreError::UnsupportedProfile {
-            reason: format!("loader {} is not supported yet", new.loader.as_str()),
-        });
-    }
     // バージョンはプロファイルやキャッシュのパスと URL に入るため、区切り文字や `..` を含むものを弾く
     if !is_safe_version(&new.mc_version) {
         return Err(invalid("mcVersion"));
@@ -259,6 +256,9 @@ pub fn create(
             _ => return Err(invalid("loaderVersion")),
         },
     };
+    if let Some(version) = &loader_version {
+        crate::meta::loader::forge::check_target(new.loader, &new.mc_version, version)?;
+    }
     let (memory_mb, java_path) = normalize_advanced(
         new.memory_mode,
         new.memory_mb,

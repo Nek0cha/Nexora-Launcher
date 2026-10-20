@@ -134,6 +134,31 @@ pub fn neoforge_supported(mc: &str) -> bool {
     at_least(mc, &[1, 20, 1])
 }
 
+/// Forge と NeoForge で、`mc` が対応範囲にあり、`loader_version` が `mc` 向けの版かを確かめる。
+/// 合わなければ `UnsupportedProfile`。ほかのローダーは確かめない。ネットワークには出ない。
+pub fn check_target(kind: LoaderKind, mc: &str, loader_version: &str) -> Result<(), CoreError> {
+    let (supported, loader_mc) = match kind {
+        LoaderKind::Forge => (
+            forge_supported(mc),
+            forge_mc_version(loader_version).map(str::to_string),
+        ),
+        LoaderKind::Neoforge => (neoforge_supported(mc), neoforge_mc_version(loader_version)),
+        _ => return Ok(()),
+    };
+    let name = kind.as_str();
+    if !supported {
+        return Err(CoreError::UnsupportedProfile {
+            reason: format!("{name} does not support Minecraft {mc}"),
+        });
+    }
+    if loader_mc.as_deref() != Some(mc) {
+        return Err(CoreError::UnsupportedProfile {
+            reason: format!("{name} {loader_version} is not for Minecraft {mc}"),
+        });
+    }
+    Ok(())
+}
+
 /// インストーラの URL。`kind` が Forge と NeoForge 以外、または `version` が安全でないときは `InvalidMetadata`。
 pub fn installer_url(kind: LoaderKind, base: &str, version: &str) -> Result<String, CoreError> {
     check_version("loader version", version)?;
@@ -231,6 +256,37 @@ mod tests {
         assert!(!neoforge_supported("1.19.4"));
         assert!(neoforge_supported("1.21"));
         assert!(!neoforge_supported("26.3"));
+    }
+
+    #[test]
+    fn check_target_needs_the_range_and_a_matching_loader() {
+        let code = |kind, mc, v| check_target(kind, mc, v).map_err(|e| e.code());
+        assert_eq!(code(LoaderKind::Forge, "1.20.1", "1.20.1-47.3.0"), Ok(()));
+        assert_eq!(code(LoaderKind::Neoforge, "1.21.1", "21.1.172"), Ok(()));
+        assert_eq!(
+            code(LoaderKind::Neoforge, "1.20.1", "1.20.1-47.1.106"),
+            Ok(())
+        );
+        let unsupported = Err("install.unsupported_profile");
+        assert_eq!(
+            code(LoaderKind::Forge, "1.16.4", "1.16.4-35.1.37"),
+            unsupported
+        );
+        assert_eq!(
+            code(LoaderKind::Forge, "1.16.5", "1.20.1-47.3.0"),
+            unsupported
+        );
+        assert_eq!(code(LoaderKind::Forge, "1.16.5", "nodash"), unsupported);
+        assert_eq!(
+            code(LoaderKind::Neoforge, "1.19.4", "1.19.4-45.1.0"),
+            unsupported
+        );
+        assert_eq!(
+            code(LoaderKind::Neoforge, "1.20.1", "21.1.172"),
+            unsupported
+        );
+        // Fabric と Quilt は確かめない
+        assert_eq!(code(LoaderKind::Fabric, "1.8.9", "0.16.10"), Ok(()));
     }
 
     #[test]

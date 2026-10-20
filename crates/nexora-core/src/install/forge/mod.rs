@@ -15,7 +15,7 @@ use crate::error::CoreError;
 use crate::install::plan::{is_safe_relative, maven_path};
 use crate::install::{InstallEnv, kib, now_ms};
 use crate::instance::Instance;
-use crate::meta::loader::forge::installer_url;
+use crate::meta::loader::forge::{check_target, installer_url};
 use crate::meta::loader::{LoaderKind, LoaderProfile, check_version, profile_path};
 use crate::meta::mojang::manifest::client_jar_path;
 use crate::meta::mojang::version::{Library, VersionJson};
@@ -118,6 +118,7 @@ pub fn load_pinned(env: &InstallEnv, inst: &Instance) -> Result<LoaderProfile, C
     }
 }
 
+/// 対応範囲の外の Minecraft のバージョンや、別のバージョン向けのローダーの版は、何にも触れずに `UnsupportedProfile`。
 /// 固定済みの version.json があり、`inheritsFrom` が `inst.mc_version` と一致するなら、ネットワークに出ずにそれを返す。
 /// 無ければインストーラを取得し、`install_profile.minecraft` が `inst.mc_version` と一致することを確かめ
 /// （違えば `InvalidMetadata`）、`version.json` を `shared/versions/<id>/<id>.json` に固定して返す。
@@ -126,7 +127,9 @@ pub async fn pin_profile(
     inst: &Instance,
     token: &CancellationToken,
 ) -> Result<LoaderProfile, CoreError> {
-    let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
+    let version = loader_version(inst)?;
+    check_target(inst.loader, &inst.mc_version, version)?;
+    let id = profile_dir_id(inst.loader, version)?;
     let path = profile_path(&env.paths, &id);
     match read_pinned(&path, &id, &inst.mc_version) {
         Ok(Some(profile)) => return Ok(profile),

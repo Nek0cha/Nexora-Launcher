@@ -360,7 +360,7 @@ async fn forge_versions_with_the_real_promotions_fixture() {
         .loader_versions(LoaderKind::Forge, "1.12.2")
         .await
         .unwrap();
-    assert_eq!(v.len(), 2);
+    assert!(v.is_empty(), "{v:?}");
 }
 
 #[tokio::test]
