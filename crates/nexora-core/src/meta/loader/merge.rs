@@ -23,12 +23,19 @@ pub fn merge_profile(
         });
     }
 
-    let arguments = match (&parent.arguments, &child.arguments) {
-        (Some(p), Some(c)) => Some(Arguments {
-            game: p.game.iter().chain(&c.game).cloned().collect(),
-            jvm: p.jvm.iter().chain(&c.jvm).cloned().collect(),
-        }),
-        (p, c) => p.clone().or_else(|| c.clone()),
+    // 旧形式の引数は完全な置き換えのため、Vanilla の `arguments` とは混ぜない
+    let (arguments, minecraft_arguments) = match &child.minecraft_arguments {
+        Some(legacy) => (None, Some(legacy.clone())),
+        None => {
+            let arguments = match (&parent.arguments, &child.arguments) {
+                (Some(p), Some(c)) => Some(Arguments {
+                    game: p.game.iter().chain(&c.game).cloned().collect(),
+                    jvm: p.jvm.iter().chain(&c.jvm).cloned().collect(),
+                }),
+                (p, c) => p.clone().or_else(|| c.clone()),
+            };
+            (arguments, parent.minecraft_arguments.clone())
+        }
     };
 
     let child_keys: HashSet<String> = child
@@ -54,6 +61,7 @@ pub fn merge_profile(
         inherits_from: None,
         jar: Some(parent.id.clone()),
         arguments,
+        minecraft_arguments,
         libraries,
         ..parent.clone()
     })
@@ -106,6 +114,46 @@ mod tests {
                 ArgValue::Conditional { .. } => None,
             })
             .collect()
+    }
+
+    fn legacy_child(minecraft_arguments: Option<&str>) -> LoaderProfile {
+        let mut json = serde_json::json!({
+            "id": "1.12.2-forge-14.23.5.2864",
+            "inheritsFrom": "1.20.1",
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+        });
+        if let Some(args) = minecraft_arguments {
+            json["minecraftArguments"] = args.into();
+        }
+        parse_json(json.to_string().as_bytes(), "loader profile").unwrap()
+    }
+
+    #[test]
+    fn merge_uses_the_childs_legacy_minecraft_arguments() {
+        let mut parent = parent();
+        parent.arguments = None;
+        parent.minecraft_arguments = Some("--username ${auth_player_name}".into());
+        let child = legacy_child(Some(
+            "--username ${auth_player_name} --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker",
+        ));
+        let merged = merge_profile(&parent, &child).unwrap();
+        assert_eq!(
+            merged.minecraft_arguments.as_deref(),
+            child.minecraft_arguments.as_deref()
+        );
+        assert!(merged.arguments.is_none());
+    }
+
+    #[test]
+    fn merge_keeps_the_parents_legacy_minecraft_arguments() {
+        let mut parent = parent();
+        parent.arguments = None;
+        parent.minecraft_arguments = Some("--username ${auth_player_name}".into());
+        let merged = merge_profile(&parent, &legacy_child(None)).unwrap();
+        assert_eq!(
+            merged.minecraft_arguments.as_deref(),
+            Some("--username ${auth_player_name}")
+        );
     }
 
     #[test]
