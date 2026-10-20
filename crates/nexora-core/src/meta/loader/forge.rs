@@ -84,11 +84,30 @@ pub fn compare_forge_newest_first(a: &str, b: &str) -> Ordering {
 
 /// NeoForge の版の Minecraft のバージョン。`1.20.1-47.1.106` は `1.20.1`、
 /// `21.1.172` は `1.21.1`、`20.4.237` は `1.20.4`、`21.0.5` は `1.21`。
-/// 数字で始まらない、または先頭の数が 26 以上のものは `None`。
+/// 先頭が 26 以上（`26.3.0.95`）は、`-` と `+` より前の数の最初の 3 つが Minecraft の版で、
+/// 末尾の `.0` は省く（`26.1.0.19-beta` は `26.1`、`26.1.2.122` は `26.1.2`）。
+/// 数字で始まらないものは `None`。
 pub fn neoforge_mc_version(version: &str) -> Option<String> {
     let core = version.split('-').next()?;
     let mut parts = core.split('.');
     let first: u64 = parts.next()?.parse().ok()?;
+    if first >= 26 {
+        let nums: Vec<u64> = core
+            .split('+')
+            .next()?
+            .split('.')
+            .take(3)
+            .map(|p| p.parse().ok())
+            .collect::<Option<_>>()?;
+        let [major, minor, patch] = nums[..] else {
+            return None;
+        };
+        return Some(if patch == 0 {
+            format!("{major}.{minor}")
+        } else {
+            format!("{major}.{minor}.{patch}")
+        });
+    }
     if first == 1 {
         // 旧系統（`net.neoforged:forge`）は先頭が Minecraft のバージョンそのもの
         return version.contains('-').then(|| core.to_string());
@@ -109,13 +128,15 @@ fn numeric_parts(mc: &str) -> Option<Vec<u64>> {
     mc.split('.').map(|p| p.parse().ok()).collect()
 }
 
-/// 先頭が 1（`26.x` などの新しい命名を除く）で、`min` 以上の Minecraft のバージョンか。
+/// `min`（先頭は 1）以上の Minecraft のバージョンか。先頭が 26 以上の新しい命名（`26.3`）は常に新しい。
 fn at_least(mc: &str, min: &[u64]) -> bool {
     let Some(mut parts) = numeric_parts(mc) else {
         return false;
     };
-    if parts.first() != Some(&1) {
-        return false;
+    match parts.first() {
+        Some(&1) => {}
+        Some(&major) if major >= 26 => return true,
+        _ => return false,
     }
     let len = parts.len().max(min.len());
     parts.resize(len, 0);
@@ -232,8 +253,14 @@ mod tests {
             ("21.0.5", Some("1.21")),
             ("20.2.3-beta", Some("1.20.2")),
             ("21.0.0-beta", Some("1.21")),
-            ("26.1.0.0-alpha.1+snapshot-1", None),
-            ("26.3.0.95", None),
+            ("26.1.0.0-alpha.1+snapshot-1", Some("26.1")),
+            ("26.1.0.19-beta", Some("26.1")),
+            ("26.1.1.5", Some("26.1.1")),
+            ("26.1.2.122", Some("26.1.2")),
+            ("26.2.0.7", Some("26.2")),
+            ("26.3.0.95", Some("26.3")),
+            ("26", None),
+            ("26.1", None),
             ("0.25w14craftmine.3-beta", None),
         ];
         for (input, want) in cases {
@@ -250,12 +277,17 @@ mod tests {
         assert!(forge_supported("1.21"));
         assert!(forge_supported("1.21.11"));
         assert!(!forge_supported("25w14a"));
-        assert!(!forge_supported("26.3"));
-        assert!(!forge_supported("26.1.2"));
+        assert!(forge_supported("26.3"));
+        assert!(forge_supported("26.1.2"));
+        assert!(forge_supported("26.1"));
+        assert!(!forge_supported("26.4-snapshot-4"));
         assert!(neoforge_supported("1.20.1"));
         assert!(!neoforge_supported("1.19.4"));
         assert!(neoforge_supported("1.21"));
-        assert!(!neoforge_supported("26.3"));
+        assert!(neoforge_supported("26.3"));
+        assert!(neoforge_supported("26.1.1"));
+        assert!(!neoforge_supported("25w14a"));
+        assert!(!neoforge_supported("26.4-snapshot-4"));
     }
 
     #[test]
@@ -287,6 +319,17 @@ mod tests {
         );
         // Fabric と Quilt は確かめない
         assert_eq!(code(LoaderKind::Fabric, "1.8.9", "0.16.10"), Ok(()));
+        // 26.x
+        assert_eq!(code(LoaderKind::Forge, "26.3", "26.3-66.0.13"), Ok(()));
+        assert_eq!(code(LoaderKind::Forge, "26.1.2", "26.1.2-64.1.5"), Ok(()));
+        assert_eq!(code(LoaderKind::Neoforge, "26.3", "26.3.0.95"), Ok(()));
+        assert_eq!(code(LoaderKind::Neoforge, "26.1.2", "26.1.2.122"), Ok(()));
+        assert_eq!(code(LoaderKind::Forge, "26.3", "26.2-65.1.5"), unsupported);
+        assert_eq!(
+            code(LoaderKind::Neoforge, "26.1", "26.1.2.122"),
+            unsupported
+        );
+        assert_eq!(code(LoaderKind::Neoforge, "26.3", "21.1.172"), unsupported);
     }
 
     #[test]

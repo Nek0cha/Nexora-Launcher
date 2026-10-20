@@ -37,9 +37,11 @@ Quilt のゲームごとのローダー一覧は新しい順に並んでおら�
 | forge-1.20.1-install_profile.json、forge-1.20.1-version.json | https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar | 同上 |
 | neoforge-21.1-install_profile.json、neoforge-21.1-version.json | https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.172/neoforge-21.1.172-installer.jar | 同上（`net.neoforged:neoforge`、Minecraft 1.21.1） |
 | neoforge-1.20.1-install_profile.json、neoforge-1.20.1-version.json | https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-47.1.106/forge-1.20.1-47.1.106-installer.jar | 同上（`net.neoforged:forge`） |
+| forge-26.3-install_profile.json、forge-26.3-version.json | https://maven.minecraftforge.net/net/minecraftforge/forge/26.3-66.0.13/forge-26.3-66.0.13-installer.jar | jar の中身をそのまま（26.x の形の確認用） |
+| neoforge-26.3-install_profile.json、neoforge-26.3-version.json | https://maven.neoforged.net/releases/net/neoforged/neoforge/26.3.0.95/neoforge-26.3.0.95-installer.jar | 同上（`net.neoforged:neoforge`、Minecraft 26.3） |
 | forge-legacy-2847-install_profile.json | https://maven.minecraftforge.net/net/minecraftforge/forge/1.12.2-14.23.5.2847/forge-1.12.2-14.23.5.2847-installer.jar | `install_profile.json` のみ。旧形式（入れ子）で、断るテスト用 |
 | forge-maven-metadata.xml | https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml | `<version>` を先頭 12 件、末尾 12 件、下記の代表 8 件に切り詰めた（元は 5093 件）。元の順のまま |
-| neoforge-maven-metadata.xml | https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml | 先頭 12 件、末尾 12 件、代表 5 件に切り詰めた（元は 1846 件） |
+| neoforge-maven-metadata.xml | https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml | 先頭 12 件、末尾 12 件、代表 5 件に切り詰めた（元は 1846 件）。26.x の確認用に `26.1.0.19-beta`、`26.1.1.15-beta`、`26.1.2.122`、`26.2.0.93` を実物の一覧から追加 |
 | neoforge-forge-maven-metadata.xml | https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml | 先頭 12 件、末尾 12 件に切り詰めた（元は 63 件） |
 | forge-promotions_slim.json | https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json | `promos` を先頭 12 件、末尾 12 件、1.7.10 / 1.12.2 / 1.16.5 / 1.20.1 の latest と recommended に切り詰めた（元は 117 件） |
 

@@ -296,12 +296,12 @@ async fn lists_forge_game_versions() {
     let server = MockServer::start().await;
     serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
     let h = forge_harness(&server);
-    // 順序の当てにならない Maven から、重複なし、新しい順、対応範囲（1.16.5 以降、26.x は除く）
+    // 順序の当てにならない Maven から、重複なし、新しい順、対応範囲（1.16.5 以降、26.x を含む）
     assert_eq!(
         h.meta.game_versions(LoaderKind::Forge).await.unwrap(),
         vec![
-            "1.21.11", "1.21.10", "1.21.8", "1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.21",
-            "1.20.6", "1.20.4", "1.20.1", "1.16.5"
+            "26.3", "26.2", "26.1.2", "26.1", "1.21.11", "1.21.10", "1.21.8", "1.21.5", "1.21.4",
+            "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.16.5"
         ]
     );
 }
@@ -385,10 +385,13 @@ async fn neoforge_merges_both_maven_families() {
     serve(&server, NEOFORGE_FORGE_MAVEN_ROUTE, NEOFORGE_FORGE_MAVEN).await;
     let h = forge_harness(&server);
 
-    // 26.x は除き、21.1.263 のように後ろに並ぶ版も数で並べる
+    // 26.x を含み、21.1.263 のように後ろに並ぶ版も数で並べる
     assert_eq!(
         h.meta.game_versions(LoaderKind::Neoforge).await.unwrap(),
-        vec!["1.21.1", "1.21", "1.20.4", "1.20.2", "1.20.1"]
+        vec![
+            "26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.1", "1.21", "1.20.4", "1.20.2",
+            "1.20.1"
+        ]
     );
 
     let old = h
@@ -410,6 +413,54 @@ async fn neoforge_merges_both_maven_families() {
         flags(&new),
         vec![("21.1.264", true), ("21.1.263", true), ("21.1.172", true)]
     );
+}
+
+#[tokio::test]
+async fn neoforge_26_versions_map_to_their_minecraft_version() {
+    let server = MockServer::start().await;
+    serve(&server, NEOFORGE_MAVEN_ROUTE, NEOFORGE_MAVEN).await;
+    serve(&server, NEOFORGE_FORGE_MAVEN_ROUTE, NEOFORGE_FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    let list = |mc: &'static str| {
+        let meta = h.meta.clone();
+        async move {
+            meta.loader_versions(LoaderKind::Neoforge, mc)
+                .await
+                .unwrap()
+        }
+    };
+    let v = list("26.3").await;
+    assert_eq!(v.len(), 10);
+    assert_eq!(flags(&v)[0], ("26.3.0.95", true));
+    assert_eq!(flags(&list("26.2").await), vec![("26.2.0.93", true)]);
+    assert_eq!(flags(&list("26.1.2").await), vec![("26.1.2.122", true)]);
+    assert_eq!(
+        flags(&list("26.1.1").await),
+        vec![("26.1.1.15-beta", false)]
+    );
+    let v = list("26.1").await;
+    assert_eq!(v[0].version, "26.1.0.19-beta");
+    assert!(v.iter().all(|e| !e.stable));
+    assert!(v.iter().any(|e| e.version == "26.1.0.0-alpha.1+snapshot-1"));
+}
+
+#[tokio::test]
+async fn forge_26_versions_are_listed() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "26.3")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("26.3-66.0.13", false)]);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "26.1.2")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("26.1.2-64.1.5", false)]);
 }
 
 #[tokio::test]

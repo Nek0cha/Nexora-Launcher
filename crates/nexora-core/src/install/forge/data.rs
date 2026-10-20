@@ -582,6 +582,59 @@ mod tests {
     }
 
     #[test]
+    fn forge_26_3_plans_only_the_client_binarypatcher() {
+        let env = env();
+        let planned = plan_processors(&fixture("forge-26.3"), &env.ctx()).unwrap();
+        assert_eq!(names(&planned), ["net.minecraftforge:binarypatcher:1.3.4"]);
+        let p = &planned[0];
+        assert_eq!(p.jar, env.library("net.minecraftforge:binarypatcher:1.3.4"));
+        assert_eq!(p.classpath.len(), 6);
+        assert_eq!(p.args[0], "--clean");
+        assert_eq!(p.args[1], s(&env.minecraft_jar));
+        assert_eq!(
+            p.args[3],
+            s(&env.library("net.minecraftforge:forge:26.3-66.0.13:client"))
+        );
+        assert_eq!(p.args[5], s(&env.resources["/data/client.lzma"]));
+        assert_eq!(
+            p.outputs,
+            [ExpectedOutput {
+                path: env.library("net.minecraftforge:forge:26.3-66.0.13:client"),
+                sha1: Some("9581d4977f841f7ce33bde86954d586981a30c5b".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn neoforge_26_3_plans_the_processor_without_sides() {
+        let env = env();
+        let profile = fixture("neoforge-26.3");
+        assert_eq!(profile.processors.len(), 2);
+        let planned = plan_processors(&profile, &env.ctx()).unwrap();
+        // EXTRACT_FILES は server だけ。sides の無い PROCESS_MINECRAFT_JAR はクライアントでも動く
+        assert_eq!(
+            names(&planned),
+            ["net.neoforged.installertools:installertools:4.0.17:fatjar"]
+        );
+        let p = &planned[0];
+        let fatjar = env.library("net.neoforged.installertools:installertools:4.0.17:fatjar");
+        assert_eq!(
+            fatjar.file_name().unwrap(),
+            "installertools-4.0.17-fatjar.jar"
+        );
+        assert_eq!(p.jar, fatjar);
+        assert_eq!(p.classpath, [fatjar]);
+        assert!(p.outputs.is_empty());
+        assert_eq!(p.args[3], "--input");
+        assert_eq!(p.args[4], s(&env.minecraft_jar));
+        assert_eq!(
+            p.args[6],
+            s(&env.library("net.neoforged:minecraft-client-patched:26.3.0.95"))
+        );
+        assert!(p.args.iter().all(|a| !a.contains('{')), "{:?}", p.args);
+    }
+
+    #[test]
     fn neoforge_21_1_processors_have_no_output_hashes() {
         let env = env();
         let planned = plan_processors(&fixture("neoforge-21.1"), &env.ctx()).unwrap();

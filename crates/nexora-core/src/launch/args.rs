@@ -408,12 +408,15 @@ mod tests {
         let paths = AppPaths::from_root("/data");
         let index: crate::meta::mojang::version::AssetIndex =
             serde_json::from_str(r#"{"objects":{}}"#).unwrap();
-        // (fixture, generated の数)。URL の空のライブラリを持つのは 1.16.5 だけ
+        // (fixture, generated の数)。URL の空のライブラリを持つのは 1.16.5 と Forge 26.x
         for (name, generated) in [
             ("forge-1.16.5", 1),
             ("forge-1.20.1", 0),
             ("neoforge-1.20.1", 0),
             ("neoforge-21.1", 0),
+            // 26.x。Forge の最終 jar（`...:client`）は installer の maven/ から置くので 1 件
+            ("forge-26.3", 1),
+            ("neoforge-26.3", 0),
         ] {
             let path = format!(
                 "{}/tests/fixtures/forge/{name}-version.json",

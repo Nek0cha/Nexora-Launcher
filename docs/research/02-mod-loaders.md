@@ -446,17 +446,19 @@ These are proposed methods, not a claim that Nexora currently implements or has 
 | NeoForge | `1.20.2–1.20.4` | `net.neoforged:neoforge` installer; spec 1 engine + NeoForm/tools and returned module arguments | 20.4.237 inspected; individual 1.20.2/1.20.3 installers **UNVERIFIED** |
 | NeoForge | `1.20.5–1.21.x` | Modern coordinates; inspect spec/data/processor graph and preserve returned launch arguments | 21.1.172 inspected; Java 21 game baseline; no output maps in this sample |
 | Forge / NeoForge | Modern builds explicitly supporting the action | Official `--installClient <staging-root>` subprocess, then validate/import | CLI support statically verified; successful headless installation **UNVERIFIED** |
-| Forge / NeoForge | Later/new numbering families, including `26.x` | Discover exact coordinates and inspect format before enabling | New NeoForge versions observed in official metadata; install behavior **UNVERIFIED** |
+| Forge / NeoForge | Later/new numbering families, including `26.x` | Shape inspected statically on 2026-10-20 (see Phase 5-2a findings), then enabled | Forge 26.3-66.0.13 and NeoForge 26.3.0.95 installers match the spec 1 engine; execution **UNVERIFIED** |
 
 ## Phase 5-2a findings
 
-Forge (Minecraft 1.16.5–1.21.x) and NeoForge (1.20.1 and later) install support was implemented in phase 5-2a. The raw inspection data is in `crates/nexora-core/tests/fixtures/README.md` (forge section, fetched 2026-10-20). Installers were only read with `unzip`, never executed.
+Forge (Minecraft 1.16.5–1.21.x and 26.x) and NeoForge (1.20.1–1.21.x and 26.x) install support was implemented in phase 5-2a. The raw inspection data is in `crates/nexora-core/tests/fixtures/README.md` (forge section, fetched 2026-10-20). Installers were only read with `unzip`, never executed.
 
 ### Established by fixture inspection
 
 - `version.json` has no `jar` field in any of the four inspected installers (Forge 1.16.5-36.2.39, Forge 1.20.1-47.3.0, NeoForge 21.1.172, `net.neoforged:forge` 1.20.1-47.1.106). The version merge sets `jar` itself, naming the version after the owner of the client jar.
 - The presence of processor `outputs` varies: Forge 1.20.1 has them only on the side-filtered jarsplitter processors, NeoForge 21.1.172 has none, and `net.neoforged:forge` 1.20.1-47.1.106 has them like Forge 1.20.1. Output hashes are checked only where declared; a processor with no declared outputs is never skipped on a cache assumption.
 - Empty artifact URLs occur only in Forge 1.16.5 (`net.minecraftforge:forge:1.16.5-36.2.39` and its `universal`). Those files come from the installer's `maven/` directory, so a library without a download URL is planned as a generated file instead of a download.
+- Minecraft 26.x was first excluded and then enabled on 2026-10-20 after a static shape check of the Forge 26.3-66.0.13, Forge 26.2-65.1.0 and NeoForge 26.3.0.95 installers (read only, never executed; fixtures `forge-26.3-*` and `neoforge-26.3-*`). They use the shape the engine already handles: spec 1, `/version.json`, `inheritsFrom` = the 26.x vanilla id, no `jar` field. Forge 26.3 has 5 processors, of which only the `binarypatcher:1.3.4` one is client-side (the other four are server-only), and `net.minecraftforge:forge:26.3-66.0.13:client` is an empty-URL library provided from the installer's `maven/` (one generated file). NeoForge 26.3.0.95 has 2 processors (the `installertools:4.0.17:fatjar` one has no `sides` and runs on the client), no `maven/` payload, and main class `net.neoforged.fml.startup.Client`. Mojang 26.3 needs Java 25 (`java-runtime-epsilon`), which the existing runtime handling covers.
+- Version numbers: Forge 26.x looks like `26.3-66.0.13` (Minecraft part before the first `-`). NeoForge 26.x looks like `26.3.0.95`: the Minecraft version is the first three numeric components with a trailing `.0` dropped (`26.1.0.x` is `26.1`, `26.1.2.x` is `26.1.2`); the rule for 20.x/21.x (`21.0.5` is `1.21`) is unchanged. Any `-`/`+` suffix (`beta`, `alpha`, `snapshot`) marks a non-stable version.
 - Maven metadata order is neither chronological nor by version (NeoForge `21.1.263` appears after `26.3.0.92`), and `<latest>` points at `26.x` builds. Versions are sorted and filtered by the supported range instead.
 - For NeoForge 1.20.1 the old family `net.neoforged:forge` is used; `net.neoforged:neoforge` starts at 1.20.2.
 - The installer cache is keyed by the full URL, because the Forge and NeoForge 1.20.1 installers share the file name `forge-1.20.1-<version>-installer.jar`.
@@ -470,5 +472,6 @@ Forge (Minecraft 1.16.5–1.21.x) and NeoForge (1.20.1 and later) install suppor
 - Launching any Forge or NeoForge instance to the title screen on a real machine, including offline launch.
 - Whether the game's Java is the right choice for processors, notably Java 8 for Forge 1.16.5.
 - Whether the `${version_name}` change affects Forge startup.
-- Builds other than the four inspected. Forge 1.20.5 and later (up to the latest 1.21.x) is offered in the UI, but its real behaviour is UNVERIFIED.
+- Builds other than those inspected. Forge 1.20.5 and later (up to the latest 1.21.x) is offered in the UI, but its real behaviour is UNVERIFIED.
+- Minecraft 26.x for both loaders: verified statically against the 26.3 installers only (plus the Forge 26.2 installer for shape); running the processors and launching the game are UNVERIFIED.
 - Legacy Forge (1.12.2 and earlier, nested profile format) is not supported.
