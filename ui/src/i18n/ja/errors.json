@@ -32,7 +32,7 @@
   "install": {
     "unsupported_profile": "このバージョンの形式には対応していません",
     "processor_failed": "ローダーの導入処理（{{processor}}）に失敗しました",
-    "loader_files_missing": "ローダーのファイルが見つかりません：{{path}}"
+    "loader_files_missing": "ローダーのファイルが見つかりません：{{path}}。もう一度プレイを押すと導入し直します"
   },
   "java": {
     "no_compatible_runtime": "この PC で使える Java（{{component}}）がありません",

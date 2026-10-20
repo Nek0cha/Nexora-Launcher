@@ -32,7 +32,7 @@
   "install": {
     "unsupported_profile": "This version's format isn't supported",
     "processor_failed": "The loader install step ({{processor}}) failed",
-    "loader_files_missing": "The loader files were not found: {{path}}"
+    "loader_files_missing": "The loader files were not found: {{path}}. Press Play to reinstall."
   },
   "java": {
     "no_compatible_runtime": "No Java ({{component}}) is available for this computer",

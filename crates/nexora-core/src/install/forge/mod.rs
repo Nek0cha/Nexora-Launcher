@@ -111,11 +111,16 @@ pub fn load_pinned(env: &InstallEnv, inst: &Instance) -> Result<LoaderProfile, C
     let id = profile_dir_id(inst.loader, loader_version(inst)?)?;
     let path = profile_path(&env.paths, &id);
     match read_pinned(&path, &id, &inst.mc_version) {
-        Ok(Some(profile)) => Ok(profile),
-        Ok(None) | Err(_) => Err(CoreError::LoaderFilesMissing {
-            path: path.display().to_string(),
-        }),
+        Ok(Some(profile)) => return Ok(profile),
+        Ok(None) => {}
+        Err(err) => {
+            // 原因は利用者に見せる文言には入らないため、ログに残す
+            tracing::warn!(id, %err, "pinned loader profile could not be read");
+        }
     }
+    Err(CoreError::LoaderFilesMissing {
+        path: path.display().to_string(),
+    })
 }
 
 /// 対応範囲の外の Minecraft のバージョンや、別のバージョン向けのローダーの版は、何にも触れずに `UnsupportedProfile`。

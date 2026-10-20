@@ -527,6 +527,17 @@ async fn launch_fails_with_loader_files_missing() {
     assert_eq!(error.code, "install.loader_files_missing");
     let path = format!("{:?}", error.params.get("path"));
     assert!(path.contains("forge-1.16.5-36.2.39-client.jar"), "{path}");
+    // 壊れた状態にし、次にプレイを押すと導入し直す
+    assert_eq!(h.state(&id), InstanceState::Broken);
+    let task = h.launcher.launch_instance(&id, true).unwrap();
+    let again = wait(&h.tasks, &task).await;
+    assert_eq!(again.kind, "install");
+    assert_eq!(again.state, TaskState::Succeeded, "{:?}", again.error);
+    assert_eq!(h.state(&id), InstanceState::Ready);
+    assert_eq!(std::fs::read(&patched).unwrap(), b"patched");
+    assert_eq!(h.calls(), 2);
+    let launch = h.launch_offline(&id).await;
+    assert_eq!(launch.state, TaskState::Succeeded, "{:?}", launch.error);
 }
 
 #[tokio::test]
@@ -642,6 +653,7 @@ impl Harness {
         assert_eq!(error.code, "install.loader_files_missing", "{error:?}");
         let path = format!("{:?}", error.params.get("path"));
         assert!(path.contains(&format!("forge-{FORGE}.json")), "{path}");
+        assert_eq!(self.state(id), InstanceState::Broken);
         assert_eq!(hits_on(server, INSTALLER_ROUTE).await, before);
         assert_eq!(hits_on(server, &format!("{INSTALLER_ROUTE}.sha1")).await, 1);
     }

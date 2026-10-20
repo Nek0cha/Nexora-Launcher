@@ -422,7 +422,19 @@ impl Launcher {
         self.tasks
             .spawn_unique(LAUNCH_KIND, Some(id.clone()), move |handle| async move {
                 let _guard = this.locks.lock(&id).await;
-                this.launch(&id, offline, &handle).await
+                let result = this.launch(&id, offline, &handle).await;
+                if matches!(result, Err(CoreError::LoaderFilesMissing { .. })) {
+                    // 起動では直せないため壊れた状態にし、次のプレイで導入し直す（launch_instance を参照）
+                    if let Err(err) = instance::set_state(&this.env.db, &id, InstanceState::Broken)
+                    {
+                        tracing::warn!(
+                            instance_id = %id,
+                            code = err.code(),
+                            "failed to mark the instance for reinstall"
+                        );
+                    }
+                }
+                result
             })
     }
 
@@ -464,6 +476,7 @@ impl Launcher {
         let rule_env = RuleEnv::current();
         let game = plan_game(&version, &index, &rule_env, &env.paths, &env.urls.resources)?;
         // インストーラが置くファイルは起動では取得できない。欠けていれば導入し直してもらう
+        // （`LoaderFilesMissing` は start_launch で壊れた状態にし、次のプレイで導入する）
         if let Some(missing) = game.generated.iter().find(|p| !p.is_file()) {
             return Err(CoreError::LoaderFilesMissing {
                 path: missing.display().to_string(),
