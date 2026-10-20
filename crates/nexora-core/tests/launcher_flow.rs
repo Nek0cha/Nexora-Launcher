@@ -72,6 +72,9 @@ async fn harness_with(fake: &FakeMojang) -> Harness {
         resources: fake.resources_url(),
         fabric_meta: loaders.fabric_url(),
         quilt_meta: loaders.quilt_url(),
+        forge_maven: "http://127.0.0.1:1".into(),
+        forge_promotions: "http://127.0.0.1:1".into(),
+        neoforge_maven: "http://127.0.0.1:1".into(),
     };
     let db = Db::open_in_memory().unwrap();
     let auth_server = MockServer::start().await;

@@ -1017,27 +1017,6 @@ mod tests {
     }
 
     #[test]
-    fn create_rejects_unsupported_loader() {
-        let (_t, paths, db) = setup();
-        for loader in [LoaderKind::Forge, LoaderKind::Neoforge] {
-            let new = NewInstance {
-                loader,
-                loader_version: Some("1.0".into()),
-                ..NewInstance::vanilla("x", "1.20.1")
-            };
-            let err = create(&db, &paths, &new, 1).unwrap_err();
-            assert_eq!(err.code(), "install.unsupported_profile");
-        }
-        assert_eq!(row_count(&db), 0);
-        assert!(
-            std::fs::read_dir(paths.instances_dir())
-                .unwrap()
-                .next()
-                .is_none()
-        );
-    }
-
-    #[test]
     fn duplicate_row_keeps_loader() {
         let (_t, paths, db) = setup();
         let src = create(&db, &paths, &fabric(Some("0.16.10")), 1).unwrap();

@@ -27,6 +27,9 @@ pub struct Urls {
     pub resources: String,
     pub fabric_meta: String,
     pub quilt_meta: String,
+    pub forge_maven: String,
+    pub forge_promotions: String,
+    pub neoforge_maven: String,
 }
 
 impl Default for Urls {
@@ -37,6 +40,9 @@ impl Default for Urls {
             resources: plan::RESOURCES_URL.to_string(),
             fabric_meta: FABRIC_META_URL.to_string(),
             quilt_meta: QUILT_META_URL.to_string(),
+            forge_maven: crate::meta::loader::forge::FORGE_MAVEN_URL.to_string(),
+            forge_promotions: crate::meta::loader::forge::FORGE_PROMOTIONS_URL.to_string(),
+            neoforge_maven: crate::meta::loader::forge::NEOFORGE_MAVEN_URL.to_string(),
         }
     }
 }
@@ -60,6 +66,11 @@ impl InstallEnv {
             paths.clone(),
             urls.fabric_meta.clone(),
             urls.quilt_meta.clone(),
+        )
+        .with_forge_urls(
+            urls.forge_maven.clone(),
+            urls.forge_promotions.clone(),
+            urls.neoforge_maven.clone(),
         );
         Self {
             paths,

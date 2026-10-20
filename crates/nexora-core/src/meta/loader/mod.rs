@@ -1,5 +1,6 @@
 //! ローダー（Fabric、Quilt など）の種類とメタデータ。
 
+pub mod forge;
 pub mod merge;
 
 use std::cmp::Ordering;
@@ -54,10 +55,7 @@ impl LoaderKind {
 
     /// いまインストールして起動できるローダーか。
     pub fn is_supported(self) -> bool {
-        matches!(
-            self,
-            LoaderKind::Vanilla | LoaderKind::Fabric | LoaderKind::Quilt
-        )
+        true
     }
 }
 
@@ -94,7 +92,7 @@ pub fn is_safe_version(s: &str) -> bool {
 }
 
 /// 安全でないバージョンの値を `InvalidMetadata` にする。
-fn check_version(what: &str, value: &str) -> Result<(), CoreError> {
+pub(crate) fn check_version(what: &str, value: &str) -> Result<(), CoreError> {
     if is_safe_version(value) {
         Ok(())
     } else {
@@ -135,6 +133,14 @@ pub fn load_pinned_profile(paths: &AppPaths, id: &str) -> Result<Option<LoaderPr
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(io_err(&path, source)),
     }
+}
+
+/// Minecraft のバージョンを重複なく、新しい順にする。
+fn newest_first_mc(mcs: impl Iterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = mcs.collect();
+    out.sort_by(|a, b| compare_parts(b, a));
+    out.dedup();
+    out
 }
 
 #[derive(Deserialize)]
@@ -201,7 +207,7 @@ fn split_pre(v: &str) -> (&str, Option<&str>) {
     }
 }
 
-fn compare_parts(a: &str, b: &str) -> Ordering {
+pub(crate) fn compare_parts(a: &str, b: &str) -> Ordering {
     let mut xs = a.split('.');
     let mut ys = b.split('.');
     loop {
@@ -220,13 +226,16 @@ fn compare_parts(a: &str, b: &str) -> Ordering {
     }
 }
 
-/// Fabric（v2）と Quilt（v3）の公式メタデータ。
+/// Fabric（v2）と Quilt（v3）の公式メタデータ、Forge と NeoForge の公式 Maven のメタデータ。
 #[derive(Clone)]
 pub struct LoaderMeta {
     http: Http,
     paths: AppPaths,
     fabric_url: String,
     quilt_url: String,
+    forge_maven: String,
+    forge_promotions: String,
+    neoforge_maven: String,
 }
 
 impl LoaderMeta {
@@ -241,11 +250,32 @@ impl LoaderMeta {
             paths,
             fabric_url: fabric_url.into(),
             quilt_url: quilt_url.into(),
+            forge_maven: forge::FORGE_MAVEN_URL.to_string(),
+            forge_promotions: forge::FORGE_PROMOTIONS_URL.to_string(),
+            neoforge_maven: forge::NEOFORGE_MAVEN_URL.to_string(),
         }
+    }
+
+    /// Forge と NeoForge の取得先を差し替える（試験用）。
+    pub fn with_forge_urls(
+        mut self,
+        forge_maven: impl Into<String>,
+        promotions: impl Into<String>,
+        neoforge_maven: impl Into<String>,
+    ) -> Self {
+        self.forge_maven = forge_maven.into();
+        self.forge_promotions = promotions.into();
+        self.neoforge_maven = neoforge_maven.into();
+        self
     }
 
     /// ローダーが対応する Minecraft のバージョン（メタデータの順）。
     pub async fn game_versions(&self, kind: LoaderKind) -> Result<Vec<String>, CoreError> {
+        match kind {
+            LoaderKind::Forge => return self.forge_game_versions().await,
+            LoaderKind::Neoforge => return self.neoforge_game_versions().await,
+            _ => {}
+        }
         let url = self.url(kind, &["versions", "game"])?;
         let name = format!("{}-game.json", kind.as_str());
         let body = fetch_cached(&self.http, &self.paths.meta_cache_dir(), &name, &url).await?;
@@ -259,12 +289,163 @@ impl LoaderMeta {
         kind: LoaderKind,
         mc_version: &str,
     ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
+        match kind {
+            LoaderKind::Forge => return self.forge_loader_versions(mc_version).await,
+            LoaderKind::Neoforge => return self.neoforge_loader_versions(mc_version).await,
+            _ => {}
+        }
         let url = self.url(kind, &["versions", "loader", mc_version])?;
         // キャッシュのファイル名に入るため、区切り文字を含む値は弾く
         check_version("Minecraft version", mc_version)?;
         let name = format!("{}-loader-{mc_version}.json", kind.as_str());
         let body = fetch_cached(&self.http, &self.paths.meta_cache_dir(), &name, &url).await?;
         parse_loader_versions(kind, &body)
+    }
+
+    /// Maven の `maven-metadata.xml` の版を、並びのまま返す。
+    async fn maven_versions(
+        &self,
+        base: &str,
+        group_path: &str,
+        cache_name: &str,
+    ) -> Result<Vec<String>, CoreError> {
+        let url = format!(
+            "{}/{group_path}/maven-metadata.xml",
+            base.trim_end_matches('/')
+        );
+        let body = fetch_cached(&self.http, &self.paths.meta_cache_dir(), cache_name, &url).await?;
+        forge::parse_maven_versions(&body)
+    }
+
+    async fn forge_maven_versions(&self) -> Result<Vec<String>, CoreError> {
+        self.maven_versions(
+            &self.forge_maven,
+            "net/minecraftforge/forge",
+            "forge-maven.xml",
+        )
+        .await
+    }
+
+    /// NeoForge の 2 系統（新: `net.neoforged:neoforge`、旧: 1.20.1 の `net.neoforged:forge`）の版。
+    async fn neoforge_maven_versions(&self) -> Result<(Vec<String>, Vec<String>), CoreError> {
+        let new = self
+            .maven_versions(
+                &self.neoforge_maven,
+                "net/neoforged/neoforge",
+                "neoforge-maven.xml",
+            )
+            .await?;
+        let old = self
+            .maven_versions(
+                &self.neoforge_maven,
+                "net/neoforged/forge",
+                "neoforge-forge-maven.xml",
+            )
+            .await?;
+        Ok((new, old))
+    }
+
+    async fn forge_game_versions(&self) -> Result<Vec<String>, CoreError> {
+        let versions = self.forge_maven_versions().await?;
+        Ok(newest_first_mc(
+            versions
+                .iter()
+                .filter_map(|v| forge::forge_parts(v))
+                .map(|(mc, _)| mc.to_string())
+                .filter(|mc| forge::forge_supported(mc)),
+        ))
+    }
+
+    async fn neoforge_game_versions(&self) -> Result<Vec<String>, CoreError> {
+        let (new, old) = self.neoforge_maven_versions().await?;
+        let from_new = new.iter().filter_map(|v| forge::neoforge_mc_version(v));
+        let from_old = old
+            .iter()
+            .filter_map(|v| forge::forge_parts(v))
+            .map(|(mc, _)| mc.to_string());
+        Ok(newest_first_mc(
+            from_new
+                .chain(from_old)
+                .filter(|mc| forge::neoforge_supported(mc)),
+        ))
+    }
+
+    async fn forge_loader_versions(
+        &self,
+        mc_version: &str,
+    ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
+        check_version("Minecraft version", mc_version)?;
+        let mut versions: Vec<String> = self
+            .forge_maven_versions()
+            .await?
+            .into_iter()
+            .filter(|v| forge::forge_parts(v).is_some_and(|(mc, _)| mc == mc_version))
+            .collect();
+        versions.sort_by(|a, b| forge::compare_forge_newest_first(a, b));
+        // 取れなくても一覧は返す（その場合、おすすめの印は付かない）
+        let promoted = self.forge_promoted(mc_version).await;
+        Ok(versions
+            .into_iter()
+            .map(|version| LoaderVersionEntry {
+                stable: promoted.as_deref() == Some(forge::forge_build(&version)),
+                version,
+            })
+            .collect())
+    }
+
+    /// promotions の、その Minecraft のバージョンのおすすめ（なければ最新）のビルド番号。
+    async fn forge_promoted(&self, mc_version: &str) -> Option<String> {
+        #[derive(Deserialize)]
+        struct Promotions {
+            promos: std::collections::HashMap<String, String>,
+        }
+        let fetched = fetch_cached(
+            &self.http,
+            &self.paths.meta_cache_dir(),
+            "forge-promotions.json",
+            &self.forge_promotions,
+        )
+        .await;
+        let parsed = fetched.and_then(|b| parse_json::<Promotions>(&b, "forge promotions"));
+        match parsed {
+            Ok(mut p) => p
+                .promos
+                .remove(&format!("{mc_version}-recommended"))
+                .or_else(|| p.promos.remove(&format!("{mc_version}-latest"))),
+            Err(err) => {
+                tracing::warn!(code = err.code(), "Forge promotions are unavailable");
+                None
+            }
+        }
+    }
+
+    async fn neoforge_loader_versions(
+        &self,
+        mc_version: &str,
+    ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
+        check_version("Minecraft version", mc_version)?;
+        let (new, old) = self.neoforge_maven_versions().await?;
+        // 新系統は `-` より後ろ（beta、alpha など）があれば試験版。並びは版で決める
+        let mut new: Vec<String> = new
+            .into_iter()
+            .filter(|v| forge::neoforge_mc_version(v).as_deref() == Some(mc_version))
+            .collect();
+        new.sort_by(|a, b| compare_versions(b, a));
+        // 旧系統（`1.20.1-47.1.106`）は正式版だけが並ぶ
+        let mut old: Vec<String> = old
+            .into_iter()
+            .filter(|v| forge::forge_parts(v).is_some_and(|(mc, _)| mc == mc_version))
+            .collect();
+        old.sort_by(|a, b| forge::compare_forge_newest_first(a, b));
+        let new = new.into_iter().map(|version| LoaderVersionEntry {
+            stable: !version.contains('-'),
+            version,
+        });
+        let old = old.into_iter().map(|version| LoaderVersionEntry {
+            stable: true,
+            version,
+        });
+        Ok(new.chain(old).collect())
     }
 
     /// プロファイルを shared/versions に固定して返す。固定済みで読めるならネットワークに出ない。
@@ -362,12 +543,9 @@ mod tests {
     }
 
     #[test]
-    fn only_vanilla_fabric_and_quilt_are_supported() {
+    fn all_loaders_are_supported() {
         let supported: Vec<_> = ALL.into_iter().filter(|k| k.is_supported()).collect();
-        assert_eq!(
-            supported,
-            vec![LoaderKind::Vanilla, LoaderKind::Fabric, LoaderKind::Quilt]
-        );
+        assert_eq!(supported, ALL.to_vec());
     }
 
     const FABRIC_LOADERS: &str =
