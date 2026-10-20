@@ -233,20 +233,12 @@ async fn cancel_during_verification_returns_promptly() {
         });
     }
     let token = CancellationToken::new();
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
-    let started_tx = Mutex::new(Some(started_tx));
     let last = Mutex::new(None);
+    let cancelled_at = Mutex::new(None);
     let cancel = token.clone();
-    let canceller = async move {
-        tokio::time::timeout(std::time::Duration::from_secs(10), started_rx)
-            .await
-            .expect("verification reports progress")
-            .unwrap();
-        cancel.cancel();
-        std::time::Instant::now()
-    };
     let client = http();
-    let fetch = fetch_all_with(
+    // 確認の途中（最初の進捗の通知）で、通知の中から取り消す。別のタスクから取り消すと、速い環境では確認が先に終わってしまう
+    let result = fetch_all_with(
         &client,
         items,
         Depth::Full,
@@ -255,24 +247,21 @@ async fn cancel_during_verification_returns_promptly() {
         |p| {
             if let FetchPhase::Verifying { checked, total } = p {
                 *last.lock().unwrap() = Some((checked, total));
-                if checked > 0
-                    && let Some(tx) = started_tx.lock().unwrap().take()
-                {
-                    let _ = tx.send(());
+                if checked > 0 && checked < total && cancelled_at.lock().unwrap().is_none() {
+                    *cancelled_at.lock().unwrap() = Some(std::time::Instant::now());
+                    cancel.cancel();
                 }
             }
         },
         |_, _| {},
-    );
-    let (result, cancelled_at) = tokio::join!(
-        async {
-            let r = fetch.await;
-            (r, std::time::Instant::now())
-        },
-        canceller
-    );
-    let (result, returned_at) = result;
+    )
+    .await;
+    let returned_at = std::time::Instant::now();
     assert_eq!(result.unwrap_err().code(), "task.cancelled");
+    let cancelled_at = cancelled_at
+        .into_inner()
+        .unwrap()
+        .expect("verification reported progress before it finished");
     let waited = returned_at.saturating_duration_since(cancelled_at);
     assert!(
         waited < std::time::Duration::from_secs(1),
