@@ -93,7 +93,8 @@ function AccountLink() {
     >
       {active ? (
         <>
-          <span className="relative shrink-0">
+          {/* flex にして、中の inline-block が行ボックスの余白（ベースライン分）を作らないようにする */}
+          <span className="relative flex shrink-0">
             <SkinFace accountId={active.kind === "msa" ? active.account.id : null} size={24} />
             {needsLogin && (
               <span aria-hidden className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warning" />
