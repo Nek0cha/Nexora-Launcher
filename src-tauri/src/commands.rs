@@ -132,7 +132,7 @@ pub async fn list_versions(state: State<'_, AppState>) -> CmdResult<Vec<VersionE
         .map_err(ErrorPayload::from)
 }
 
-/// ローダーが対応するゲームの版（新しい順）。
+/// ローダーが対応するゲームの版。並べ替えず、ローダーのメタデータの順で返す。
 #[tauri::command]
 pub async fn list_loader_game_versions(
     state: State<'_, AppState>,

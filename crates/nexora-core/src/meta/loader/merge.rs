@@ -237,4 +237,14 @@ mod tests {
         );
         assert_eq!(library_key("a.b:c:1@zip"), "a.b:c");
     }
+
+    /// 座標の数が合わない名前は、拡張子だけを除いた名前そのものを鍵にする。
+    /// そのため、同じ名前どうしでなければ衝突せず、親の側も消されない。
+    #[test]
+    fn malformed_library_names_fall_back_to_the_whole_name() {
+        assert_eq!(library_key("broken"), "broken");
+        assert_eq!(library_key("a:b"), "a:b");
+        assert_eq!(library_key("a:b:c:d:e@zip"), "a:b:c:d:e");
+        assert_eq!(library_key(""), "");
+    }
 }

@@ -31,7 +31,10 @@ fn harness(fake: &FakeMojang) -> Harness {
         manifest: fake.manifest_url(),
         runtime_index: fake.runtime_index_url(),
         resources: fake.resources_url(),
-        ..Urls::default()
+        // この試験はバニラだけを扱う。万一ローダーのメタデータを取りに行っても、
+        // 本物のサーバーには出ず、手元のつながらないアドレスで失敗させる
+        fabric_meta: "http://127.0.0.1:1".into(),
+        quilt_meta: "http://127.0.0.1:1".into(),
     };
     let env = InstallEnv::new(
         paths,

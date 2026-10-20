@@ -1211,6 +1211,13 @@ async fn loader_profile_failure_marks_the_instance_broken() {
         .unwrap();
     let snap = wait(&h.tasks, &created.task_id).await;
     assert_eq!(snap.state, TaskState::Failed);
+    // 失敗の理由は、プロファイルの取得の 404 である
+    assert_eq!(
+        snap.error.as_ref().unwrap().code,
+        "net.http_status",
+        "{:?}",
+        snap.error
+    );
     assert_eq!(
         instance::get(h.launcher.db(), &created.instance.id)
             .unwrap()
