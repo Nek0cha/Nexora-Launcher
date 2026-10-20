@@ -105,6 +105,14 @@ async fn categories_are_cached_and_served_offline() {
     Mock::given(method("GET"))
         .and(path("/tag/category"))
         .respond_with(json(CATEGORIES))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    // 2 回目以降は 5xx にする。サーバーを落とす方法だと、同じポートを別のテストのサーバーが
+    // 取り直すことがあり（Linux と macOS で起きる）、404 が返って不安定になる
+    Mock::given(method("GET"))
+        .and(path("/tag/category"))
+        .respond_with(ResponseTemplate::new(503))
         .mount(&server)
         .await;
     let api = server.uri();
@@ -113,8 +121,7 @@ async fn categories_are_cached_and_served_offline() {
     assert_eq!(first[2].name, "realistic");
     assert_eq!(first[2].project_type, "resourcepack");
 
-    // サーバーを止めても、キャッシュから返る
-    drop(server);
+    // 取得に失敗しても、キャッシュから返る
     let second = categories(&http(), &api, cache.path()).await.unwrap();
     assert_eq!(second, first);
 }
