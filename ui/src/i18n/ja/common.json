@@ -197,6 +197,7 @@
     "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。",
     "detail": {
       "tabSettings": "設定",
+      "tabContent": "コンテンツ",
       "name": "名前",
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
@@ -327,6 +328,46 @@
       "remove": "{{name}} を削除",
       "removeShort": "削除",
       "dependency": "依存"
+    },
+    "tabs": {
+      "label": "コンテンツの種類",
+      "mod": "MOD",
+      "resourcepack": "リソースパック",
+      "shader": "シェーダー"
+    },
+    "running": "ゲームの起動中は変更できません。",
+    "excluded": "絞り込みの対象外 {{count}} 件",
+    "excludedShow": "表示",
+    "excludedHide": "隠す",
+    "excludedList": "絞り込みの対象外のコンテンツ",
+    "noMatch": "条件に合うものはありません。",
+    "empty": {
+      "mod": "MOD はまだありません。.jar のファイルをこの画面に落とすと追加できます。",
+      "resourcepack": "リソースパックはまだありません。.zip のファイルをこの画面に落とすと追加できます。",
+      "shader": "シェーダーはまだありません。.zip のファイルをこの画面に落とすと追加できます。"
+    },
+    "drop": {
+      "target": "ここに落として追加",
+      "accepts": "{{ext}} のファイル"
+    },
+    "reject": {
+      "message": "{{name}} を追加できませんでした。{{reason}}",
+      "notAFile": "ファイルではありません。",
+      "wrongExtension": "ここに追加できるのは {{ext}} のファイルだけです。",
+      "unreadable": "ファイルを読み込めませんでした。"
+    },
+    "confirm": {
+      "cancel": "キャンセル",
+      "disableTitle": "{{name}} を無効にしますか？",
+      "disableBody": "次の MOD がこの MOD に依存しています。無効にすると、これらが動かなくなることがあります。",
+      "disable": "無効にする",
+      "removeTitle": "{{name}} を削除しますか？",
+      "removeBody": "ファイルを削除します。元に戻せません。",
+      "removeDependents": "次の MOD がこの MOD に依存しています。削除すると、これらが動かなくなることがあります。",
+      "remove": "削除",
+      "conflictTitle": "同じ名前のファイルがあります",
+      "conflictBody": "次のファイルはすでにあります。置き換えますか？",
+      "replace": "置き換える"
     }
   }
 }

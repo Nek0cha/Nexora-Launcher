@@ -197,6 +197,7 @@
     "deletePartial": "The folder may have been partly removed. Try deleting it again.",
     "detail": {
       "tabSettings": "Settings",
+      "tabContent": "Content",
       "name": "Name",
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
@@ -327,6 +328,46 @@
       "remove": "Remove {{name}}",
       "removeShort": "Remove",
       "dependency": "Dependency"
+    },
+    "tabs": {
+      "label": "Content type",
+      "mod": "Mods",
+      "resourcepack": "Resource packs",
+      "shader": "Shaders"
+    },
+    "running": "You can't change content while the game is running.",
+    "excluded": "Not covered by this filter: {{count}}",
+    "excludedShow": "Show",
+    "excludedHide": "Hide",
+    "excludedList": "Content not covered by this filter",
+    "noMatch": "Nothing matches this filter.",
+    "empty": {
+      "mod": "No mods yet. Drop .jar files on this screen to add them.",
+      "resourcepack": "No resource packs yet. Drop .zip files on this screen to add them.",
+      "shader": "No shaders yet. Drop .zip files on this screen to add them."
+    },
+    "drop": {
+      "target": "Drop here to add",
+      "accepts": "{{ext}} files"
+    },
+    "reject": {
+      "message": "Couldn't add {{name}}. {{reason}}",
+      "notAFile": "It isn't a file.",
+      "wrongExtension": "Only {{ext}} files can be added here.",
+      "unreadable": "The file couldn't be read."
+    },
+    "confirm": {
+      "cancel": "Cancel",
+      "disableTitle": "Disable {{name}}?",
+      "disableBody": "These mods depend on it and may stop working if you disable it.",
+      "disable": "Disable",
+      "removeTitle": "Remove {{name}}?",
+      "removeBody": "The file will be deleted. This can't be undone.",
+      "removeDependents": "These mods depend on it and may stop working if you remove it.",
+      "remove": "Remove",
+      "conflictTitle": "Some files already exist",
+      "conflictBody": "These files are already installed. Replace them?",
+      "replace": "Replace"
     }
   }
 }

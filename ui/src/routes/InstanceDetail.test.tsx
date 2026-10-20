@@ -2,7 +2,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listInstances, listRunning, openInstanceFolder, systemMemoryMb, updateInstance } from "../api/commands";
+import {
+  identifyContent,
+  listContent,
+  listContentCategories,
+  listInstances,
+  listRunning,
+  openInstanceFolder,
+  systemMemoryMb,
+  updateInstance,
+} from "../api/commands";
+import { onFilesDropped } from "../api/dragDrop";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { RunningSession } from "../bindings/RunningSession";
@@ -18,7 +28,16 @@ vi.mock("../api/commands", () => ({
   updateInstance: vi.fn(),
   systemMemoryMb: vi.fn(),
   openInstanceFolder: vi.fn(),
+  listContent: vi.fn(),
+  identifyContent: vi.fn(),
+  setContentEnabled: vi.fn(),
+  removeContent: vi.fn(),
+  addContentFiles: vi.fn(),
+  listContentCategories: vi.fn(),
+  getContentIcon: vi.fn(),
 }));
+
+vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 
 const instance = (patch: Partial<Instance> = {}): Instance => ({
   id: "i1", name: "Survival", dirName: "Survival", mcVersion: "1.21.5", state: "ready",
@@ -82,7 +101,7 @@ describe("InstanceDetail", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Survival" })).toBeTruthy();
     expect(screen.getByText("1.21.5")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Settings" })).toBeTruthy();
-    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Instances" }).getAttribute("href")).toBe("/instances");
     expect((await saveButton()).disabled).toBe(true);
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
@@ -265,6 +284,33 @@ describe("InstanceDetail", () => {
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip.textContent).toBe("Mods folder");
     expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
+  });
+
+  it("has a content tab", async () => {
+    vi.mocked(listContent).mockResolvedValue([]);
+    vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+    vi.mocked(listContentCategories).mockResolvedValue([]);
+    vi.mocked(onFilesDropped).mockResolvedValue(() => {});
+    mount([instance()]);
+    const tab = await screen.findByRole("tab", { name: "Content" });
+    await press(tab);
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
+    expect(listContent).toHaveBeenCalledWith("i1", "mod");
+  });
+
+  it("keeps unsaved settings when switching to the content tab and back", async () => {
+    vi.mocked(listContent).mockResolvedValue([]);
+    vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+    vi.mocked(listContentCategories).mockResolvedValue([]);
+    vi.mocked(onFilesDropped).mockResolvedValue(() => {});
+    mount([instance()]);
+    await saveButton();
+    fireEvent.change(nameInput(), { target: { value: "Creative" } });
+    await press(screen.getByRole("tab", { name: "Content" }));
+    await press(screen.getByRole("tab", { name: "Settings" }));
+    expect((nameInput() as HTMLInputElement).value).toBe("Creative");
   });
 
   it("folder_open_failure_is_a_toast", async () => {

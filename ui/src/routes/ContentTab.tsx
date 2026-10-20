@@ -1,0 +1,439 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
+import { useTranslation } from "react-i18next";
+import IconDrop from "~icons/ph/download-simple";
+import { onFilesDropped } from "../api/dragDrop";
+import { toErrorPayload } from "../api/ipc";
+import type { ContentItem } from "../bindings/ContentItem";
+import type { ContentKind } from "../bindings/ContentKind";
+import type { Instance } from "../bindings/Instance";
+import type { RejectReason } from "../bindings/RejectReason";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ContentFilter } from "../components/content/ContentFilter";
+import { ContentList } from "../components/content/ContentList";
+import { ROW_SIZE } from "../components/content/ContentRow";
+import { FailureNotice } from "../components/FailureNotice";
+import { Notice } from "../components/settingsLayout";
+import { useToast } from "../components/toast/useToast";
+import {
+  applyFilter,
+  dependentsOf,
+  emptyFilter,
+  type FilterState,
+  isMetadataFiltered,
+} from "../features/content/contentFilter";
+import {
+  useAddFiles,
+  useCategories,
+  useContentList,
+  useIdentifyContent,
+  useRemove,
+  useSetEnabled,
+} from "../features/content/useContent";
+
+const kinds: ContentKind[] = ["mod", "resourcepack", "shader"];
+
+// 種類ごとに受け付ける拡張子（spec 5.6）
+const extensions: Record<ContentKind, string> = { mod: ".jar", resourcepack: ".zip", shader: ".zip" };
+
+// 対象外の行を一覧の下に出すとき、この行数を超えたらその中でスクロールする
+const EXCLUDED_ROWS = 4;
+
+const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+// サブタブ。詳細の下線のタブと区別できるよう、選んだものに面を敷く
+const subTabClass = [
+  "inline-flex h-8 cursor-default items-center gap-2 rounded-md px-3 text-sm text-text-muted outline-none",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 hover:text-text selected:bg-surface-3 selected:text-text-strong",
+  ring,
+].join(" ");
+
+// 本文の中の控えめな文字のボタン（失敗の説明の「詳細」と同じ形）
+const textButton = [
+  "rounded-sm text-sm text-text-muted underline underline-offset-2",
+  "data-hovered:text-text data-pressed:text-text-strong",
+  ring,
+].join(" ");
+
+type Dialog =
+  | { type: "disable"; item: ContentItem; dependents: ContentItem[] }
+  | { type: "remove"; item: ContentItem; dependents: ContentItem[] }
+  | { type: "conflicts"; kind: ContentKind; names: string[]; paths: string[] };
+
+const displayName = (item: ContentItem) => item.name ?? item.fileName;
+
+/** パスの最後の部分（ファイル名）。Windows の区切りにも対応する。 */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+/**
+ * インスタンスの詳細の「コンテンツ」タブ（spec 5.2〜5.7）。MOD、リソースパック、シェーダーのサブタブに分け、
+ * 有効無効、削除、ドロップによる追加を行う。起動中（`running`）は変更できない。
+ */
+export function ContentTab({ instance, running }: { instance: Instance; running: boolean }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [kind, setKind] = useState<ContentKind>("mod");
+  // 絞り込みはサブタブごとに持つ。サブタブを切り替えても残す
+  const [filters, setFilters] = useState<Record<ContentKind, FilterState>>({
+    mod: emptyFilter,
+    resourcepack: emptyFilter,
+    shader: emptyFilter,
+  });
+  const [dragging, setDragging] = useState(false);
+  // ダイアログの中身は、閉じる動きの間も残しておく
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const lists = {
+    mod: useContentList(instance.id, "mod"),
+    resourcepack: useContentList(instance.id, "resourcepack"),
+    shader: useContentList(instance.id, "shader"),
+  };
+  const identify = useIdentifyContent(instance.id);
+  const setEnabled = useSetEnabled(instance.id);
+  const remove = useRemove(instance.id);
+  const add = useAddFiles(instance.id);
+
+  // 開いたときに 1 回だけ特定する（StrictMode で効果が 2 回走っても 1 回にする）
+  const identified = useRef(false);
+  useEffect(() => {
+    if (identified.current) return;
+    identified.current = true;
+    identify.mutate();
+  }, [identify.mutate]);
+
+  // 一覧の行とドロップの受け口は 1 度だけ作るので、最新の値はここから読む
+  const latest = useRef({
+    running,
+    kind,
+    dialogOpen,
+    mods: [] as ContentItem[],
+    toast,
+    t,
+    setEnabled: setEnabled.mutate,
+    add: add.mutate,
+  });
+  useLayoutEffect(() => {
+    latest.current = {
+      running,
+      kind,
+      dialogOpen,
+      mods: lists.mod.data ?? [],
+      toast,
+      t,
+      setEnabled: setEnabled.mutate,
+      add: add.mutate,
+    };
+  });
+  // 追加の最中のドロップは受けない。状態の反映を待たずに止めるため ref で持つ
+  const adding = useRef(false);
+
+  const toggle = useCallback((item: ContentItem) => {
+    latest.current.setEnabled(
+      { kind: item.kind, relPath: item.relPath, enabled: !item.enabled },
+      { onError: latest.current.toast.showError },
+    );
+  }, []);
+
+  const addFiles = useCallback((target: ContentKind, paths: string[], overwrite: boolean) => {
+    const { t, toast } = latest.current;
+    adding.current = true;
+    latest.current.add(
+      { kind: target, paths, overwrite },
+      {
+        onSuccess: (report) => {
+          for (const r of report.rejected)
+            toast.show({ kind: "error", message: t("content.reject.message", { name: r.name, reason: rejectText(t, r.reason, target) }) });
+          if (!overwrite && report.conflicts.length > 0) {
+            // 同じ名前があったファイルだけを、了承されたら上書きで入れ直す
+            const names = new Set(report.conflicts);
+            setDialog({ type: "conflicts", kind: target, names: report.conflicts, paths: paths.filter((p) => names.has(baseName(p))) });
+            setDialogOpen(true);
+          }
+        },
+        onError: toast.showError,
+        onSettled: () => {
+          adding.current = false;
+        },
+      },
+    );
+  }, []);
+
+  // 行の操作。行を描き直さずに済むよう、関数は作り直さない
+  const onToggle = useCallback(
+    (item: ContentItem) => {
+      if (latest.current.running) return;
+      // 依存の警告は MOD を無効にするときだけ。有効にするときは警告しない
+      if (item.kind === "mod" && item.enabled) {
+        const dependents = dependentsOf(latest.current.mods, item);
+        if (dependents.length > 0) {
+          setDialog({ type: "disable", item, dependents });
+          setDialogOpen(true);
+          return;
+        }
+      }
+      toggle(item);
+    },
+    [toggle],
+  );
+
+  const onRemove = useCallback((item: ContentItem) => {
+    if (latest.current.running) return;
+    const dependents = item.kind === "mod" ? dependentsOf(latest.current.mods, item) : [];
+    setDialog({ type: "remove", item, dependents });
+    setDialogOpen(true);
+  }, []);
+
+  // ファイルのドロップ。受け口はウィンドウ全体に 1 つなので、開いているサブタブの種類で追加する
+  useEffect(() => {
+    const blocked = () => latest.current.running || latest.current.dialogOpen || adding.current;
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    onFilesDropped({
+      enter: () => {
+        if (!blocked()) setDragging(true);
+      },
+      leave: () => setDragging(false),
+      drop: (paths) => {
+        setDragging(false);
+        if (blocked() || paths.length === 0) return;
+        addFiles(latest.current.kind, paths, false);
+      },
+    })
+      .then((fn) => {
+        // 登録が終わる前に閉じたときは、ここで解除する
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [addFiles]);
+
+  const closeDialog = () => setDialogOpen(false);
+
+  const confirm = () => {
+    if (!dialog) return;
+    if (dialog.type === "disable") {
+      closeDialog();
+      toggle(dialog.item);
+    } else if (dialog.type === "remove") {
+      if (remove.isPending) return;
+      remove.mutate(
+        { kind: dialog.item.kind, relPath: dialog.item.relPath },
+        { onError: toast.showError, onSettled: closeDialog },
+      );
+    } else {
+      closeDialog();
+      addFiles(dialog.kind, dialog.paths, true);
+    }
+  };
+
+  const busy = running || setEnabled.isPending || remove.isPending;
+
+  return (
+    <div className="relative flex h-full min-h-0 flex-col gap-4">
+      {running && <Notice tone="info">{t("content.running")}</Notice>}
+      <Tabs
+        selectedKey={kind}
+        onSelectionChange={(key) => setKind(key as ContentKind)}
+        className="flex min-h-0 flex-1 flex-col gap-4"
+      >
+        <TabList aria-label={t("content.tabs.label")} className="flex gap-1">
+          {kinds.map((k) => (
+            <Tab key={k} id={k} className={subTabClass}>
+              <span>{t(`content.tabs.${k}`)}</span>
+              {lists[k].data && <span className="tabular text-xs text-text-muted">{lists[k].data.length}</span>}
+            </Tab>
+          ))}
+        </TabList>
+        {kinds.map((k) => (
+          <TabPanel key={k} id={k} className="flex min-h-0 flex-1 outline-none">
+            <KindPanel
+              kind={k}
+              query={lists[k]}
+              filter={filters[k]}
+              onFilterChange={(next) => setFilters((f) => ({ ...f, [k]: next }))}
+              onToggle={onToggle}
+              onRemove={onRemove}
+              busy={busy}
+            />
+          </TabPanel>
+        ))}
+      </Tabs>
+      {dragging && (
+        // 受け皿。ドラッグの間だけ、タブ全体を覆って出す
+        <div className="pointer-events-none absolute -inset-3 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-accent bg-surface-0/85 backdrop-blur-sm">
+          <IconDrop aria-hidden className="size-8 text-accent" />
+          <p className="font-display text-lg font-semibold text-text-strong">{t("content.drop.target")}</p>
+          <p className="text-sm text-text-muted">{t("content.drop.accepts", { ext: extensions[kind] })}</p>
+        </div>
+      )}
+      {dialog && (
+        <ContentDialog
+          dialog={dialog}
+          isOpen={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onConfirm={confirm}
+          isPending={dialog.type === "remove" && remove.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+function rejectText(t: ReturnType<typeof useTranslation>["t"], reason: RejectReason, kind: ContentKind): string {
+  if (reason === "wrongExtension") return t("content.reject.wrongExtension", { ext: extensions[kind] });
+  return t(`content.reject.${reason}`);
+}
+
+/** 1 つの種類の、絞り込みと一覧。 */
+function KindPanel(props: {
+  kind: ContentKind;
+  query: ReturnType<typeof useContentList>;
+  filter: FilterState;
+  onFilterChange: (next: FilterState) => void;
+  onToggle: (item: ContentItem) => void;
+  onRemove: (item: ContentItem) => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  const { kind, query, filter } = props;
+  const categories = useCategories(kind);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const items = query.data;
+  const { visible, excluded } = useMemo(() => applyFilter(items ?? [], filter), [items, filter]);
+  const metadata = isMetadataFiltered(filter);
+
+  // 操作の直後の取り直しの失敗では、手元の一覧を使い続ける。何も無いときだけ失敗を出す
+  if (!items && query.error)
+    return (
+      <div role="alert">
+        <FailureNotice error={toErrorPayload(query.error)} />
+      </div>
+    );
+  if (!items) return null;
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+      {/* 絞り込みは左の列に置く（Modrinth の検索画面と同じ並び）。長いときはこの列の中でスクロールする */}
+      <div className="scroll-thin min-h-0 overflow-auto pr-1">
+        <ContentFilter
+          state={filter}
+          onChange={props.onFilterChange}
+          categories={categories.data ?? null}
+          showStatus
+        />
+      </div>
+      <div className="flex min-h-0 flex-col gap-2">
+        {metadata && excluded.length > 0 && (
+          <div className="flex items-center gap-3 px-3 text-sm text-text-muted">
+            <span>{t("content.excluded", { count: excluded.length })}</span>
+            <Button onPress={() => setShowExcluded((v) => !v)} aria-expanded={showExcluded} className={textButton}>
+              {showExcluded ? t("content.excludedHide") : t("content.excludedShow")}
+            </Button>
+          </div>
+        )}
+        {items.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-text-muted">{t(`content.empty.${kind}`)}</p>
+        ) : visible.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-text-muted">{t("content.noMatch")}</p>
+        ) : (
+          <div className="min-h-0 flex-1">
+            <ContentList items={visible} onToggle={props.onToggle} onRemove={props.onRemove} busy={props.busy} />
+          </div>
+        )}
+        {metadata && showExcluded && excluded.length > 0 && (
+          <div
+            className="shrink-0 border-t border-line pt-2"
+            style={{ height: Math.min(excluded.length, EXCLUDED_ROWS) * ROW_SIZE + 9 }}
+          >
+            <ContentList
+              items={excluded}
+              onToggle={props.onToggle}
+              onRemove={props.onRemove}
+              busy={props.busy}
+              label={t("content.excludedList")}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 依存の警告、削除、上書きの確認。 */
+function ContentDialog(props: {
+  dialog: Dialog;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  isPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const { dialog } = props;
+  const common = {
+    isOpen: props.isOpen,
+    onOpenChange: props.onOpenChange,
+    onConfirm: props.onConfirm,
+    isPending: props.isPending,
+    cancelLabel: t("content.confirm.cancel"),
+  };
+  if (dialog.type === "disable")
+    return (
+      <ConfirmDialog
+        {...common}
+        tone="default"
+        title={t("content.confirm.disableTitle", { name: displayName(dialog.item) })}
+        confirmLabel={t("content.confirm.disable")}
+      >
+        <p>{t("content.confirm.disableBody")}</p>
+        <NameList names={dialog.dependents.map(displayName)} />
+      </ConfirmDialog>
+    );
+  if (dialog.type === "remove")
+    return (
+      <ConfirmDialog
+        {...common}
+        tone="danger"
+        title={t("content.confirm.removeTitle", { name: displayName(dialog.item) })}
+        confirmLabel={t("content.confirm.remove")}
+      >
+        <p>{t("content.confirm.removeBody")}</p>
+        {dialog.dependents.length > 0 && (
+          <>
+            <p>{t("content.confirm.removeDependents")}</p>
+            <NameList names={dialog.dependents.map(displayName)} />
+          </>
+        )}
+      </ConfirmDialog>
+    );
+  return (
+    <ConfirmDialog
+      {...common}
+      tone="default"
+      title={t("content.confirm.conflictTitle")}
+      confirmLabel={t("content.confirm.replace")}
+    >
+      <p>{t("content.confirm.conflictBody")}</p>
+      <NameList names={dialog.names} />
+    </ConfirmDialog>
+  );
+}
+
+function NameList({ names }: { names: string[] }) {
+  return (
+    <ul className="scroll-thin max-h-40 list-disc overflow-auto pl-5 text-text-strong">
+      {names.map((name, i) => (
+        <li key={`${i}-${name}`} className="select-text">
+          {name}
+        </li>
+      ))}
+    </ul>
+  );
+}

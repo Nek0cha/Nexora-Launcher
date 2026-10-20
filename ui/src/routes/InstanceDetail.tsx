@@ -37,6 +37,7 @@ import {
 import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { useRunning } from "../features/play/useGameSync";
+import { ContentTab } from "./ContentTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -79,6 +80,8 @@ const iconButton = [
 
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
+type DetailTab = "settings" | "content";
+
 export default function InstanceDetail() {
   const { t } = useTranslation();
   const { id } = useParams();
@@ -86,6 +89,7 @@ export default function InstanceDetail() {
   const running = useRunning();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
+  const [tab, setTab] = useState<DetailTab>("settings");
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)
@@ -113,8 +117,11 @@ export default function InstanceDetail() {
 
   const isRunning = running?.some((s) => s.instanceId === instance.id) ?? false;
 
+  // コンテンツのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
+  const layout = tab === "content" ? "h-full min-h-[34rem] max-w-5xl" : "max-w-2xl";
+
   return (
-    <div className="flex max-w-2xl flex-col gap-6 p-10">
+    <div className={`flex ${layout} flex-col gap-6 p-10`}>
       <header className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h1 className={`${title} truncate`}>{instance.name}</h1>
@@ -144,16 +151,28 @@ export default function InstanceDetail() {
           </Link>
         </div>
       </header>
-      {/* タブは中身のあるものだけを出す。いまは設定だけである */}
-      <Tabs>
+      {/* タブは中身のあるものだけを出す。スクリーンショットとログは後のフェーズで足す */}
+      <Tabs
+        selectedKey={tab}
+        onSelectionChange={(key) => setTab(key as DetailTab)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         <TabList aria-label={instance.name} className="flex gap-6 border-b border-line">
           <Tab id="settings" className={tabClass}>
             {t("instances.detail.tabSettings")}
           </Tab>
+          <Tab id="content" className={tabClass}>
+            {t("instances.detail.tabContent")}
+          </Tab>
         </TabList>
-        <TabPanel id="settings" className="pt-6 outline-none">
+        {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
+        <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">
           {/* インスタンスが替わったら入力を作り直す */}
           <SettingsTab key={instance.id} instance={instance} running={isRunning} />
+        </TabPanel>
+        {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
+        <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
+          <ContentTab key={instance.id} instance={instance} running={isRunning} />
         </TabPanel>
       </Tabs>
     </div>
