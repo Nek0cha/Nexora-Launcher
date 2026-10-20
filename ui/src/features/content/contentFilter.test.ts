@@ -92,6 +92,11 @@ describe("dependentsOf", () => {
     expect(dependentsOf([target, yes, off, no], target)).toEqual([yes]);
   });
 
+  it("leaves out the target itself even if it lists its own project id", () => {
+    const target = item({ relPath: "t", projectId: "P", dependencies: ["P"] });
+    expect(dependentsOf([target], target)).toEqual([]);
+  });
+
   it("is empty for an item without a project id", () => {
     const target = item({ relPath: "t", projectId: null });
     const other = item({ relPath: "o", dependencies: ["P"] });
