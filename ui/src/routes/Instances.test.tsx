@@ -36,6 +36,7 @@ const instance = (id: string, name: string, patch: Partial<Instance> = {}): Inst
   id, name, dirName: name, mcVersion: "1.21.5", state: "ready",
   createdAt: 0, lastPlayedAt: null, playTimeMs: 0,
   memoryMode: "auto", memoryMb: null, javaMode: "auto", javaPath: null, jvmArgs: "",
+  loader: "vanilla", loaderVersion: null,
   ...patch,
 });
 

@@ -10,7 +10,7 @@ use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
-use nexora_core::instance::{Instance, InstanceSettings};
+use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::CreatedInstance;
 use nexora_core::meta::mojang::manifest::VersionEntry;
@@ -141,13 +141,12 @@ pub async fn list_instances(state: State<'_, AppState>) -> CmdResult<Vec<Instanc
 #[tauri::command]
 pub async fn create_instance(
     state: State<'_, AppState>,
-    name: String,
-    mc_version: String,
+    request: NewInstance,
 ) -> CmdResult<CreatedInstance> {
     let services = state.services()?;
     services
         .launcher
-        .create_instance(&name, &mc_version)
+        .create_instance(&request)
         .map_err(ErrorPayload::from)
 }
 

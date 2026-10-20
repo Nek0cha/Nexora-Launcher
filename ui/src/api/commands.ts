@@ -25,7 +25,7 @@ export const cancelTask = (taskId: string) => call<null>("cancel_task", { taskId
 export const listVersions = () => call<VersionEntry[]>("list_versions");
 export const listInstances = () => call<Instance[]>("list_instances");
 export const createInstance = (name: string, mcVersion: string) =>
-  call<CreatedInstance>("create_instance", { name, mcVersion });
+  call<CreatedInstance>("create_instance", { request: { name, mcVersion, loader: "vanilla" } });
 export const updateInstance = (instanceId: string, settings: InstanceSettings) =>
   call<Instance>("update_instance", { instanceId, settings });
 export const deleteInstance = (instanceId: string) => call<null>("delete_instance", { instanceId });

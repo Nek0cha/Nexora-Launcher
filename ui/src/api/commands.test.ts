@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginLogin,
   changeSkin,
+  createInstance,
   deleteInstance,
   duplicateInstance,
   getSkinVariant,
@@ -16,6 +17,15 @@ import type { InstanceSettings } from "../bindings/InstanceSettings";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue("t1") }));
 
 afterEach(() => vi.clearAllMocks());
+
+describe("createInstance", () => {
+  it("sends a vanilla request", async () => {
+    await createInstance("World", "1.21.5");
+    expect(invoke).toHaveBeenLastCalledWith("create_instance", {
+      request: { name: "World", mcVersion: "1.21.5", loader: "vanilla" },
+    });
+  });
+});
 
 describe("launchInstance", () => {
   it("passes offline, false by default", async () => {

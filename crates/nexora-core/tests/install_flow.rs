@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use nexora_core::db::Db;
 use nexora_core::install::{InstallEnv, Urls, install};
-use nexora_core::instance::{self, InstanceState};
+use nexora_core::instance::{self, InstanceState, NewInstance};
 use nexora_core::java::find_registered;
 use nexora_core::paths::AppPaths;
 use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
@@ -72,7 +72,13 @@ pub async fn wait(tasks: &TaskManager, id: &str) -> TaskSnapshot {
 async fn installs_everything_and_marks_ready() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake);
-    let inst = instance::create(&h.env.db, &h.env.paths, "test", "1.99-test", 1).unwrap();
+    let inst = instance::create(
+        &h.env.db,
+        &h.env.paths,
+        &NewInstance::vanilla("test", "1.99-test"),
+        1,
+    )
+    .unwrap();
     let snap = run_install(&h, &inst.id).await;
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
     assert!(snap.progress.total > 0);
@@ -96,7 +102,13 @@ async fn installs_everything_and_marks_ready() {
 async fn unknown_version_marks_broken() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake);
-    let inst = instance::create(&h.env.db, &h.env.paths, "x", "9.9.9", 1).unwrap();
+    let inst = instance::create(
+        &h.env.db,
+        &h.env.paths,
+        &NewInstance::vanilla("x", "9.9.9"),
+        1,
+    )
+    .unwrap();
     let snap = run_install(&h, &inst.id).await;
     assert_eq!(snap.state, TaskState::Failed);
     assert_eq!(snap.error.unwrap().code, "meta.version_not_found");
@@ -110,7 +122,13 @@ async fn unknown_version_marks_broken() {
 async fn failed_install_resumes_without_refetching_finished_files() {
     let fake = FakeMojang::start_with(false).await;
     let h = harness(&fake);
-    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let inst = instance::create(
+        &h.env.db,
+        &h.env.paths,
+        &NewInstance::vanilla("x", "1.99-test"),
+        1,
+    )
+    .unwrap();
     let first = run_install(&h, &inst.id).await;
     assert_eq!(first.state, TaskState::Failed);
     assert_eq!(first.error.unwrap().code, "net.http_status");
@@ -133,7 +151,13 @@ async fn failed_install_resumes_without_refetching_finished_files() {
 async fn cancelled_install_stays_installing() {
     let fake = FakeMojang::start().await;
     let h = harness(&fake);
-    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let inst = instance::create(
+        &h.env.db,
+        &h.env.paths,
+        &NewInstance::vanilla("x", "1.99-test"),
+        1,
+    )
+    .unwrap();
     let env = h.env.clone();
     let iid = inst.id.clone();
     let task = h
@@ -157,7 +181,13 @@ async fn connection_lost_mid_download_marks_broken_and_resumes() {
     let cutting = CuttingServer::start(LIBRARY, attempts).await;
     let fake = FakeMojang::with_library_at(&cutting.url).await;
     let h = harness(&fake);
-    let inst = instance::create(&h.env.db, &h.env.paths, "x", "1.99-test", 1).unwrap();
+    let inst = instance::create(
+        &h.env.db,
+        &h.env.paths,
+        &NewInstance::vanilla("x", "1.99-test"),
+        1,
+    )
+    .unwrap();
     let first = run_install(&h, &inst.id).await;
     assert_eq!(first.state, TaskState::Failed);
     assert_eq!(first.error.unwrap().code, "net.offline");

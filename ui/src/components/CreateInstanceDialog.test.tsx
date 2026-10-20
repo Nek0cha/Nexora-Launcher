@@ -24,6 +24,7 @@ const created: CreatedInstance = {
     id: "i1", name: "1.21.5", dirName: "1.21.5", mcVersion: "1.21.5", state: "installing",
     createdAt: 0, lastPlayedAt: null, playTimeMs: 0,
     memoryMode: "auto", memoryMb: null, javaMode: "auto", javaPath: null, jvmArgs: "",
+  loader: "vanilla", loaderVersion: null,
   },
   taskId: "t1",
 };

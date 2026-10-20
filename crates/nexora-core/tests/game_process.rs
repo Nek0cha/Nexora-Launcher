@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nexora_core::db::Db;
-use nexora_core::instance;
+use nexora_core::instance::{self, NewInstance};
 use nexora_core::launch::process::{GameProcesses, SpawnSpec, process_start_ms};
 use nexora_core::paths::AppPaths;
 use secrecy::SecretString;
@@ -54,7 +54,7 @@ fn spec(f: &Fixture, id: &str, script: &str, secret: Option<&str>) -> SpawnSpec 
 #[tokio::test]
 async fn records_output_exit_and_play_time() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let session = f
         .processes
         .spawn(spec(&f, &inst.id, "echo hello", None))
@@ -75,7 +75,7 @@ async fn records_output_exit_and_play_time() {
 #[tokio::test]
 async fn argfile_is_removed_when_the_game_exits() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let argfile = f.paths.argfile(&inst.id);
     std::fs::create_dir_all(argfile.parent().unwrap()).unwrap();
     std::fs::write(&argfile, b"\"-cp\"\n").unwrap();
@@ -90,7 +90,7 @@ async fn argfile_is_removed_when_the_game_exits() {
 #[tokio::test]
 async fn reports_nonzero_exit_codes() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     f.processes
         .spawn(spec(&f, &inst.id, "exit 3", None))
         .await
@@ -101,7 +101,7 @@ async fn reports_nonzero_exit_codes() {
 #[tokio::test]
 async fn secrets_are_redacted_from_output() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     f.processes
         .spawn(spec(
             &f,
@@ -124,7 +124,7 @@ async fn secrets_are_redacted_from_output() {
 #[tokio::test]
 async fn log4j_events_and_invalid_utf8_are_handled() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let script = r#"printf '<log4j:Event logger="a" timestamp="0" level="INFO" thread="main">\n<log4j:Message><![CDATA[Hi]]></log4j:Message>\n</log4j:Event>\n'; printf '\377abc\n'"#;
     f.processes
         .spawn(spec(&f, &inst.id, script, None))
@@ -142,7 +142,7 @@ async fn log4j_events_and_invalid_utf8_are_handled() {
 #[tokio::test]
 async fn reattach_keeps_live_sessions() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let pid = std::process::id();
     let started = process_start_ms(pid).unwrap();
     insert_session(&f.db, &inst.id, pid, started, 1);
@@ -155,7 +155,7 @@ async fn reattach_keeps_live_sessions() {
 #[tokio::test]
 async fn reattach_finishes_dead_sessions_using_latest_log_time() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let logs = instance::game_dir(&f.paths, &inst).join("logs");
     std::fs::create_dir_all(&logs).unwrap();
     std::fs::write(logs.join("latest.log"), b"done").unwrap();
@@ -176,7 +176,7 @@ async fn reattach_finishes_dead_sessions_using_latest_log_time() {
 #[tokio::test]
 async fn reused_pid_is_not_mistaken_for_the_game() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let pid = std::process::id();
     let wrong_start = process_start_ms(pid).unwrap() - 60_000;
     insert_session(&f.db, &inst.id, pid, wrong_start, 1_000);
@@ -198,7 +198,7 @@ async fn spawn_long_running(f: &Fixture, id: &str) -> u32 {
 #[tokio::test]
 async fn stop_force_ends_the_process_and_row() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let pid = spawn_long_running(&f, &inst.id).await;
     assert!(process_start_ms(pid).is_some());
     f.processes.stop(&inst.id, true).unwrap();
@@ -210,7 +210,7 @@ async fn stop_force_ends_the_process_and_row() {
 #[tokio::test]
 async fn stop_with_mismatched_start_time_sends_nothing() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let (program, args) = long_running();
     let mut other = std::process::Command::new(program)
         .args(args)
@@ -232,7 +232,7 @@ async fn stop_with_mismatched_start_time_sends_nothing() {
 #[tokio::test]
 async fn stop_without_a_row_is_ok() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     f.processes.stop(&inst.id, false).unwrap();
     f.processes.stop(&inst.id, true).unwrap();
     assert!(f.game.exits.lock().unwrap().is_empty());
@@ -242,7 +242,7 @@ async fn stop_without_a_row_is_ok() {
 #[tokio::test]
 async fn stop_graceful_on_a_windowless_process_does_nothing() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     let pid = spawn_long_running(&f, &inst.id).await;
     f.processes.stop(&inst.id, false).unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -259,7 +259,7 @@ async fn stop_graceful_on_a_windowless_process_does_nothing() {
 #[tokio::test]
 async fn stop_graceful_sends_sigterm_on_unix() {
     let f = fixture();
-    let inst = instance::create(&f.db, &f.paths, "x", "1.0", 1).unwrap();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
     spawn_long_running(&f, &inst.id).await;
     f.processes.stop(&inst.id, false).unwrap();
     f.game.wait_exit(&inst.id).await;

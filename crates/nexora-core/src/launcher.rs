@@ -17,7 +17,7 @@ use crate::install::{InstallEnv, Urls, install, kib, now_ms};
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
-use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode};
+use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode, NewInstance};
 use crate::java::verify::{JavaProbe, SystemProbe};
 use crate::java::{find_registered, finish_runtime, prepare_runtime, requirement};
 use crate::launch::argfile;
@@ -178,12 +178,8 @@ impl Launcher {
         instance::list(&self.env.db)
     }
 
-    pub fn create_instance(
-        &self,
-        name: &str,
-        mc_version: &str,
-    ) -> Result<CreatedInstance, CoreError> {
-        let instance = instance::create(&self.env.db, &self.env.paths, name, mc_version, now_ms())?;
+    pub fn create_instance(&self, new: &NewInstance) -> Result<CreatedInstance, CoreError> {
+        let instance = instance::create(&self.env.db, &self.env.paths, new, now_ms())?;
         let task_id = self.start_install(&instance.id);
         Ok(CreatedInstance { instance, task_id })
     }
