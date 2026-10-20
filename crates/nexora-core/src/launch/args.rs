@@ -391,6 +391,71 @@ mod tests {
         }
     }
 
+    /// 実物の Forge と NeoForge の version.json を、`id` を `inheritsFrom` に書き換えた
+    /// Vanilla（1.21.5 の fixture）に重ね、計画と引数を作る。
+    #[test]
+    fn real_forge_and_neoforge_profiles_merge_plan_and_resolve_every_placeholder() {
+        use crate::install::plan::{RESOURCES_URL, check_profile, plan_game};
+        use crate::meta::loader::LoaderProfile;
+        use crate::meta::loader::merge::merge_profile;
+        use crate::paths::AppPaths;
+
+        let env = RuleEnv {
+            os: OsName::Windows,
+            os_version: "10.0".into(),
+            arch: "x86_64".into(),
+        };
+        let paths = AppPaths::from_root("/data");
+        let index: crate::meta::mojang::version::AssetIndex =
+            serde_json::from_str(r#"{"objects":{}}"#).unwrap();
+        // (fixture, generated の数)。URL の空のライブラリを持つのは 1.16.5 だけ
+        for (name, generated) in [
+            ("forge-1.16.5", 1),
+            ("forge-1.20.1", 0),
+            ("neoforge-1.20.1", 0),
+            ("neoforge-21.1", 0),
+        ] {
+            let path = format!(
+                "{}/tests/fixtures/forge/{name}-version.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let profile: LoaderProfile =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let mut vanilla = fixture("1.21.5");
+            vanilla.id = profile.inherits_from.clone();
+            let version = merge_profile(&vanilla, &profile).unwrap();
+            check_profile(&version).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let plan = plan_game(&version, &index, &env, &paths, RESOURCES_URL).unwrap();
+            assert_eq!(
+                plan.generated.len(),
+                generated,
+                "{name}: {:?}",
+                plan.generated
+            );
+            let args = build_args(&ArgInputs {
+                version: &version,
+                session: &player_session(),
+                env: &env,
+                game_dir: Path::new("/game"),
+                assets_root: Path::new("/assets"),
+                natives_dir: Path::new("/natives"),
+                library_dir: &paths.libraries_dir(),
+                classpath: &plan.classpath,
+                logging_argument: None,
+                memory_mb: 2048,
+                extra_jvm_args: &[],
+                launcher_version: "0.1.0",
+            });
+            let all: Vec<&String> = args.jvm.iter().chain(&args.game).collect();
+            assert!(all.iter().all(|a| !a.contains("${")), "{name}: {all:?}");
+            assert_eq!(
+                args.jvm.last().map(String::as_str),
+                Some(profile.main_class.as_str()),
+                "{name}"
+            );
+        }
+    }
+
     /// `${version_name}` の値（`--version` の次の引数）。
     fn version_arg(version: &VersionJson) -> String {
         let env = RuleEnv {
