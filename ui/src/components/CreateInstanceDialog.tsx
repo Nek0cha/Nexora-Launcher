@@ -43,6 +43,7 @@ import { FailureNotice } from "./FailureNotice";
 import { InstanceAdvancedFields } from "./InstanceAdvancedFields";
 import { modalClass, overlayClass } from "./modal";
 import { Select } from "./Select";
+import { controlWidth, inputBase } from "./settingsLayout";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -92,17 +93,9 @@ const disclosureButton = [
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
 ].join(" ");
 
-// 右の列の幅。名前の欄、バージョンの選択欄、読み込み中の表示で揃える（日本語の「読み込んでいます」が 1 行に収まる幅）
-const controlWidth = "w-60";
-
-// 名前の欄は、Select と同じ「ラベルが左、入力が右」の行にし、右端を揃える
-const inputClass = [
-  `h-9 ${controlWidth} rounded-md border border-line-control bg-surface-1 px-3 text-text`,
-  "placeholder:text-text-faint",
-  "transition-colors duration-(--duration-fast) ease-out-quint",
-  "data-hovered:border-text-muted",
-  "data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-accent",
-].join(" ");
+// 名前の欄は、Select と同じ「ラベルが左、入力が右」の行にし、右端を揃える。
+// 右の列の幅（controlWidth）は、名前の欄、バージョンの選択欄、読み込み中の表示で揃える
+const inputClass = `${inputBase} ${controlWidth}`;
 
 /** 詳細設定の初期値。閉じたまま作ると、従来と同じ自動の設定になる。 */
 const ADVANCED_DEFAULTS: Omit<SettingsForm, "name"> = {
@@ -277,6 +270,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
                 label={t("create.loaderVersion")}
                 query={loaderVersions}
                 loadingText={t("create.loadingLoaderVersions")}
+                emptyText={t("create.noLoaderVersions")}
                 ready={loaderVersion !== null}
               >
                 <Select
@@ -344,17 +338,20 @@ function CreateForm({ onDone }: { onDone: () => void }) {
 
 /**
  * 一覧を取りに行く選択欄の行。失敗なら再試行、読み込み中なら同じ形の表示、届いたら children を出す。
+ * emptyText を渡すと、取得に成功して一覧が空だったときに、読み込み中の代わりにそれを出す。
  */
 function QueryRow({
   label,
   query,
   loadingText,
+  emptyText,
   ready,
   children,
 }: {
   label: string;
-  query: Pick<UseQueryResult, "error" | "isFetching" | "refetch">;
+  query: Pick<UseQueryResult<unknown[]>, "data" | "error" | "isFetching" | "isSuccess" | "refetch">;
   loadingText: string;
+  emptyText?: string;
   ready: boolean;
   children: ReactNode;
 }) {
@@ -371,6 +368,21 @@ function QueryRow({
           </Button>
         </div>
         <FailureNotice error={toErrorPayload(query.error)} />
+      </div>
+    );
+  }
+  if (!ready && emptyText !== undefined && query.isSuccess && !query.isFetching && query.data?.length === 0) {
+    // 取得はできたが選べるものが無い。読み込み中と見分けられるよう、理由を同じ行の形で出す。
+    // 文が長いため、高さは折り返しに合わせて伸ばす
+    return (
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-text">{label}</span>
+        <span
+          role="status"
+          className={`flex min-h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 py-1.5 text-sm text-text-muted`}
+        >
+          {emptyText}
+        </span>
       </div>
     );
   }

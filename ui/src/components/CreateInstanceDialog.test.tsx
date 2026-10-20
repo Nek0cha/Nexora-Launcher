@@ -330,7 +330,8 @@ describe("CreateInstanceDialog", () => {
   it("shows the failure with a retry when loader versions cannot be loaded, and Vanilla still works", async () => {
     vi.mocked(listVersions).mockResolvedValue(LOADER_TEST_VERSIONS);
     vi.mocked(listLoaderGameVersions).mockRejectedValue(new IpcError({ code: "net.offline", params: {}, detail: null }));
-    vi.mocked(createInstance).mockResolvedValue(created);
+    // 作成は終わらせず、ダイアログを開いたままにして再試行まで確かめる
+    vi.mocked(createInstance).mockReturnValue(new Promise(() => {}));
     mount();
     const dialog = await open();
     expect(await within(dialog).findByText("Can't connect to the internet")).toBeTruthy();
@@ -341,6 +342,40 @@ describe("CreateInstanceDialog", () => {
     await waitFor(() => expect(createButton(dialog).disabled).toBe(false));
     await act(async () => fireEvent.click(createButton(dialog)));
     expect(createInstance).toHaveBeenCalledWith(expect.objectContaining({ loader: "vanilla", mcVersion: "1.21.5" }));
+    // 再試行で取り直しに成功すれば、タブが選べるようになり、失敗の表示は消える
+    vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) => GAME_VERSIONS[loader] ?? []);
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Retry loading loaders" })));
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false));
+    expect(isDisabledTab(tab(dialog, "Quilt"))).toBe(false);
+    expect(within(dialog).queryByText("Can't connect to the internet")).toBeNull();
+  });
+
+  it("explains an empty loader version list instead of loading forever, and keeps Create disabled", async () => {
+    vi.mocked(listLoaderVersions).mockResolvedValue([]);
+    const dialog = await openWithLoaders();
+    fireEvent.click(tab(dialog, "Fabric"));
+    await waitFor(() => expect(isSelectedTab(tab(dialog, "Fabric"))).toBe(true));
+    expect(
+      await within(dialog).findByText("No loader versions are available for this Minecraft version"),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("Loading loader versions")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /Loader version/ })).toBeNull();
+    expect(createButton(dialog).disabled).toBe(true);
+  });
+
+  it("shows the failure of the loader version list with a retry that recovers", async () => {
+    vi.mocked(listLoaderVersions).mockRejectedValueOnce(new IpcError({ code: "net.offline", params: {}, detail: null }));
+    const dialog = await openWithLoaders();
+    fireEvent.click(tab(dialog, "Fabric"));
+    expect(await within(dialog).findByText("Can't connect to the internet")).toBeTruthy();
+    expect(createButton(dialog).disabled).toBe(true);
+    vi.mocked(listLoaderVersions).mockResolvedValue(FABRIC_VERSIONS);
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Retry" })));
+    const loaderVersion = await within(dialog).findByRole("button", { name: /Loader version/ });
+    await waitFor(() => expect(loaderVersion.textContent).toContain("0.16.10"));
+    expect(within(dialog).queryByText("Can't connect to the internet")).toBeNull();
+    expect(listLoaderVersions).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(createButton(dialog).disabled).toBe(false));
   });
 
   it("retries the loader lists from the failure notice", async () => {

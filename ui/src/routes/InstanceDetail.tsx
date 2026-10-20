@@ -169,7 +169,6 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   // 保存の結果はトーストで出す
   const toast = useToast();
 
-
   const dirty = isDirty(base, form);
   const canSave = dirty && isValid(form) && !update.isPending;
 
