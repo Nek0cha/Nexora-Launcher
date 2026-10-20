@@ -12,9 +12,11 @@ describe("tabState", () => {
     expect(tabState("vanilla", null, {})).toEqual({ enabled: true });
     expect(tabState("vanilla", "1.8.9", { fabric: [] })).toEqual({ enabled: true });
   });
-  it("marks forge and neoforge as coming soon", () => {
-    expect(tabState("forge", "1.20.1", {})).toEqual({ enabled: false, reason: "soon" });
-    expect(tabState("neoforge", "1.20.1", { fabric: ["1.20.1"] })).toEqual({ enabled: false, reason: "soon" });
+  it("treats forge and neoforge like fabric and never reports a coming-soon reason", () => {
+    expect(tabState("forge", "1.20.1", { forge: ["1.20.1"] })).toEqual({ enabled: true });
+    expect(tabState("forge", "1.12.2", { forge: ["1.20.1"] })).toEqual({ enabled: false, reason: "unsupportedVersion" });
+    expect(tabState("neoforge", "1.21.1", { neoforge: ["1.21.1"] })).toEqual({ enabled: true });
+    expect(tabState("neoforge", "1.20.1", {})).toEqual({ enabled: false, reason: "loading" });
   });
   it("is loading while the game version list is not fetched", () => {
     expect(tabState("fabric", "1.20.1", {})).toEqual({ enabled: false, reason: "loading" });

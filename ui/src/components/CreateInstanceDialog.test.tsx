@@ -42,7 +42,13 @@ const LOADER_TEST_VERSIONS = [
 const GAME_VERSIONS: Partial<Record<LoaderKind, string[]>> = {
   fabric: ["1.21.5", "1.21.4", "1.20.1"],
   quilt: ["1.21.5", "1.21.4"],
+  forge: ["1.21.5", "1.21.4", "1.8.9"],
+  neoforge: ["1.21.5"],
 };
+const FORGE_VERSIONS = [
+  { version: "1.21.5-54.0.1", stable: false },
+  { version: "1.21.5-54.0.0", stable: true },
+];
 const FABRIC_VERSIONS = [
   { version: "0.17.0-beta.1", stable: false },
   { version: "0.16.10", stable: true },
@@ -191,20 +197,51 @@ describe("CreateInstanceDialog", () => {
     expect(createInstance).not.toHaveBeenCalled();
   });
 
-  it("shows five loader tabs with Forge and NeoForge disabled as coming soon", async () => {
+  it("shows five loader tabs and enables the ones whose version lists arrive", async () => {
     const dialog = await openWithLoaders();
     const list = within(dialog).getByRole("tablist", { name: "Loader" });
     expect(within(list).getAllByRole("tab").map((t) => t.textContent)).toEqual([
       "Vanilla", "Fabric", "Forge", "NeoForge", "Quilt",
     ]);
     expect(isSelectedTab(tab(dialog, "Vanilla"))).toBe(true);
-    for (const name of ["Forge", "NeoForge"]) {
-      expect(isDisabledTab(tab(dialog, name))).toBe(true);
-      expect(tab(dialog, name).querySelector("[title]")?.getAttribute("title")).toBe("Coming soon");
-    }
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false));
+    expect(isDisabledTab(tab(dialog, "NeoForge"))).toBe(false);
     expect(isDisabledTab(tab(dialog, "Quilt"))).toBe(false);
     // Vanilla ではローダーのバージョンの欄を出さない
     expect(within(dialog).queryByRole("button", { name: /Loader version/ })).toBeNull();
+  });
+
+  it("forge tab lists its loader versions with the recommended one first by default and names the instance after it", async () => {
+    vi.mocked(listLoaderVersions).mockImplementation(async (loader) => (loader === "forge" ? FORGE_VERSIONS : FABRIC_VERSIONS));
+    const dialog = await openWithLoaders();
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false));
+    fireEvent.click(tab(dialog, "Forge"));
+    const loaderVersion = await within(dialog).findByRole("button", { name: /Loader version/ });
+    await waitFor(() => expect(loaderVersion.textContent).toContain("1.21.5-54.0.0"));
+    expect(listLoaderVersions).toHaveBeenCalledWith("forge", "1.21.5");
+    await waitFor(() => expect(nameInput(dialog).value).toBe("Forge 1.21.5"));
+  });
+
+  it("neoforge tab narrows the Minecraft versions to the ones NeoForge supports", async () => {
+    const dialog = await openWithLoaders();
+    fireEvent.click(tab(dialog, "NeoForge"));
+    await waitFor(() => expect(isSelectedTab(tab(dialog, "NeoForge"))).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: /Version/ }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options).toEqual(["1.21.5"]);
+  });
+
+  it("gives a disabled tab's reason to assistive tech through aria-describedby", async () => {
+    const dialog = await openWithLoaders();
+    await choose(dialog, /Version/, "1.8.9");
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(true));
+    const fabric = tab(dialog, "Fabric");
+    const id = fabric.getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id as string)?.textContent).toBe("Not available for this version");
+    // 選べるタブには参照を付けない
+    expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false);
+    expect(tab(dialog, "Forge").getAttribute("aria-describedby")).toBeNull();
   });
 
   it("marks the Fabric and Quilt tabs as loading until their lists arrive", async () => {
@@ -213,7 +250,7 @@ describe("CreateInstanceDialog", () => {
     mount();
     const dialog = await open();
     await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
-    for (const name of ["Fabric", "Quilt"]) {
+    for (const name of ["Fabric", "Forge", "NeoForge", "Quilt"]) {
       expect(isDisabledTab(tab(dialog, name))).toBe(true);
       expect(tab(dialog, name).querySelector("[title]")?.getAttribute("title")).toBe("Loading loader versions");
     }

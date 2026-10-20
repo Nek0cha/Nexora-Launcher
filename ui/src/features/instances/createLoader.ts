@@ -3,15 +3,13 @@ import type { LoaderKind } from "../../bindings/LoaderKind";
 /** タブの表示順。 */
 export const LOADER_TABS: readonly LoaderKind[] = ["vanilla", "fabric", "forge", "neoforge", "quilt"];
 
-export type TabState = { enabled: true } | { enabled: false; reason: "soon" | "unsupportedVersion" | "loading" };
+export type TabState = { enabled: true } | { enabled: false; reason: "unsupportedVersion" | "loading" };
 
 type GameVersions = Partial<Record<LoaderKind, string[] | undefined>>;
 
 /** タブを選べるか。選べない場合はその理由も返す。 */
 export function tabState(loader: LoaderKind, mcVersion: string | null, gameVersions: GameVersions): TabState {
   if (loader === "vanilla") return { enabled: true };
-  // Forge と NeoForge はこのフェーズでは未対応。
-  if (loader === "forge" || loader === "neoforge") return { enabled: false, reason: "soon" };
   const list = gameVersions[loader];
   if (list === undefined) return { enabled: false, reason: "loading" };
   if (mcVersion === null || !list.includes(mcVersion)) return { enabled: false, reason: "unsupportedVersion" };
