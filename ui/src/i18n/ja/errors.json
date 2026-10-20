@@ -31,7 +31,7 @@
   },
   "install": {
     "unsupported_profile": "このバージョンの形式には対応していません",
-    "processor_failed": "ローダーの導入処理（{{processor}}）に失敗しました",
+    "processor_failed": "ローダーの導入処理（{{processor}}）に失敗しました。ログは「詳細」で確認できます",
     "loader_files_missing": "ローダーのファイルが見つかりません：{{path}}。もう一度プレイを押すと導入し直します"
   },
   "java": {

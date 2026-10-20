@@ -37,7 +37,8 @@ pub enum CoreError {
     VersionNotFound { id: String },
     #[error("unsupported version profile: {reason}")]
     UnsupportedProfile { reason: String },
-    #[error("Forge install processor {processor} failed (exit code {code:?})")]
+    /// 表示（UI の「詳細」に出る `detail`）には終了コードとログの末尾を含める。
+    #[error("loader install processor {processor} failed {}{}", exit_text(*.code), log_text(.log_tail))]
     ProcessorFailed {
         processor: String,
         code: Option<i32>,
@@ -97,6 +98,23 @@ pub enum CoreError {
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
+}
+
+/// processor の終了の書き方。コードが無いのは、Java を起動できなかったか、コードなしで終わったとき。
+fn exit_text(code: Option<i32>) -> String {
+    match code {
+        Some(code) => format!("with exit code {code}"),
+        None => "because it could not start Java or Java ended without an exit code".to_string(),
+    }
+}
+
+/// ログの末尾を、空でなければ次の行から足す。
+fn log_text(tail: &str) -> String {
+    if tail.is_empty() {
+        String::new()
+    } else {
+        format!("\n{tail}")
+    }
 }
 
 impl CoreError {
@@ -342,6 +360,51 @@ mod tests {
             p.params.get("path"),
             Some(&ParamValue::Str("a/b.jar".into()))
         );
+    }
+
+    #[test]
+    fn processor_failure_detail_has_the_exit_code_and_log_tail() {
+        let detail = CoreError::ProcessorFailed {
+            processor: "net.minecraftforge:binarypatcher:1.0".into(),
+            code: Some(3),
+            log_tail: "Exception in thread main\nboom".into(),
+        }
+        .to_payload()
+        .detail
+        .unwrap();
+        assert!(
+            detail.starts_with("loader install processor net.minecraftforge:binarypatcher:1.0"),
+            "{detail}"
+        );
+        assert!(detail.contains("exit code 3"), "{detail}");
+        assert!(
+            detail.ends_with("Exception in thread main\nboom"),
+            "{detail}"
+        );
+        assert!(!detail.contains("Some("), "{detail}");
+        assert!(!detail.contains("Forge"), "{detail}");
+
+        let detail = CoreError::ProcessorFailed {
+            processor: "x".into(),
+            code: None,
+            log_tail: "failed to start java: not found".into(),
+        }
+        .to_string();
+        assert!(detail.contains("could not start Java"), "{detail}");
+        assert!(!detail.contains("None"), "{detail}");
+        assert!(
+            detail.contains("failed to start java: not found"),
+            "{detail}"
+        );
+
+        // ログが空なら末尾に何も足さない
+        let detail = CoreError::ProcessorFailed {
+            processor: "x".into(),
+            code: Some(1),
+            log_tail: String::new(),
+        }
+        .to_string();
+        assert_eq!(detail, "loader install processor x failed with exit code 1");
     }
 
     #[test]

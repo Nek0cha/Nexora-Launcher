@@ -208,7 +208,7 @@ async fn run_one(
     let mut child = cmd.spawn().map_err(|e| CoreError::ProcessorFailed {
         processor: p.name.clone(),
         code: None,
-        log_tail: format!("failed to start {}: {e}", program.display()),
+        log_tail: format!("could not start Java ({}): {e}", program.display()),
     })?;
 
     let result = supervise(&mut child, p, token).await;

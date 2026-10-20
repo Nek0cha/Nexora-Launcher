@@ -31,7 +31,7 @@
   },
   "install": {
     "unsupported_profile": "This version's format isn't supported",
-    "processor_failed": "The loader install step ({{processor}}) failed",
+    "processor_failed": "The loader install step ({{processor}}) failed. Open Details to see the log.",
     "loader_files_missing": "The loader files were not found: {{path}}. Press Play to reinstall."
   },
   "java": {
