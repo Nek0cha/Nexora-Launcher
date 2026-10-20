@@ -450,11 +450,11 @@ These are proposed methods, not a claim that Nexora currently implements or has 
 
 ## Phase 5-2a findings
 
-Forge (Minecraft 1.16.5 and later) and NeoForge (1.20.1 and later) install support was implemented in phase 5-2a. The raw inspection data is in `crates/nexora-core/tests/fixtures/README.md` (forge section, fetched 2026-10-20). Installers were only read with `unzip`, never executed.
+Forge (Minecraft 1.16.5–1.21.x) and NeoForge (1.20.1 and later) install support was implemented in phase 5-2a. The raw inspection data is in `crates/nexora-core/tests/fixtures/README.md` (forge section, fetched 2026-10-20). Installers were only read with `unzip`, never executed.
 
 ### Established by fixture inspection
 
-- `version.json` has no `jar` field in any of the four inspected installers (Forge 1.16.5-36.2.39, Forge 1.20.1-47.3.0, NeoForge 21.1.172, `net.neoforged:forge` 1.20.1-47.1.106). The version merge sets `jar` itself, naming the version after the owner of the loader jar.
+- `version.json` has no `jar` field in any of the four inspected installers (Forge 1.16.5-36.2.39, Forge 1.20.1-47.3.0, NeoForge 21.1.172, `net.neoforged:forge` 1.20.1-47.1.106). The version merge sets `jar` itself, naming the version after the owner of the client jar.
 - The presence of processor `outputs` varies: Forge 1.20.1 has them only on the side-filtered jarsplitter processors, NeoForge 21.1.172 has none, and `net.neoforged:forge` 1.20.1-47.1.106 has them like Forge 1.20.1. Output hashes are checked only where declared; a processor with no declared outputs is never skipped on a cache assumption.
 - Empty artifact URLs occur only in Forge 1.16.5 (`net.minecraftforge:forge:1.16.5-36.2.39` and its `universal`). Those files come from the installer's `maven/` directory, so a library without a download URL is planned as a generated file instead of a download.
 - Maven metadata order is neither chronological nor by version (NeoForge `21.1.263` appears after `26.3.0.92`), and `<latest>` points at `26.x` builds. Versions are sorted and filtered by the supported range instead.
@@ -462,7 +462,7 @@ Forge (Minecraft 1.16.5 and later) and NeoForge (1.20.1 and later) install suppo
 - The installer cache is keyed by the full URL, because the Forge and NeoForge 1.20.1 installers share the file name `forge-1.20.1-<version>-installer.jar`.
 - `${version_name}` in JVM arguments is set to the vanilla version id. `${library_directory}` and `${classpath_separator}` are provided by the launcher. This substitution is shared with Fabric and Quilt, so their `--version` value changes as well.
 - Processor Java is the game's Java runtime (Java 8 for 1.16.5, 17 for 1.20.1, 21 for 1.21.x).
-- Launch uses only the pinned profile and reports missing loader files; it never fetches the installer.
+- Launch uses only the pinned profile and the completion record (`nexora-loader.json`, which lists the files the install provided relative to `shared/`). It reports missing loader files and marks the instance broken so that the next Play reinstalls; it never fetches the installer.
 
 ### Still UNVERIFIED
 
@@ -470,4 +470,5 @@ Forge (Minecraft 1.16.5 and later) and NeoForge (1.20.1 and later) install suppo
 - Launching any Forge or NeoForge instance to the title screen on a real machine, including offline launch.
 - Whether the game's Java is the right choice for processors, notably Java 8 for Forge 1.16.5.
 - Whether the `${version_name}` change affects Forge startup.
-- Builds other than the four inspected; Forge 1.20.5 and later, and legacy Forge (1.12.2 and earlier, nested profile format), are not supported.
+- Builds other than the four inspected. Forge 1.20.5 and later (up to the latest 1.21.x) is offered in the UI, but its real behaviour is UNVERIFIED.
+- Legacy Forge (1.12.2 and earlier, nested profile format) is not supported.
