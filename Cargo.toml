@@ -8,3 +8,8 @@ edition = "2024"
 rust-version = "1.96"
 publish = false
 license = "Apache-2.0"
+
+# 開発ビルドでも sha1 だけは最適化する。最適化しないと、インストール時のファイルの確認
+# （共有の assets などを Depth::Full で読み直す）が 10 倍ほど遅くなる（6,600 ファイル・600 MB で約 10 秒）。
+[profile.dev.package.sha1]
+opt-level = 3
