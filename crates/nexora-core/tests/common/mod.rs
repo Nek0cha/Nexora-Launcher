@@ -123,7 +123,7 @@ impl CuttingServer {
     }
 }
 
-/// Mojang の配信の偽物。version 1.99-test（Java は jre-test / 17）を配る。
+/// Mojang の配信の偽物。既定では version 1.99-test（Java は jre-test / 17）を配る。
 pub struct FakeMojang {
     pub server: MockServer,
     library: Vec<u8>,
@@ -139,7 +139,7 @@ impl FakeMojang {
     /// fetch_all は最初の失敗で取得中のほかのファイルを打ち切るため、404 を遅らせて、
     /// ほかのファイルの取得が先に終わるようにする。
     pub async fn start_with(serve_library: bool) -> Self {
-        let fake = Self::build(serve_library, None).await;
+        let fake = Self::build(serve_library, None, "1.99-test", FAKE_JAVA).await;
         if !serve_library {
             Mock::given(method("GET"))
                 .and(path("/lib.jar"))
@@ -153,10 +153,20 @@ impl FakeMojang {
 
     /// ライブラリ（中身は LIBRARY）だけを、別のサーバーの url から取得させる。
     pub async fn with_library_at(url: &str) -> Self {
-        Self::build(false, Some(url.to_string())).await
+        Self::build(false, Some(url.to_string()), "1.99-test", FAKE_JAVA).await
     }
 
-    async fn build(serve_library: bool, library_url: Option<String>) -> Self {
+    /// バージョン id が version_id で、Java の runtime の中身が java のもの（ライブラリも配る）。
+    pub async fn start_version(version_id: &str, java: &[u8]) -> Self {
+        Self::build(true, None, version_id, java).await
+    }
+
+    async fn build(
+        serve_library: bool,
+        library_url: Option<String>,
+        version_id: &str,
+        java: &[u8],
+    ) -> Self {
         let server = MockServer::start().await;
         let u = server.uri();
         let client = b"client-jar".to_vec();
@@ -169,7 +179,7 @@ impl FakeMojang {
             asset.len()
         );
         let version = format!(
-            r#"{{"id":"1.99-test","type":"release","mainClass":"net.minecraft.client.main.Main",
+            r#"{{"id":"{version_id}","type":"release","mainClass":"net.minecraft.client.main.Main",
 "arguments":{{"game":["--username","${{auth_player_name}}","--version","${{version_name}}","--gameDir","${{game_directory}}","--uuid","${{auth_uuid}}","--accessToken","${{auth_access_token}}","--xuid","${{auth_xuid}}","--userType","${{user_type}}"],"jvm":["-cp","${{classpath}}"]}},
 "assetIndex":{{"id":"test","sha1":"{is}","size":{il},"totalSize":0,"url":"{u}/index.json"}},
 "downloads":{{"client":{{"sha1":"{cs}","size":{cl},"url":"{u}/client.jar"}}}},
@@ -184,15 +194,15 @@ impl FakeMojang {
         );
         let manifest = format!(
             r#"{{"versions":[
-{{"id":"1.99-test","type":"release","url":"{u}/version.json","releaseTime":"2030-01-01T00:00:00+00:00","sha1":"{vs}"}},
+{{"id":"{version_id}","type":"release","url":"{u}/version.json","releaseTime":"2030-01-01T00:00:00+00:00","sha1":"{vs}"}},
 {{"id":"1.8.9","type":"release","url":"{u}/unused.json","releaseTime":"2015-12-03T09:24:39+00:00","sha1":"{vs}"}}]}}"#,
             vs = sha1_hex(version.as_bytes())
         );
         let java_rel = java_relative_path(std::env::consts::OS);
         let runtime_manifest = format!(
             r#"{{"files":{{"{java_rel}":{{"type":"file","executable":true,"downloads":{{"raw":{{"sha1":"{js}","size":{jl},"url":"{u}/java"}}}}}}}}}}"#,
-            js = sha1_hex(FAKE_JAVA),
-            jl = FAKE_JAVA.len()
+            js = sha1_hex(java),
+            jl = java.len()
         );
         let platform = platform_key(std::env::consts::OS, std::env::consts::ARCH)
             .expect("supported test platform");
@@ -213,7 +223,7 @@ impl FakeMojang {
         .await;
         serve(&server, "/runtimes.json", runtime_index.as_bytes()).await;
         serve(&server, "/runtime.json", runtime_manifest.as_bytes()).await;
-        serve(&server, "/java", FAKE_JAVA).await;
+        serve(&server, "/java", java).await;
         let fake = Self { server, library };
         if serve_library {
             fake.serve_library().await;

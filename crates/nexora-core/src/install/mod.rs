@@ -162,8 +162,17 @@ async fn install_inner(
         },
     )
     .await?;
-    crate::java::finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()).await?;
+    // processor の Java は、ゲームと同じ runtime（手動の Java の指定は導入では使わない）
+    let java = crate::java::finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()).await?;
+    if is_forge_like(inst.loader) {
+        forge::finish_install(env, &inst, &version, &game.generated, &java, handle).await?;
+    }
     Ok(())
+}
+
+/// インストーラで導入するローダー（Forge と NeoForge）か。
+fn is_forge_like(kind: LoaderKind) -> bool {
+    matches!(kind, LoaderKind::Forge | LoaderKind::Neoforge)
 }
 
 /// Vanilla の VersionJson に、インスタンスのローダーの差分を重ねた解決済みの VersionJson を返す。
@@ -176,6 +185,10 @@ pub(crate) async fn overlay_loader(
 ) -> Result<VersionJson, CoreError> {
     if inst.loader == LoaderKind::Vanilla {
         return Ok(vanilla);
+    }
+    if is_forge_like(inst.loader) {
+        let profile = forge::pin_profile(env, inst, token).await?;
+        return merge_profile(&vanilla, &profile);
     }
     let loader_version =
         inst.loader_version

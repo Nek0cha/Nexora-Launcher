@@ -6,6 +6,15 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# 結合テストが Mojang の runtime の Java として配る偽物（tests/forge_install_flow.rs）。
+# Windows では `java.exe` にスクリプトを置けないため、実行ファイルとして作る。
+[[bin]]
+name = "nexora-fake-java"
+path = "tests/support/fake_java.rs"
+test = false
+doc = false
+bench = false
+
 [dependencies]
 dirs = "7"
 rusqlite = { version = "0.40", features = ["bundled"] }

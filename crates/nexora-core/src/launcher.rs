@@ -462,6 +462,12 @@ impl Launcher {
         };
         let rule_env = RuleEnv::current();
         let game = plan_game(&version, &index, &rule_env, &env.paths, &env.urls.resources)?;
+        // インストーラが置くファイルは起動では取得できない。欠けていれば導入し直してもらう
+        if let Some(missing) = game.generated.iter().find(|p| !p.is_file()) {
+            return Err(CoreError::LoaderFilesMissing {
+                path: missing.display().to_string(),
+            });
+        }
         let concurrency = usize::from(settings::load(&env.db)?.max_concurrent_downloads);
         fetch_all(
             &env.http,
