@@ -49,7 +49,35 @@ pub fn check_profile(v: &VersionJson) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// パスの 1 区切りとして安全な値か。空、`.`、`..`、区切り文字（`/`、`\`、`:`）を含むものを弾く。
+fn is_safe_segment(s: &str) -> bool {
+    !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\', ':'])
+}
+
+/// メタデータの相対パスが、基準のディレクトリの外に出ないか。
+/// 通常の区切りだけからなるものを認め、`..`、`.`、ルート、ドライブ、`\`、`:` を含むものは弾く。
+/// `\` は Windows で区切りになり、`:` はドライブや代替データストリームになるため、どの OS でも弾く。
+fn is_safe_relative(rel: &str) -> bool {
+    !rel.is_empty()
+        && !rel.contains(['\\', ':'])
+        && std::path::Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+/// 安全でない相対パスを `InvalidMetadata` にする。
+fn checked_relative(rel: String, library: &str) -> Result<String, CoreError> {
+    if is_safe_relative(&rel) {
+        Ok(rel)
+    } else {
+        Err(CoreError::InvalidMetadata {
+            message: format!("library {library} has an unsafe path {rel:?}"),
+        })
+    }
+}
+
 /// `group:artifact:version[:classifier][@ext]` を Maven のパスにする。
+/// どの部分も、空、`.`、`..`、区切り文字を含むものなら `None`（group の `.` は区切りとして扱う）。
 pub fn maven_path(name: &str) -> Option<String> {
     let (coords, ext) = match name.split_once('@') {
         Some((c, e)) => (c, e),
@@ -61,6 +89,14 @@ pub fn maven_path(name: &str) -> Option<String> {
         [g, a, v, c] => (*g, *a, *v, Some(*c)),
         _ => return None,
     };
+    let safe = group.split('.').all(is_safe_segment)
+        && [artifact, version, ext]
+            .into_iter()
+            .chain(classifier)
+            .all(is_safe_segment);
+    if !safe {
+        return None;
+    }
     let file = match classifier {
         Some(c) => format!("{artifact}-{version}-{c}.{ext}"),
         None => format!("{artifact}-{version}.{ext}"),
@@ -100,7 +136,7 @@ pub fn plan_game(
                 .ok_or_else(|| CoreError::InvalidMetadata {
                     message: format!("library {} has no path", lib.name),
                 })?;
-            let path = libraries_dir.join(rel);
+            let path = libraries_dir.join(checked_relative(rel, &lib.name)?);
             downloads.push(DownloadItem {
                 url: artifact.url.clone(),
                 path: path.clone(),
@@ -112,10 +148,18 @@ pub fn plan_game(
                 classpath.push(path);
             }
         } else if let Some(base) = lib.url.as_deref() {
-            // ローダーのライブラリ：その項目の Maven リポジトリから取る
+            // ローダーのライブラリ：その項目の Maven リポジトリから取る。http と https だけを認める
+            let scheme_ok =
+                reqwest::Url::parse(base).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
+            if !scheme_ok {
+                return Err(CoreError::InvalidMetadata {
+                    message: format!("library {} has an unsupported url {base:?}", lib.name),
+                });
+            }
             let rel = maven_path(&lib.name).ok_or_else(|| CoreError::InvalidMetadata {
                 message: format!("library {} has no path", lib.name),
             })?;
+            let rel = checked_relative(rel, &lib.name)?;
             let base = base.strip_suffix('/').unwrap_or(base);
             let path = libraries_dir.join(&rel);
             downloads.push(DownloadItem {
@@ -147,7 +191,7 @@ pub fn plan_game(
                 .ok_or_else(|| CoreError::InvalidMetadata {
                     message: format!("natives of {} have no path", lib.name),
                 })?;
-            let path = libraries_dir.join(rel);
+            let path = libraries_dir.join(checked_relative(rel, &lib.name)?);
             downloads.push(DownloadItem {
                 url: artifact.url.clone(),
                 path: path.clone(),
@@ -525,5 +569,127 @@ mod tests {
         );
         assert_eq!(maven_path("a.b:c:1@zip").unwrap(), "a/b/c/1/c-1.zip");
         assert!(maven_path("broken").is_none());
+    }
+
+    #[test]
+    fn maven_path_rejects_unsafe_segments() {
+        for name in [
+            // 空の部分
+            ":c:1",
+            "a..b:c:1",
+            ".a:c:1",
+            "a.:c:1",
+            "a::1",
+            "a:c:",
+            "a:c:1:",
+            "a:c:1@",
+            // . と ..
+            "..:c:1",
+            "a:..:1",
+            "a:.:1",
+            "a:c:..",
+            "a:c:1:..",
+            "a:c:1@..",
+            // 区切り文字
+            "a/b:c:1",
+            "a:c/d:1",
+            "a:c:1/../../x",
+            "a:c:1:x/y",
+            "a:c:1@x/y",
+            r"a\b:c:1",
+            r"a:c:..\..\x",
+            "a:c:1@x:y",
+        ] {
+            assert_eq!(maven_path(name), None, "{name}");
+        }
+    }
+
+    fn with_library(lib: serde_json::Value) -> VersionJson {
+        let mut v = fixture("1.21.5");
+        v.libraries.push(serde_json::from_value(lib).unwrap());
+        v
+    }
+
+    fn plan_of(v: &VersionJson) -> Result<GamePlan, CoreError> {
+        plan_game(
+            v,
+            &empty_index(),
+            &env(OsName::Windows, "x86_64"),
+            &root(),
+            RESOURCES_URL,
+        )
+    }
+
+    #[test]
+    fn artifact_paths_must_stay_inside_the_libraries_dir() {
+        for path in [
+            "../../evil.jar",
+            "a/../../evil.jar",
+            "/abs/evil.jar",
+            "./a/evil.jar",
+            r"a\..\..\evil.jar",
+            r"C:\evil.jar",
+            "C:evil.jar",
+            "",
+        ] {
+            let v = with_library(serde_json::json!({
+                "name": "com.example:lib:1.0",
+                "downloads": { "artifact": {
+                    "path": path,
+                    "url": "https://example.invalid/lib.jar",
+                    "sha1": "0000000000000000000000000000000000000000",
+                    "size": 1
+                }}
+            }));
+            let err = plan_of(&v).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{path}");
+        }
+    }
+
+    #[test]
+    fn url_only_libraries_reject_unsafe_names() {
+        for name in ["com.example:..:1.0", "com.example:lib:../../x", r"a\..:b:1"] {
+            let v = with_library(serde_json::json!({
+                "name": name,
+                "url": "https://maven.example/"
+            }));
+            let err = plan_of(&v).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{name}");
+        }
+    }
+
+    #[test]
+    fn url_only_libraries_need_an_http_url() {
+        for url in ["file:///etc/", "ftp://maven.example/", "maven.example/", ""] {
+            let v = with_library(serde_json::json!({
+                "name": "com.example:lib:1.0",
+                "url": url
+            }));
+            let err = plan_of(&v).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{url}");
+        }
+        let v = with_library(serde_json::json!({
+            "name": "com.example:lib:1.0",
+            "url": "http://maven.example/"
+        }));
+        assert!(plan_of(&v).is_ok());
+    }
+
+    #[test]
+    fn url_only_base_without_trailing_slash_gets_one() {
+        let v = with_library(serde_json::json!({
+            "name": "com.example:lib:1.0",
+            "url": "https://maven.example/repo"
+        }));
+        let plan = plan_of(&v).unwrap();
+        let lib = plan
+            .downloads
+            .iter()
+            .find(|d| rel(&d.path) == "shared/libraries/com/example/lib/1.0/lib-1.0.jar")
+            .unwrap();
+        assert_eq!(
+            lib.url,
+            "https://maven.example/repo/com/example/lib/1.0/lib-1.0.jar"
+        );
     }
 }

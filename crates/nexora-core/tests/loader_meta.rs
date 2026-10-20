@@ -124,7 +124,7 @@ async fn pin_profile_writes_once_and_reuses() {
     let server = MockServer::start().await;
     serve(&server, FABRIC_PROFILE_ROUTE, FABRIC_PROFILE).await;
     let h = harness(&server);
-    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1");
+    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1").unwrap();
 
     let first = h
         .meta
@@ -153,7 +153,7 @@ async fn pin_profile_refetches_a_corrupt_file() {
     let server = MockServer::start().await;
     serve(&server, FABRIC_PROFILE_ROUTE, FABRIC_PROFILE).await;
     let h = harness(&server);
-    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1");
+    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1").unwrap();
     let path = profile_path(&h.paths, &id);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, &FABRIC_PROFILE[..FABRIC_PROFILE.len() / 2]).unwrap();
@@ -174,7 +174,7 @@ async fn pin_profile_does_not_write_a_body_that_is_not_a_profile() {
     let server = MockServer::start().await;
     serve(&server, FABRIC_PROFILE_ROUTE, b"{\"id\":").await;
     let h = harness(&server);
-    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1");
+    let id = profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1").unwrap();
 
     let err = h
         .meta
@@ -222,4 +222,37 @@ async fn unsupported_kind_is_rejected() {
         assert_eq!(err.code(), "install.unsupported_profile");
     }
     assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// パスや URL に入る値に、区切り文字や `..` が含まれていれば、ネットワークにもディスクにも触れずに弾く。
+#[tokio::test]
+async fn unsafe_versions_are_rejected_before_any_request() {
+    let server = MockServer::start().await;
+    let h = harness(&server);
+    for bad in ["", "..", "../x", "a/b", r"a\b", r"..\..\x", "a:b", "1..2"] {
+        let err = h
+            .meta
+            .pin_profile(LoaderKind::Fabric, "1.20.1", bad)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "meta.invalid", "loader {bad:?}");
+        let err = h
+            .meta
+            .pin_profile(LoaderKind::Quilt, bad, "0.28.1")
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "meta.invalid", "mc {bad:?}");
+        let err = h
+            .meta
+            .loader_versions(LoaderKind::Fabric, bad)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "meta.invalid", "list {bad:?}");
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+    // プロファイルもキャッシュも書かれていない（フォルダが無ければ空とみなす）
+    for dir in [h.paths.versions_dir(), h.paths.meta_cache_dir()] {
+        let entries = std::fs::read_dir(&dir).map_or(0, |d| d.count());
+        assert_eq!(entries, 0, "{}", dir.display());
+    }
 }

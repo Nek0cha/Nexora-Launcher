@@ -87,13 +87,40 @@ pub fn latest_stable(entries: &[LoaderVersionEntry]) -> Option<&LoaderVersionEnt
     entries.iter().find(|e| e.stable)
 }
 
+/// ファイル名や URL の区切りに入れてよいバージョンの値か。
+/// 空、`.`、`..` を含むもの、区切り文字（`/`、`\`、`:`）を含むものは、パスの外に出うるため認めない。
+pub fn is_safe_version(s: &str) -> bool {
+    !s.is_empty() && s != "." && !s.contains("..") && !s.contains(['/', '\\', ':'])
+}
+
+/// 安全でないバージョンの値を `InvalidMetadata` にする。
+fn check_version(what: &str, value: &str) -> Result<(), CoreError> {
+    if is_safe_version(value) {
+        Ok(())
+    } else {
+        Err(CoreError::InvalidMetadata {
+            message: format!("unsafe {what} {value:?}"),
+        })
+    }
+}
+
 /// 固定するプロファイルの ID。Fabric と Quilt だけに使う。
-pub fn profile_id(kind: LoaderKind, loader_version: &str, mc_version: &str) -> String {
+/// どちらかのバージョンが安全でなければ `InvalidMetadata`。
+pub fn profile_id(
+    kind: LoaderKind,
+    loader_version: &str,
+    mc_version: &str,
+) -> Result<String, CoreError> {
     debug_assert!(
         matches!(kind, LoaderKind::Fabric | LoaderKind::Quilt),
         "profile_id is only for Fabric and Quilt"
     );
-    format!("{}-loader-{loader_version}-{mc_version}", kind.as_str())
+    check_version("loader version", loader_version)?;
+    check_version("Minecraft version", mc_version)?;
+    Ok(format!(
+        "{}-loader-{loader_version}-{mc_version}",
+        kind.as_str()
+    ))
 }
 
 pub fn profile_path(paths: &AppPaths, id: &str) -> PathBuf {
@@ -233,6 +260,8 @@ impl LoaderMeta {
         mc_version: &str,
     ) -> Result<Vec<LoaderVersionEntry>, CoreError> {
         let url = self.url(kind, &["versions", "loader", mc_version])?;
+        // キャッシュのファイル名に入るため、区切り文字を含む値は弾く
+        check_version("Minecraft version", mc_version)?;
         let name = format!("{}-loader-{mc_version}.json", kind.as_str());
         let body = fetch_cached(&self.http, &self.paths.meta_cache_dir(), &name, &url).await?;
         parse_loader_versions(kind, &body)
@@ -240,6 +269,7 @@ impl LoaderMeta {
 
     /// プロファイルを shared/versions に固定して返す。固定済みで読めるならネットワークに出ない。
     /// 読めない、または inheritsFrom が食い違うときは取り直し、読めることを確かめてから書く。
+    /// バージョンの値が安全でなければ、ネットワークにもディスクにも触れずに `InvalidMetadata` にする。
     pub async fn pin_profile(
         &self,
         kind: LoaderKind,
@@ -257,7 +287,8 @@ impl LoaderMeta {
                 "json",
             ],
         )?;
-        let id = profile_id(kind, loader_version, mc_version);
+        // パスを作る前に、値を確かめる（安全でなければ `InvalidMetadata`）
+        let id = profile_id(kind, loader_version, mc_version)?;
         match load_pinned_profile(&self.paths, &id) {
             Ok(Some(profile)) if profile.inherits_from == mc_version => return Ok(profile),
             Ok(Some(_)) => tracing::warn!(id, "pinned loader profile is for another version"),
@@ -399,13 +430,39 @@ mod tests {
     #[test]
     fn profile_id_formats() {
         assert_eq!(
-            profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1"),
+            profile_id(LoaderKind::Fabric, "0.16.10", "1.20.1").unwrap(),
             "fabric-loader-0.16.10-1.20.1"
         );
         assert_eq!(
-            profile_id(LoaderKind::Quilt, "0.28.1", "1.20.1"),
+            profile_id(LoaderKind::Quilt, "0.28.1", "1.20.1").unwrap(),
             "quilt-loader-0.28.1-1.20.1"
         );
+    }
+
+    #[test]
+    fn profile_id_rejects_unsafe_values() {
+        for bad in ["", "..", "../x", "a/b", r"a\b", r"..\..\x", "a:b", "1..2"] {
+            let err = profile_id(LoaderKind::Fabric, bad, "1.20.1").unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "loader {bad:?}");
+            let err = profile_id(LoaderKind::Fabric, "0.16.10", bad).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "mc {bad:?}");
+        }
+    }
+
+    #[test]
+    fn safe_versions() {
+        for ok in [
+            "1.20.1",
+            "0.17.0-beta.1",
+            "1.14 Pre-Release 1",
+            "25w14a",
+            "b1.7.3",
+        ] {
+            assert!(is_safe_version(ok), "{ok}");
+        }
+        for bad in ["", ".", "..", "a/b", r"a\b", "a:b", "1..2"] {
+            assert!(!is_safe_version(bad), "{bad:?}");
+        }
     }
 
     #[test]

@@ -13,7 +13,7 @@ use ts_rs::TS;
 
 use crate::db::Db;
 use crate::error::CoreError;
-use crate::meta::loader::LoaderKind;
+use crate::meta::loader::{LoaderKind, is_safe_version};
 use crate::paths::AppPaths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -180,8 +180,14 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
     let java_mode: String = row.get(10)?;
     let jvm_args: Option<String> = row.get(12)?;
     let loader: String = row.get(13)?;
+    let id: String = row.get(0)?;
+    // 未知のローダーは Vanilla として扱うが、黙って読み替えないよう警告を残す
+    let loader = LoaderKind::parse(&loader).unwrap_or_else(|| {
+        tracing::warn!(instance_id = %id, loader = %loader, "unknown loader; treating as vanilla");
+        LoaderKind::Vanilla
+    });
     Ok(Instance {
-        id: row.get(0)?,
+        id,
         name: row.get(1)?,
         dir_name: row.get(2)?,
         mc_version: row.get(3)?,
@@ -194,7 +200,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Instance> {
         java_mode: JavaMode::parse(&java_mode),
         java_path: row.get(11)?,
         jvm_args: jvm_args.unwrap_or_default(),
-        loader: LoaderKind::parse(&loader).unwrap_or(LoaderKind::Vanilla),
+        loader,
         loader_version: row.get(14)?,
     })
 }
@@ -229,6 +235,8 @@ fn unused_dir_name(
 /// 検証は設定の更新と同じ規則で、行を追加する前に行う。
 /// 未対応のローダーは `UnsupportedProfile`、バニラ以外でローダーのバージョンがなければ
 /// `InvalidInstanceSetting`（`loaderVersion`）にする。バニラのときはローダーのバージョンを捨てる。
+/// バージョンの値が空、または区切り文字（`/`、`\`、`:`）や `..` を含むなら、
+/// `InvalidInstanceSetting`（`mcVersion` または `loaderVersion`）にする。
 pub fn create(
     db: &Db,
     paths: &AppPaths,
@@ -240,10 +248,14 @@ pub fn create(
             reason: format!("loader {} is not supported yet", new.loader.as_str()),
         });
     }
+    // バージョンはプロファイルやキャッシュのパスと URL に入るため、区切り文字や `..` を含むものを弾く
+    if !is_safe_version(&new.mc_version) {
+        return Err(invalid("mcVersion"));
+    }
     let loader_version = match new.loader {
         LoaderKind::Vanilla => None,
         _ => match new.loader_version.as_deref().map(str::trim) {
-            Some(version) if !version.is_empty() => Some(version.to_string()),
+            Some(version) if is_safe_version(version) => Some(version.to_string()),
             _ => return Err(invalid("loaderVersion")),
         },
     };
@@ -960,6 +972,48 @@ mod tests {
         let inst = create(&db, &paths, &vanilla, 1).unwrap();
         assert_eq!(inst.loader_version, None);
         assert_eq!(get(&db, &inst.id).unwrap().loader_version, None);
+    }
+
+    #[test]
+    fn unknown_loader_in_the_row_reads_as_vanilla() {
+        let (_t, paths, db) = setup();
+        let inst = create(&db, &paths, &fabric(Some("0.16.10")), 1).unwrap();
+        db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE instances SET loader = 'liteloader' WHERE id = ?1",
+                [&inst.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(get(&db, &inst.id).unwrap().loader, LoaderKind::Vanilla);
+    }
+
+    #[test]
+    fn create_rejects_unsafe_versions_before_touching_anything() {
+        let (_t, paths, db) = setup();
+        for bad in ["..", "../x", "a/b", r"a\b", r"..\..\x", "a:b", "1..2"] {
+            let err = create(&db, &paths, &fabric(Some(bad)), 1).unwrap_err();
+            assert_eq!(invalid_field(err), "loaderVersion", "{bad:?}");
+            let new = NewInstance {
+                mc_version: bad.to_string(),
+                ..fabric(Some("0.16.10"))
+            };
+            let err = create(&db, &paths, &new, 1).unwrap_err();
+            assert_eq!(invalid_field(err), "mcVersion", "{bad:?}");
+            // バニラでも、バージョンはパスに使われるため同じ規則で弾く
+            let err = create(&db, &paths, &NewInstance::vanilla("x", bad), 1).unwrap_err();
+            assert_eq!(invalid_field(err), "mcVersion", "{bad:?}");
+        }
+        let err = create(&db, &paths, &NewInstance::vanilla("x", ""), 1).unwrap_err();
+        assert_eq!(invalid_field(err), "mcVersion");
+        assert_eq!(row_count(&db), 0);
+        assert!(
+            std::fs::read_dir(paths.instances_dir())
+                .unwrap()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
