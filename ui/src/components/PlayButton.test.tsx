@@ -60,7 +60,7 @@ function mount({ tasks = [], sessions = [], lastExit, instance: inst = instance,
 
 function running(kind = "launch"): TaskSnapshot {
   return {
-    id: "t1", kind, instanceId: "i1", state: "running", progress: { current: 40, total: 100 }, revision: 1,
+    id: "t1", kind, instanceId: "i1", state: "running", phase: null, progress: { current: 40, total: 100 }, revision: 1,
     error: null, createdAt: 0, updatedAt: Date.now(),
   };
 }
@@ -70,6 +70,12 @@ function deferred<T>() {
   let reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
+}
+
+/** ボタンの面に見えている進み具合の文言（数字は別の要素に分かれる）。 */
+function shownLabel(text: string) {
+  return screen.getByText((_, el) =>
+    el?.parentElement?.matches("button > [aria-hidden]") === true && el.textContent === text);
 }
 
 async function press(name: string | RegExp) {
@@ -158,6 +164,50 @@ describe("PlayButton", () => {
     expect(screen.getByText("Launching 40%")).toBeTruthy();
   });
 
+  it("names the task phase with its number when there is one", async () => {
+    const at = (phase: TaskSnapshot["phase"], current: number, total: number): TaskSnapshot =>
+      ({ ...running("install"), phase, progress: { current, total } });
+    const cases: [TaskSnapshot, string][] = [
+      [at("resolving", 0, 0), "Fetching info"],
+      [at("verifying", 42, 100), "Verifying files 42%"],
+      [at("downloading", 63, 100), "Downloading 63%"],
+      [at("downloading", 0, 0), "Downloading"],
+      [at("building_loader", 2, 5), "Building loader 2/5"],
+      [at("finishing", 0, 0), "Finishing"],
+      [at("launching", 0, 0), "Launching"],
+    ];
+    for (const [task, label] of cases) {
+      mount({ tasks: [task] });
+      expect(shownLabel(label)).toBeTruthy();
+      // 読み上げの説明も同じ文言
+      const button = screen.getByRole("button", { name: "Cancel" });
+      expect(document.getElementById(button.getAttribute("aria-describedby")!)?.textContent).toBe(label);
+      cleanup();
+    }
+    await act(async () => {
+      await i18n.changeLanguage("ja");
+    });
+    mount({ tasks: [at("building_loader", 2, 5)] });
+    expect(shownLabel("ローダーを構築中 2/5")).toBeTruthy();
+    cleanup();
+    mount({ tasks: [at("verifying", 42, 100)] });
+    expect(shownLabel("ファイルを確認中 42%")).toBeTruthy();
+  });
+
+  it("moves the bar without a known amount while the phase has no percent", () => {
+    const at = (phase: TaskSnapshot["phase"], current: number, total: number): TaskSnapshot =>
+      ({ ...running("install"), phase, progress: { current, total } });
+    for (const task of [at("resolving", 0, 0), at("building_loader", 2, 5), at("finishing", 0, 0), at("downloading", 0, 0)]) {
+      mount({ tasks: [task] });
+      expect(screen.getByTestId("play-fill").dataset.indeterminate).toBe("true");
+      cleanup();
+    }
+    mount({ tasks: [at("downloading", 63, 100)] });
+    const fill = screen.getByTestId("play-fill");
+    expect(fill.dataset.indeterminate).toBeUndefined();
+    expect(fill.style.transform).toBe("scaleX(0.63)");
+  });
+
   it("shows playing with elapsed time and does not launch again", async () => {
     vi.mocked(stopInstance).mockResolvedValue(null);
     mount({ sessions: [{ instanceId: "i1", pid: 1, launchedAt: Date.now() - 65_000 }] });
@@ -231,7 +281,7 @@ describe("PlayButton", () => {
     act(() => {
       client.setQueryData(TASKS_KEY, {
         t5: {
-          id: "t5", kind: "launch", instanceId: "i1", state: "failed", progress: { current: 0, total: 0 }, revision: 2,
+          id: "t5", kind: "launch", instanceId: "i1", state: "failed", phase: null, progress: { current: 0, total: 0 }, revision: 2,
           error: { code: "auth.login_required", params: { accountId: "acc1" }, detail: null },
           createdAt: 0, updatedAt: Date.now(),
         },

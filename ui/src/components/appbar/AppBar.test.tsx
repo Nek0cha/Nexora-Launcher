@@ -30,7 +30,7 @@ const instance: Instance = {
 };
 
 const task = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
-  id: "t1", kind: "install", instanceId: null, state: "running", progress: { current: 40, total: 100 }, revision: 1,
+  id: "t1", kind: "install", instanceId: null, state: "running", phase: null, progress: { current: 40, total: 100 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0, ...patch,
 });
 

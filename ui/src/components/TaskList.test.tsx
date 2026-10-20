@@ -11,7 +11,7 @@ import { TaskList } from "./TaskList";
 vi.mock("../api/commands", () => ({ cancelTask: vi.fn() }));
 
 const running: TaskSnapshot = {
-  id: "t1", kind: "install", instanceId: null, state: "running", progress: { current: 40, total: 100 }, revision: 1,
+  id: "t1", kind: "install", instanceId: null, state: "running", phase: null, progress: { current: 40, total: 100 }, revision: 1,
   error: null, createdAt: 0, updatedAt: 0,
 };
 
@@ -49,6 +49,30 @@ describe("TaskList", () => {
   it("shows the task progress", () => {
     mount([running]);
     expect(screen.getByRole("progressbar", { name: "Install" }).getAttribute("aria-valuenow")).toBe("40");
+  });
+
+  it("shows the phase of the task with the same text as the play button", async () => {
+    mount([{ ...running, phase: "downloading", progress: { current: 63, total: 100 } }]);
+    let bar = screen.getByRole("progressbar", { name: "Install" });
+    expect(bar.textContent).toContain("Downloading 63%");
+    expect(bar.getAttribute("aria-valuenow")).toBe("63");
+    cleanup();
+    mount([{ ...running, phase: "building_loader", progress: { current: 2, total: 5 } }]);
+    bar = screen.getByRole("progressbar", { name: "Install" });
+    expect(bar.textContent).toContain("Building loader 2/5");
+    // 全体の分からない段階では、バーは進み具合を示さない
+    expect(bar.getAttribute("aria-valuenow")).toBeNull();
+    cleanup();
+    await act(async () => {
+      await i18n.changeLanguage("ja");
+    });
+    mount([{ ...running, phase: "resolving", progress: { current: 0, total: 0 } }]);
+    expect(screen.getByRole("progressbar", { name: "インストール" }).textContent).toContain("情報を取得中");
+  });
+
+  it("keeps the cancelling text while a phased task is cancelling", () => {
+    mount([{ ...running, state: "cancelling", phase: "downloading", progress: { current: 63, total: 100 } }]);
+    expect(screen.getByRole("progressbar", { name: "Install" }).textContent).toContain("Cancelling");
   });
 
   it("labels a login task in both languages", async () => {

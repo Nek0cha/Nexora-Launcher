@@ -7,7 +7,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
@@ -94,6 +95,18 @@ fn join_err(err: tokio::task::JoinError) -> CoreError {
     }
 }
 
+/// fetch_all_with が知らせる段階。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FetchPhase {
+    /// 手元のファイルを確かめている（`checked` 件済み、全体で `total` 件）。
+    Verifying { checked: u64, total: u64 },
+    /// 確認を終え、足りないものの取得に入った。この後の on_progress はバイト数。
+    Downloading,
+}
+
+/// 確認の進み具合を知らせる間隔（タスクの進捗の通知の間隔と同じ）。
+const VERIFY_REPORT_INTERVAL: Duration = Duration::from_millis(100);
+
 /// items のうち足りないものを取得する。最初の失敗で止め、この呼び出しが作った `.part` を消す。
 pub async fn fetch_all<F>(
     http: &Http,
@@ -106,6 +119,25 @@ pub async fn fetch_all<F>(
 where
     F: Fn(u64, u64) + Send + Sync,
 {
+    fetch_all_with(http, items, depth, concurrency, token, |_| {}, on_progress).await
+}
+
+/// fetch_all に段階の通知を足したもの。まず手元のファイルを確かめ（`Verifying` で件数を知らせる）、
+/// 次に `Downloading` を知らせてから、足りないものを取得する（on_progress はバイト数）。
+/// 確認は別のスレッドで動くが、ファイルごとに取り消しを確かめ、取り消されたらすぐに `Cancelled` を返す。
+pub async fn fetch_all_with<P, F>(
+    http: &Http,
+    items: Vec<DownloadItem>,
+    depth: Depth,
+    concurrency: usize,
+    token: &CancellationToken,
+    on_phase: P,
+    on_progress: F,
+) -> Result<(), CoreError>
+where
+    P: Fn(FetchPhase) + Send + Sync,
+    F: Fn(u64, u64) + Send + Sync,
+{
     if token.is_cancelled() {
         return Err(CoreError::Cancelled);
     }
@@ -114,18 +146,11 @@ where
         .into_iter()
         .filter(|i| seen.insert(i.path.clone()))
         .collect();
-    let pending = tokio::task::spawn_blocking(move || {
-        let mut out = Vec::new();
-        for item in items {
-            if needs_download(&item, depth).map_err(|source| io_err(&item.path, source))? {
-                out.push(item);
-            }
-        }
-        Ok::<_, CoreError>(out)
-    })
-    .await
-    .map_err(join_err)??;
+    let pending = verify(items, depth, token, &on_phase).await?;
+    on_phase(FetchPhase::Downloading);
 
+    let started = std::time::Instant::now();
+    let files = pending.len();
     let total: u64 = pending.iter().filter_map(|i| i.size).sum();
     let done = AtomicU64::new(0);
     let parts = Parts::default();
@@ -148,8 +173,83 @@ where
         for part in parts.take() {
             let _ = tokio::fs::remove_file(part).await;
         }
+    } else if files > 0 {
+        tracing::info!(
+            files,
+            kib = total.div_ceil(1024),
+            elapsed_ms = elapsed_ms(started),
+            "downloads finished"
+        );
     }
     result
+}
+
+fn elapsed_ms(since: std::time::Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// 取得が要るものだけを返す。確認は別のスレッドで 1 件ずつ行い、件数を一定の間隔で知らせる。
+async fn verify<P>(
+    items: Vec<DownloadItem>,
+    depth: Depth,
+    token: &CancellationToken,
+    on_phase: &P,
+) -> Result<Vec<DownloadItem>, CoreError>
+where
+    P: Fn(FetchPhase) + Send + Sync,
+{
+    let started = std::time::Instant::now();
+    let total = items.len() as u64;
+    let checked = Arc::new(AtomicU64::new(0));
+    let mut last_reported = None;
+    let mut report = |n: u64| {
+        if last_reported != Some(n) {
+            last_reported = Some(n);
+            on_phase(FetchPhase::Verifying { checked: n, total });
+        }
+    };
+    report(0);
+    let job = {
+        let checked = checked.clone();
+        let token = token.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut out = Vec::new();
+            for item in items {
+                // 共有の assets などで数千件を sha1 まで読むため、1 件ごとに取り消しを確かめる
+                if token.is_cancelled() {
+                    return Err(CoreError::Cancelled);
+                }
+                if needs_download(&item, depth).map_err(|source| io_err(&item.path, source))? {
+                    out.push(item);
+                }
+                checked.fetch_add(1, Ordering::Relaxed);
+            }
+            Ok::<_, CoreError>(out)
+        })
+    };
+    tokio::pin!(job);
+    let mut tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + VERIFY_REPORT_INTERVAL,
+        VERIFY_REPORT_INTERVAL,
+    );
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let pending = loop {
+        tokio::select! {
+            // 別のスレッドの確認は、次のファイルの前に取り消しに気づいて止まる。終わるのは待たない
+            _ = token.cancelled() => return Err(CoreError::Cancelled),
+            result = &mut job => break result.map_err(join_err)??,
+            _ = tick.tick() => report(checked.load(Ordering::Relaxed)),
+        }
+    };
+    report(total);
+    tracing::info!(
+        files = total,
+        missing = pending.len(),
+        full = depth == Depth::Full,
+        elapsed_ms = elapsed_ms(started),
+        "verification finished"
+    );
+    Ok(pending)
 }
 
 /// 1 回の fetch_all の中で、各項目の取得が共有するもの。

@@ -7,24 +7,23 @@ import { cancelTask } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { errorKey } from "../features/errors/errorText";
-import { isTerminal, sortedTasks } from "../features/tasks/taskTable";
+import { isTerminal, phaseLabel, progressView, sortedTasks } from "../features/tasks/taskTable";
 import { useTasks } from "../features/tasks/useTasks";
 import i18n from "../i18n";
 import { tooltipClass } from "./tooltip";
 
 const focusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-export function percentOf(task: TaskSnapshot): number {
-  const { current, total } = task.progress;
-  return total > 0 ? Math.min(100, Math.floor((current * 100) / total)) : 0;
-}
-
 function TaskRow({ task }: { task: TaskSnapshot }) {
   const { t } = useTranslation();
   const cancel = useMutation({ mutationFn: (id: string) => cancelTask(id) });
   const done = isTerminal(task);
-  const percent = percentOf(task);
-  const indeterminate = !done && task.progress.total <= 0;
+  const view = progressView(task);
+  const percent = view.percent ?? 0;
+  // 全体の分からない段階（と、進捗の無いタスク）は、バーで進み具合を示さない
+  const indeterminate = !done && view.percent === null;
+  // 段階のあるタスクは、プレイボタンと同じ文言で「何をしているか」を出す
+  const phase = phaseLabel(view);
   const label = t(`tasks.kind.${task.kind}` as never, { defaultValue: task.kind });
   const failure = cancel.error ? toErrorPayload(cancel.error) : null;
   const cancellable = !done && task.state !== "cancelling";
@@ -41,15 +40,22 @@ function TaskRow({ task }: { task: TaskSnapshot }) {
           <div className="flex justify-between gap-2 text-sm">
             <span className={`truncate ${done ? "text-text-muted" : "text-text"}`}>{label}</span>
             <span className="tabular shrink-0 text-text-muted">
-              {done || indeterminate || task.state === "cancelling" ? t(`tasks.state.${task.state}`) : `${percent}%`}
+              {done || task.state === "cancelling"
+                ? t(`tasks.state.${task.state}`)
+                : phase
+                  ? String(t(phase.key as never, phase.values as never))
+                  : indeterminate
+                    ? t(`tasks.state.${task.state}`)
+                    : `${percent}%`}
             </span>
           </div>
           {!done && (
-            <div className="h-1 overflow-hidden rounded-full bg-surface-3">
+            <div className="relative h-1 overflow-hidden rounded-full bg-surface-3">
               <div
                 className="play-fill h-full bg-accent"
                 style={{ transform: `scaleX(${indeterminate ? 0 : percent / 100})` }}
               />
+              {indeterminate && <div className="play-indeterminate absolute inset-y-0 left-0 bg-accent" />}
             </div>
           )}
         </ProgressBar>

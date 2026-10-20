@@ -86,7 +86,16 @@ fn variables<'a>(inputs: &ArgInputs<'a>) -> BTreeMap<&'static str, String> {
         ("clientid", String::new()),
         ("user_type", s.user_type.arg_value().to_string()),
         ("user_properties", "{}".to_string()),
-        ("version_name", inputs.version.id.clone()),
+        // ローダーを重ねたものは、クライアントの jar を持つ Vanilla の id にする
+        (
+            "version_name",
+            inputs
+                .version
+                .jar
+                .as_deref()
+                .unwrap_or(&inputs.version.id)
+                .to_string(),
+        ),
         ("version_type", inputs.version.kind.clone()),
         ("game_directory", path_str(inputs.game_dir)),
         ("assets_root", path_str(inputs.assets_root)),
@@ -380,6 +389,111 @@ mod tests {
                 "{input:?}"
             );
         }
+    }
+
+    /// 実物の Forge と NeoForge の version.json を、`id` を `inheritsFrom` に書き換えた
+    /// Vanilla（1.21.5 の fixture）に重ね、計画と引数を作る。
+    #[test]
+    fn real_forge_and_neoforge_profiles_merge_plan_and_resolve_every_placeholder() {
+        use crate::install::plan::{RESOURCES_URL, check_profile, plan_game};
+        use crate::meta::loader::LoaderProfile;
+        use crate::meta::loader::merge::merge_profile;
+        use crate::paths::AppPaths;
+
+        let env = RuleEnv {
+            os: OsName::Windows,
+            os_version: "10.0".into(),
+            arch: "x86_64".into(),
+        };
+        let paths = AppPaths::from_root("/data");
+        let index: crate::meta::mojang::version::AssetIndex =
+            serde_json::from_str(r#"{"objects":{}}"#).unwrap();
+        // (fixture, generated の数)。URL の空のライブラリを持つのは 1.16.5 と Forge 26.x
+        for (name, generated) in [
+            ("forge-1.16.5", 1),
+            ("forge-1.20.1", 0),
+            ("neoforge-1.20.1", 0),
+            ("neoforge-21.1", 0),
+            // 26.x。Forge の最終 jar（`...:client`）は installer の maven/ から置くので 1 件
+            ("forge-26.3", 1),
+            ("neoforge-26.3", 0),
+        ] {
+            let path = format!(
+                "{}/tests/fixtures/forge/{name}-version.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let profile: LoaderProfile =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let mut vanilla = fixture("1.21.5");
+            vanilla.id = profile.inherits_from.clone();
+            let version = merge_profile(&vanilla, &profile).unwrap();
+            check_profile(&version).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let plan = plan_game(&version, &index, &env, &paths, RESOURCES_URL).unwrap();
+            assert_eq!(
+                plan.generated.len(),
+                generated,
+                "{name}: {:?}",
+                plan.generated
+            );
+            let args = build_args(&ArgInputs {
+                version: &version,
+                session: &player_session(),
+                env: &env,
+                game_dir: Path::new("/game"),
+                assets_root: Path::new("/assets"),
+                natives_dir: Path::new("/natives"),
+                library_dir: &paths.libraries_dir(),
+                classpath: &plan.classpath,
+                logging_argument: None,
+                memory_mb: 2048,
+                extra_jvm_args: &[],
+                launcher_version: "0.1.0",
+            });
+            let all: Vec<&String> = args.jvm.iter().chain(&args.game).collect();
+            assert!(all.iter().all(|a| !a.contains("${")), "{name}: {all:?}");
+            assert_eq!(
+                args.jvm.last().map(String::as_str),
+                Some(profile.main_class.as_str()),
+                "{name}"
+            );
+        }
+    }
+
+    /// `${version_name}` の値（`--version` の次の引数）。
+    fn version_arg(version: &VersionJson) -> String {
+        let env = RuleEnv {
+            os: OsName::Windows,
+            os_version: "10.0".into(),
+            arch: "x86_64".into(),
+        };
+        let args = build_args(&ArgInputs {
+            version,
+            session: &player_session(),
+            env: &env,
+            game_dir: Path::new("/game"),
+            assets_root: Path::new("/assets"),
+            natives_dir: Path::new("/natives"),
+            library_dir: Path::new("/lib"),
+            classpath: &[],
+            logging_argument: None,
+            memory_mb: 2048,
+            extra_jvm_args: &[],
+            launcher_version: "0.1.0",
+        });
+        let i = args.game.iter().position(|a| a == "--version").unwrap();
+        args.game[i + 1].clone()
+    }
+
+    #[test]
+    fn version_name_is_the_jar_owner_id() {
+        let mut v = fixture("1.21.5");
+        v.id = "1.20.1-forge-47.3.0".into();
+        v.jar = Some("1.20.1".into());
+        assert_eq!(version_arg(&v), "1.20.1");
+        // jar が無ければ id のまま
+        v.jar = None;
+        assert_eq!(version_arg(&v), "1.20.1-forge-47.3.0");
+        assert_eq!(version_arg(&fixture("1.21.5")), "1.21.5");
     }
 
     #[test]

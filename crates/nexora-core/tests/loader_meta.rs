@@ -209,11 +209,14 @@ async fn loader_lists_use_the_cache_when_offline() {
 async fn unsupported_kind_is_rejected() {
     let server = MockServer::start().await;
     let h = harness(&server);
+    // Forge と NeoForge は一覧は取れるが、Fabric 型のプロファイルは固定できない
     for kind in [LoaderKind::Vanilla, LoaderKind::Forge, LoaderKind::Neoforge] {
-        let err = h.meta.game_versions(kind).await.unwrap_err();
-        assert_eq!(err.code(), "install.unsupported_profile");
-        let err = h.meta.loader_versions(kind, "1.20.1").await.unwrap_err();
-        assert_eq!(err.code(), "install.unsupported_profile");
+        if kind == LoaderKind::Vanilla {
+            let err = h.meta.game_versions(kind).await.unwrap_err();
+            assert_eq!(err.code(), "install.unsupported_profile");
+            let err = h.meta.loader_versions(kind, "1.20.1").await.unwrap_err();
+            assert_eq!(err.code(), "install.unsupported_profile");
+        }
         let err = h
             .meta
             .pin_profile(kind, "1.20.1", "1.0.0")
@@ -255,4 +258,227 @@ async fn unsafe_versions_are_rejected_before_any_request() {
         let entries = std::fs::read_dir(&dir).map_or(0, |d| d.count());
         assert_eq!(entries, 0, "{}", dir.display());
     }
+}
+
+// ---- Forge と NeoForge ----
+
+const FORGE_MAVEN: &[u8] = include_bytes!("fixtures/forge/forge-maven-metadata.xml");
+const FORGE_PROMOTIONS: &[u8] = include_bytes!("fixtures/forge/forge-promotions_slim.json");
+const NEOFORGE_MAVEN: &[u8] = include_bytes!("fixtures/forge/neoforge-maven-metadata.xml");
+const NEOFORGE_FORGE_MAVEN: &[u8] =
+    include_bytes!("fixtures/forge/neoforge-forge-maven-metadata.xml");
+
+const FORGE_MAVEN_ROUTE: &str = "/net/minecraftforge/forge/maven-metadata.xml";
+const PROMOTIONS_ROUTE: &str = "/promotions_slim.json";
+const NEOFORGE_MAVEN_ROUTE: &str = "/net/neoforged/neoforge/maven-metadata.xml";
+const NEOFORGE_FORGE_MAVEN_ROUTE: &str = "/net/neoforged/forge/maven-metadata.xml";
+
+/// Forge と NeoForge のメタデータを server に向けた LoaderMeta。
+fn forge_harness(server: &MockServer) -> Harness {
+    let mut h = harness(server);
+    h.meta = h.meta.with_forge_urls(
+        server.uri(),
+        format!("{}{PROMOTIONS_ROUTE}", server.uri()),
+        server.uri(),
+    );
+    h
+}
+
+fn flags(entries: &[LoaderVersionEntry]) -> Vec<(&str, bool)> {
+    entries
+        .iter()
+        .map(|e| (e.version.as_str(), e.stable))
+        .collect()
+}
+
+#[tokio::test]
+async fn lists_forge_game_versions() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    // 順序の当てにならない Maven から、重複なし、新しい順、対応範囲（1.16.5 以降、26.x を含む）
+    assert_eq!(
+        h.meta.game_versions(LoaderKind::Forge).await.unwrap(),
+        vec![
+            "26.3", "26.2", "26.1.2", "26.1", "1.21.11", "1.21.10", "1.21.8", "1.21.5", "1.21.4",
+            "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.1", "1.16.5"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn lists_forge_versions_newest_first_with_recommended_stable() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    // 1.21 には recommended、1.21.4 には latest だけがある
+    serve(
+        &server,
+        PROMOTIONS_ROUTE,
+        br#"{"promos":{"1.21-recommended":"51.0.30","1.21-latest":"51.0.33","1.21.4-latest":"54.1.22"}}"#,
+    )
+    .await;
+    let h = forge_harness(&server);
+
+    let v121 = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.21")
+        .await
+        .unwrap();
+    assert_eq!(v121.len(), 12);
+    // 数で並べる（51.0.9 のような桁の違いに惑わされない）
+    assert_eq!(v121[0].version, "1.21-51.0.33");
+    assert_eq!(v121[11].version, "1.21-51.0.21");
+    let stable: Vec<_> = v121.iter().filter(|e| e.stable).collect();
+    assert_eq!(stable.len(), 1);
+    assert_eq!(stable[0].version, "1.21-51.0.30");
+
+    // recommended が無ければ latest
+    let v1214 = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.21.4")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v1214), vec![("1.21.4-54.1.22", true)]);
+}
+
+#[tokio::test]
+async fn forge_versions_with_the_real_promotions_fixture() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    serve(&server, PROMOTIONS_ROUTE, FORGE_PROMOTIONS).await;
+    let h = forge_harness(&server);
+    // 実物の recommended（47.4.10）は切り詰めた Maven に無いので、どれも stable ではない
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.20.1")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("1.20.1-47.3.0", false)]);
+    // 形の合わない版（1.10.2-...-failtests など）は黙って落とす。対応外の 1.12.2 は空
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.12.2")
+        .await
+        .unwrap();
+    assert!(v.is_empty(), "{v:?}");
+}
+
+#[tokio::test]
+async fn forge_promotions_failure_does_not_hide_versions() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    // promotions は 404（未登録）
+    let h = forge_harness(&server);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "1.21")
+        .await
+        .unwrap();
+    assert_eq!(v.len(), 12);
+    assert!(v.iter().all(|e| !e.stable));
+}
+
+#[tokio::test]
+async fn neoforge_merges_both_maven_families() {
+    let server = MockServer::start().await;
+    serve(&server, NEOFORGE_MAVEN_ROUTE, NEOFORGE_MAVEN).await;
+    serve(&server, NEOFORGE_FORGE_MAVEN_ROUTE, NEOFORGE_FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+
+    // 26.x を含み、21.1.263 のように後ろに並ぶ版も数で並べる
+    assert_eq!(
+        h.meta.game_versions(LoaderKind::Neoforge).await.unwrap(),
+        vec![
+            "26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.1", "1.21", "1.20.4", "1.20.2",
+            "1.20.1"
+        ]
+    );
+
+    let old = h
+        .meta
+        .loader_versions(LoaderKind::Neoforge, "1.20.1")
+        .await
+        .unwrap();
+    assert_eq!(old.len(), 24);
+    assert_eq!(old[0].version, "1.20.1-47.1.106");
+    assert_eq!(old[23].version, "1.20.1-47.1.5");
+    assert!(old.iter().all(|e| e.stable));
+
+    let new = h
+        .meta
+        .loader_versions(LoaderKind::Neoforge, "1.21.1")
+        .await
+        .unwrap();
+    assert_eq!(
+        flags(&new),
+        vec![("21.1.264", true), ("21.1.263", true), ("21.1.172", true)]
+    );
+}
+
+#[tokio::test]
+async fn neoforge_26_versions_map_to_their_minecraft_version() {
+    let server = MockServer::start().await;
+    serve(&server, NEOFORGE_MAVEN_ROUTE, NEOFORGE_MAVEN).await;
+    serve(&server, NEOFORGE_FORGE_MAVEN_ROUTE, NEOFORGE_FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    let list = |mc: &'static str| {
+        let meta = h.meta.clone();
+        async move {
+            meta.loader_versions(LoaderKind::Neoforge, mc)
+                .await
+                .unwrap()
+        }
+    };
+    let v = list("26.3").await;
+    assert_eq!(v.len(), 10);
+    assert_eq!(flags(&v)[0], ("26.3.0.95", true));
+    assert_eq!(flags(&list("26.2").await), vec![("26.2.0.93", true)]);
+    assert_eq!(flags(&list("26.1.2").await), vec![("26.1.2.122", true)]);
+    assert_eq!(
+        flags(&list("26.1.1").await),
+        vec![("26.1.1.15-beta", false)]
+    );
+    let v = list("26.1").await;
+    assert_eq!(v[0].version, "26.1.0.19-beta");
+    assert!(v.iter().all(|e| !e.stable));
+    assert!(v.iter().any(|e| e.version == "26.1.0.0-alpha.1+snapshot-1"));
+}
+
+#[tokio::test]
+async fn forge_26_versions_are_listed() {
+    let server = MockServer::start().await;
+    serve(&server, FORGE_MAVEN_ROUTE, FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "26.3")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("26.3-66.0.13", false)]);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Forge, "26.1.2")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("26.1.2-64.1.5", false)]);
+}
+
+#[tokio::test]
+async fn neoforge_prerelease_is_not_stable() {
+    let server = MockServer::start().await;
+    serve(&server, NEOFORGE_MAVEN_ROUTE, NEOFORGE_MAVEN).await;
+    serve(&server, NEOFORGE_FORGE_MAVEN_ROUTE, NEOFORGE_FORGE_MAVEN).await;
+    let h = forge_harness(&server);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Neoforge, "1.20.2")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("20.2.3-beta", false)]);
+    let v = h
+        .meta
+        .loader_versions(LoaderKind::Neoforge, "1.21")
+        .await
+        .unwrap();
+    assert_eq!(flags(&v), vec![("21.0.0-beta", false)]);
 }

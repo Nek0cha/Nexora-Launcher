@@ -2,7 +2,7 @@ mod common;
 
 use std::sync::{Arc, Mutex};
 
-use nexora_core::net::{Depth, fetch_all};
+use nexora_core::net::{Depth, FetchPhase, fetch_all, fetch_all_with};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -126,6 +126,149 @@ async fn downloads_and_verifies_files() {
     let progress = progress.lock().unwrap();
     assert_eq!(progress.first(), Some(&(0, 11)));
     assert_eq!(progress.last(), Some(&(11, 11)));
+}
+
+#[tokio::test]
+async fn reports_verification_before_downloading() {
+    let server = MockServer::start().await;
+    let temp = tempfile::tempdir().unwrap();
+    serve(&server, "/a.jar", b"alpha").await;
+    // b は手元に正しいものがあり、確認だけで済む
+    std::fs::write(temp.path().join("b.jar"), b"bravo!").unwrap();
+    let items = vec![
+        item(&server, "/a.jar", temp.path().join("a.jar"), b"alpha"),
+        item(&server, "/b.jar", temp.path().join("b.jar"), b"bravo!"),
+    ];
+    #[derive(Debug, PartialEq)]
+    enum Event {
+        Phase(FetchPhase),
+        Bytes(u64, u64),
+    }
+    let events = Mutex::new(Vec::new());
+    fetch_all_with(
+        &http(),
+        items,
+        Depth::Full,
+        8,
+        &CancellationToken::new(),
+        |p| events.lock().unwrap().push(Event::Phase(p)),
+        |d, t| events.lock().unwrap().push(Event::Bytes(d, t)),
+    )
+    .await
+    .unwrap();
+    let events = events.into_inner().unwrap();
+    assert_eq!(
+        events.first(),
+        Some(&Event::Phase(FetchPhase::Verifying {
+            checked: 0,
+            total: 2
+        }))
+    );
+    let switch = events
+        .iter()
+        .position(|e| *e == Event::Phase(FetchPhase::Downloading))
+        .expect("switches to downloading");
+    // 確認の最後は全件で、取得の進捗はその後にだけ来る（b の分は数えない）
+    assert_eq!(
+        events[switch - 1],
+        Event::Phase(FetchPhase::Verifying {
+            checked: 2,
+            total: 2
+        })
+    );
+    assert!(
+        events[..switch]
+            .iter()
+            .all(|e| matches!(e, Event::Phase(FetchPhase::Verifying { .. })))
+    );
+    assert_eq!(events[switch + 1], Event::Bytes(0, 5));
+    assert_eq!(events.last(), Some(&Event::Bytes(5, 5)));
+}
+
+#[tokio::test]
+async fn nothing_to_verify_still_switches_to_downloading() {
+    let phases = Mutex::new(Vec::new());
+    fetch_all_with(
+        &http(),
+        Vec::new(),
+        Depth::Full,
+        8,
+        &CancellationToken::new(),
+        |p| phases.lock().unwrap().push(p),
+        |_, _| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        phases.into_inner().unwrap(),
+        vec![
+            FetchPhase::Verifying {
+                checked: 0,
+                total: 0
+            },
+            FetchPhase::Downloading
+        ]
+    );
+}
+
+/// 取り消しは、手元のファイルの確認（sha1 を読み直す）の途中でもすぐに効く。
+#[tokio::test]
+async fn cancel_during_verification_returns_promptly() {
+    use nexora_core::net::{DownloadItem, hash::sha1_hex};
+    const FILES: usize = 4000;
+    let temp = tempfile::tempdir().unwrap();
+    let mut items = Vec::with_capacity(FILES);
+    for i in 0..FILES {
+        let body = format!("file {i:08}").repeat(1024).into_bytes();
+        let path = temp.path().join(format!("{:02x}/{i}", i % 64));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &body).unwrap();
+        items.push(DownloadItem {
+            // 確認で済むため、取得には出ない
+            url: "http://127.0.0.1:9/never".into(),
+            path,
+            size: Some(body.len() as u64),
+            sha1: Some(sha1_hex(&body)),
+            executable: false,
+        });
+    }
+    let token = CancellationToken::new();
+    let last = Mutex::new(None);
+    let cancelled_at = Mutex::new(None);
+    let cancel = token.clone();
+    let client = http();
+    // 確認を始める最初の通知の中から取り消す。速い環境では確認が数十 ms で終わるため、途中の通知を待つと取り消しが間に合わない
+    let result = fetch_all_with(
+        &client,
+        items,
+        Depth::Full,
+        8,
+        &token,
+        |p| {
+            if let FetchPhase::Verifying { checked, total } = p {
+                *last.lock().unwrap() = Some((checked, total));
+                if total > 0 && cancelled_at.lock().unwrap().is_none() {
+                    *cancelled_at.lock().unwrap() = Some(std::time::Instant::now());
+                    cancel.cancel();
+                }
+            }
+        },
+        |_, _| {},
+    )
+    .await;
+    let returned_at = std::time::Instant::now();
+    assert_eq!(result.unwrap_err().code(), "task.cancelled");
+    let cancelled_at = cancelled_at
+        .into_inner()
+        .unwrap()
+        .expect("verification reported progress before it finished");
+    let waited = returned_at.saturating_duration_since(cancelled_at);
+    assert!(
+        waited < std::time::Duration::from_secs(1),
+        "cancel took {waited:?}"
+    );
+    let (_, total) = last.into_inner().unwrap().unwrap();
+    assert_eq!(total, FILES as u64);
 }
 
 #[tokio::test]
@@ -380,4 +523,54 @@ async fn concurrent_fetches_of_the_same_files_do_not_collide() {
         server.received_requests().await.unwrap().len(),
         bodies.len()
     );
+}
+
+/// 計測用（通常は実行しない）。利用者の `shared/` に近い数と大きさ（既定は 6,600 ファイル・計 600 MB）の
+/// ファイルを作り、Depth::Full と Depth::Quick の確認にかかる時間を出す。
+/// `NEXORA_BENCH_FILES` と `NEXORA_BENCH_MB` で数と大きさを変えられる。
+/// 実行例: `cargo test -p nexora-core --test net_download -- --ignored --nocapture verification_timing`
+#[test]
+#[ignore = "benchmark; run by hand"]
+fn verification_timing() {
+    use nexora_core::net::{DownloadItem, hash::sha1_hex, needs_download};
+    let files: usize = std::env::var("NEXORA_BENCH_FILES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6600);
+    let mb: usize = std::env::var("NEXORA_BENCH_MB")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(600);
+    let temp = tempfile::tempdir().unwrap();
+    let each = mb * 1024 * 1024 / files;
+    let mut items = Vec::with_capacity(files);
+    for i in 0..files {
+        let mut body = vec![0u8; each];
+        body[..8].copy_from_slice(&(i as u64).to_le_bytes());
+        let path = temp.path().join(format!("{:02x}/{i}", i % 256));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &body).unwrap();
+        items.push(DownloadItem {
+            url: String::new(),
+            path,
+            size: Some(each as u64),
+            sha1: Some(sha1_hex(&body)),
+            executable: false,
+        });
+    }
+    for depth in [Depth::Full, Depth::Full, Depth::Quick] {
+        let started = std::time::Instant::now();
+        for item in &items {
+            assert!(!needs_download(item, depth).unwrap());
+        }
+        println!(
+            "{files} files, {mb} MB, {depth:?}: {} ms (profile: {})",
+            started.elapsed().as_millis(),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            }
+        );
+    }
 }

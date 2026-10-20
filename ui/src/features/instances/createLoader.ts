@@ -3,18 +3,16 @@ import type { LoaderKind } from "../../bindings/LoaderKind";
 /** タブの表示順。 */
 export const LOADER_TABS: readonly LoaderKind[] = ["vanilla", "fabric", "forge", "neoforge", "quilt"];
 
-export type TabState = { enabled: true } | { enabled: false; reason: "soon" | "unsupportedVersion" | "loading" };
+export type TabState = { enabled: true } | { enabled: false; reason: "noVersions" | "loading" };
 
-type GameVersions = Partial<Record<LoaderKind, string[] | undefined>>;
+export type GameVersions = Partial<Record<LoaderKind, string[] | undefined>>;
 
-/** タブを選べるか。選べない場合はその理由も返す。 */
-export function tabState(loader: LoaderKind, mcVersion: string | null, gameVersions: GameVersions): TabState {
+/** タブを選べるか。知っている正式版のうち 1 つでも対応していれば選べる。選べない場合はその理由も返す。 */
+export function tabState(loader: LoaderKind, vanilla: string[], gameVersions: GameVersions): TabState {
   if (loader === "vanilla") return { enabled: true };
-  // Forge と NeoForge はこのフェーズでは未対応。
-  if (loader === "forge" || loader === "neoforge") return { enabled: false, reason: "soon" };
   const list = gameVersions[loader];
   if (list === undefined) return { enabled: false, reason: "loading" };
-  if (mcVersion === null || !list.includes(mcVersion)) return { enabled: false, reason: "unsupportedVersion" };
+  if (versionsFor(loader, vanilla, list).length === 0) return { enabled: false, reason: "noVersions" };
   return { enabled: true };
 }
 
@@ -26,9 +24,16 @@ export function versionsFor(loader: LoaderKind, vanilla: string[], gameVersions:
   return vanilla.filter((v) => supported.has(v));
 }
 
-/** バージョンを変えて現在のタブが選べなくなったら vanilla に戻す。 */
-export function fallbackLoader(current: LoaderKind, mcVersion: string, gameVersions: GameVersions): LoaderKind {
-  return tabState(current, mcVersion, gameVersions).enabled ? current : "vanilla";
+/** ローダーのタブに切り替えたときの Minecraft バージョン。対応していれば今のまま、無ければ対応する最新。 */
+export function versionForLoader(loader: LoaderKind, current: string, vanilla: string[], gameVersions: GameVersions): string | null {
+  if (loader === "vanilla") return current;
+  const supported = versionsFor(loader, vanilla, gameVersions[loader]);
+  return supported.includes(current) ? current : (supported[0] ?? null);
+}
+
+/** 一覧が取り直されるなどで現在のタブが今のバージョンに対応しなくなったら vanilla に戻す。 */
+export function fallbackLoader(current: LoaderKind, mcVersion: string, vanilla: string[], gameVersions: GameVersions): LoaderKind {
+  return versionForLoader(current, mcVersion, vanilla, gameVersions) === mcVersion ? current : "vanilla";
 }
 
 /** ローダーのバージョンの選び方。現在の選択を残し、無ければ安定版の先頭、それも無ければ先頭。 */

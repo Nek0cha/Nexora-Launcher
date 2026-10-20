@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import {
   Button,
   Dialog,
@@ -29,6 +29,7 @@ import {
   pickLoaderVersion,
   type TabState,
   tabState,
+  versionForLoader,
   versionsFor,
 } from "../features/instances/createLoader";
 import { defaultName, nextName } from "../features/instances/createName";
@@ -126,9 +127,12 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
 /** ダイアログの中身。開くたびに作り直されるため、入力は毎回まっさらから始まる。 */
 function CreateForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
+  const reasonId = useId();
   const versions = useVersions(true);
-  // Fabric と Quilt の対応バージョンは、開いたときに取りに行く（どちらも小さく、キャッシュされる）
+  // 各ローダーの対応バージョンは、開いたときに取りに行く（キャッシュされる）
   const fabricGames = useLoaderGameVersions("fabric", true);
+  const forgeGames = useLoaderGameVersions("forge", true);
+  const neoforgeGames = useLoaderGameVersions("neoforge", true);
   const quiltGames = useLoaderGameVersions("quilt", true);
   const create = useCreateInstance();
   const [loader, setLoader] = useState<LoaderKind>("vanilla");
@@ -138,8 +142,15 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const [advanced, setAdvanced] = useState(ADVANCED_DEFAULTS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const gameVersions: Partial<Record<LoaderKind, string[]>> = { fabric: fabricGames.data, quilt: quiltGames.data };
-  const gameQueries = [fabricGames, quiltGames];
+  const vanillaIds = versions.data?.map((v) => v.id) ?? [];
+  const gameVersions: Partial<Record<LoaderKind, string[]>> = {
+    fabric: fabricGames.data,
+    forge: forgeGames.data,
+    neoforge: neoforgeGames.data,
+    quilt: quiltGames.data,
+  };
+  const gameQueriesByLoader = { fabric: fabricGames, forge: forgeGames, neoforge: neoforgeGames, quilt: quiltGames };
+  const gameQueries = Object.values(gameQueriesByLoader);
   const failedGames = gameQueries.find((q) => q.error);
   const loaderVersions = useLoaderVersions(loader, version, loader !== "vanilla");
 
@@ -163,24 +174,24 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   }, [first, version]);
 
   // 対応バージョンの一覧が取り直され、選んでいるローダーが今のバージョンに対応しなくなったら Vanilla に戻す
-  const fallback = version === null ? loader : fallbackLoader(loader, version, gameVersions);
+  const fallback = version === null ? loader : fallbackLoader(loader, version, vanillaIds, gameVersions);
   useEffect(() => {
     if (version !== null && fallback !== loader) select(fallback, version);
     // select は毎回作り直されるが、判定に使う値はこの 3 つだけである
   }, [fallback, loader, version]);
 
   const tabInfo = (l: LoaderKind): TabState | { enabled: false; reason: null } => {
-    if (l === "fabric" || l === "quilt") {
+    if (l !== "vanilla") {
       // 取得に失敗した一覧は「読み込み中」のままにしない。理由はダイアログの下部に出す
-      if ((l === "fabric" ? fabricGames : quiltGames).error) return { enabled: false, reason: null };
+      if (gameQueriesByLoader[l].error) return { enabled: false, reason: null };
       // バージョンの一覧がまだ届いていない間は、ローダーの一覧も揃っていないものとして扱う
       if (version === null) return { enabled: false, reason: "loading" };
     }
-    return tabState(l, version, gameVersions);
+    return tabState(l, vanillaIds, gameVersions);
   };
   const tabTitle = (s: ReturnType<typeof tabInfo>) => {
     if (s.enabled || s.reason === null) return undefined;
-    return { soon: t("create.tabSoon"), unsupportedVersion: t("create.tabUnsupportedVersion"), loading: t("create.loadingLoaderVersions") }[s.reason];
+    return { noVersions: t("create.tabNoVersions"), loading: t("create.loadingLoaderVersions") }[s.reason];
   };
 
   const loaderVersion = loader === "vanilla" ? null : pickLoaderVersion(loaderVersions.data ?? [], chosenLoaderVersion);
@@ -214,7 +225,6 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     );
   };
 
-  const vanillaIds = versions.data?.map((v) => v.id) ?? [];
   const versionOptions = versionsFor(loader, vanillaIds, gameVersions[loader]);
 
   return (
@@ -234,7 +244,10 @@ function CreateForm({ onDone }: { onDone: () => void }) {
         <Tabs
           selectedKey={loader}
           onSelectionChange={(key) => {
-            if (version !== null && key !== loader) select(key as LoaderKind, version);
+            if (version === null || key === loader) return;
+            // 今のバージョンに対応していなければ、そのローダーが対応する最新のバージョンへ移る
+            const next = versionForLoader(key as LoaderKind, version, vanillaIds, gameVersions);
+            if (next !== null) select(key as LoaderKind, next);
           }}
           className="px-5 pt-4"
         >
@@ -242,13 +255,28 @@ function CreateForm({ onDone }: { onDone: () => void }) {
             {LOADER_TABS.map((l) => {
               const state = tabInfo(l);
               return (
-                <Tab key={l} id={l} isDisabled={!state.enabled} className={tabClass}>
+                <Tab
+                  key={l}
+                  id={l}
+                  isDisabled={!state.enabled}
+                  aria-describedby={tabTitle(state) === undefined ? undefined : `${reasonId}-${l}`}
+                  className={tabClass}
+                >
                   {/* Tab は title を受け取らないため、選べない理由は中の文字に付ける */}
                   <span title={tabTitle(state)}>{t(`create.tab.${l}`)}</span>
                 </Tab>
               );
             })}
           </TabList>
+          {/* 選べないタブの理由。title は支援技術に届きにくいため、見えないテキストとして aria-describedby から参照する */}
+          {LOADER_TABS.map((l) => {
+            const reason = tabTitle(tabInfo(l));
+            return reason === undefined ? null : (
+              <span key={l} id={`${reasonId}-${l}`} className="sr-only">
+                {reason}
+              </span>
+            );
+          })}
           {/* 中身はどのタブでも同じ欄なので、選んでいるタブの id を持つ 1 つのパネルを使い回す */}
           <TabPanel id={loader} className="flex flex-col gap-3 pt-4 pb-5 outline-none">
             <TextField value={name} onChange={setName} maxLength={64} autoFocus className="flex items-center justify-between gap-4">
@@ -261,7 +289,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
                 label={t("create.version")}
                 value={version ?? ""}
                 options={versionOptions.map((id) => ({ id, label: id }))}
-                onChange={(next) => select(fallbackLoader(loader, next, gameVersions), next)}
+                onChange={(next) => select(fallbackLoader(loader, next, vanillaIds, gameVersions), next)}
                 triggerClassName={controlWidth}
               />
             </QueryRow>

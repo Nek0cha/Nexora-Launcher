@@ -8,19 +8,15 @@ use nexora_core::install::{InstallEnv, Urls, install};
 use nexora_core::instance::{self, InstanceState, NewInstance};
 use nexora_core::java::find_registered;
 use nexora_core::paths::AppPaths;
-use nexora_core::task::{TaskChange, TaskManager, TaskNotifier, TaskSnapshot, TaskState};
+use nexora_core::task::{TaskManager, TaskPhase, TaskSnapshot, TaskState};
 
-use common::{CuttingServer, FakeMojang, FixedProbe, LIBRARY, http, part_files};
-
-struct Silent;
-impl TaskNotifier for Silent {
-    fn notify(&self, _: &str, _: u64, _: TaskChange) {}
-}
+use common::{CuttingServer, FakeMojang, FixedProbe, LIBRARY, SnapshotRecorder, http, part_files};
 
 struct Harness {
     _temp: tempfile::TempDir,
     env: InstallEnv,
     tasks: TaskManager,
+    recorder: Arc<SnapshotRecorder>,
 }
 
 fn harness(fake: &FakeMojang) -> Harness {
@@ -35,6 +31,9 @@ fn harness(fake: &FakeMojang) -> Harness {
         // 本物のサーバーには出ず、手元のつながらないアドレスで失敗させる
         fabric_meta: "http://127.0.0.1:1".into(),
         quilt_meta: "http://127.0.0.1:1".into(),
+        forge_maven: "http://127.0.0.1:1".into(),
+        forge_promotions: "http://127.0.0.1:1".into(),
+        neoforge_maven: "http://127.0.0.1:1".into(),
     };
     let env = InstallEnv::new(
         paths,
@@ -43,10 +42,12 @@ fn harness(fake: &FakeMojang) -> Harness {
         urls,
         Arc::new(FixedProbe(17)),
     );
+    let (tasks, recorder) = SnapshotRecorder::manager();
     Harness {
         _temp: temp,
         env,
-        tasks: TaskManager::new(Arc::new(Silent)),
+        tasks,
+        recorder,
     }
 }
 
@@ -85,8 +86,17 @@ async fn installs_everything_and_marks_ready() {
     .unwrap();
     let snap = run_install(&h, &inst.id).await;
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
-    assert!(snap.progress.total > 0);
-    assert_eq!(snap.progress.current, snap.progress.total);
+    // 段階は順に進み、終わったタスクは段階を持たない
+    assert_eq!(
+        h.recorder.phases(&snap.id),
+        vec![
+            TaskPhase::Resolving,
+            TaskPhase::Verifying,
+            TaskPhase::Downloading,
+            TaskPhase::Finishing
+        ]
+    );
+    assert_eq!(snap.phase, None);
     assert_eq!(
         instance::get(&h.env.db, &inst.id).unwrap().state,
         InstanceState::Ready
