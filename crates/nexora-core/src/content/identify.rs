@@ -20,7 +20,8 @@ const KINDS: [ContentKind; 3] = [
 ];
 
 /// 特定の結果。`identified` は Modrinth で分かった行、`local` は照会したが分からなかった行。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct IdentifyReport {
     pub identified: usize,
     pub local: usize,

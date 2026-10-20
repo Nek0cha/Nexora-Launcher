@@ -5,11 +5,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::auth::login::{LOGIN_KIND, LoginMethod, LoginNotifier, UrlOpener, run_login};
 use crate::auth::service::AuthService;
+use crate::content::identify::{IdentifyReport, identify};
+use crate::content::modrinth::categories;
+use crate::content::ops::{self, AddReport};
+use crate::content::scan::scan;
+use crate::content::store;
+use crate::content::{ContentItem, ContentKind};
 use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
@@ -44,6 +51,17 @@ pub const LAUNCH_KIND: &str = "launch";
 pub const DUPLICATE_KIND: &str = "duplicate";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
+
+/// 同期の処理を `spawn_blocking` で動かす。
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, CoreError> + Send + 'static,
+) -> Result<T, CoreError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| CoreError::Unexpected {
+            message: e.to_string(),
+        })?
+}
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -223,6 +241,139 @@ impl Launcher {
     ) -> Result<Instance, CoreError> {
         let _guard = self.locks.lock(id).await;
         instance::update_settings(&self.env.db, id, settings)
+    }
+
+    /// 中身の一覧。ディスクを走査して DB を合わせてから返す。
+    /// 起動中でも読めるようロックは取らない（走査はロックを待たず、ops との競合は次の走査で直る）。
+    pub async fn list_content(
+        &self,
+        id: &str,
+        kind: ContentKind,
+    ) -> Result<Vec<ContentItem>, CoreError> {
+        let inst = instance::get(&self.env.db, id)?;
+        let (db, game_dir, id) = (
+            self.env.db.clone(),
+            instance::game_dir(&self.env.paths, &inst),
+            id.to_string(),
+        );
+        blocking(move || {
+            scan(&db, &game_dir, &id, kind, &CancellationToken::new())?;
+            store::list(&db, &id, kind)
+        })
+        .await
+    }
+
+    /// 未特定の中身を Modrinth で特定する（3 種類まとめて）。
+    /// 通信は長くかかりうるので、ロックも `ensure_idle` も使わず、遊ぶのを妨げない。
+    pub async fn identify_content(&self, id: &str) -> Result<IdentifyReport, CoreError> {
+        let inst = instance::get(&self.env.db, id)?;
+        let game_dir = instance::game_dir(&self.env.paths, &inst);
+        identify(
+            &self.env.db,
+            &self.env.http,
+            &self.env.urls.modrinth_api,
+            &self.env.paths.content_icons_dir(),
+            &game_dir,
+            id,
+            now_ms(),
+        )
+        .await
+    }
+
+    /// 中身を有効または無効にする。起動中とタスク中は `InstanceBusy`（削除と同じ順で確認する）。
+    pub async fn set_content_enabled(
+        &self,
+        id: &str,
+        kind: ContentKind,
+        rel_path: &str,
+        enabled: bool,
+    ) -> Result<(), CoreError> {
+        let rel_path = rel_path.to_string();
+        self.mutate_content(id, move |db, game_dir, id| {
+            ops::set_enabled(db, game_dir, id, kind, &rel_path, enabled)
+        })
+        .await
+    }
+
+    /// 中身を削除する。断る条件は `set_content_enabled` と同じ。
+    pub async fn remove_content(
+        &self,
+        id: &str,
+        kind: ContentKind,
+        rel_path: &str,
+    ) -> Result<(), CoreError> {
+        let rel_path = rel_path.to_string();
+        self.mutate_content(id, move |db, game_dir, id| {
+            ops::remove(db, game_dir, id, kind, &rel_path)
+        })
+        .await
+    }
+
+    /// ファイルを中身として追加する。断る条件は `set_content_enabled` と同じ。
+    pub async fn add_content_files(
+        &self,
+        id: &str,
+        kind: ContentKind,
+        paths: Vec<PathBuf>,
+        overwrite: bool,
+    ) -> Result<AddReport, CoreError> {
+        self.mutate_content(id, move |db, game_dir, id| {
+            ops::add_files(db, game_dir, id, kind, &paths, overwrite)
+        })
+        .await
+    }
+
+    /// 中身を変える操作の共通部分。`ensure_idle`、ロック、もう一度 `ensure_idle`、`spawn_blocking`。
+    async fn mutate_content<T: Send + 'static>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&Db, &Path, &str) -> Result<T, CoreError> + Send + 'static,
+    ) -> Result<T, CoreError> {
+        self.ensure_idle(id)?;
+        let _guard = self.locks.lock(id).await;
+        self.ensure_idle(id)?;
+        let inst = instance::get(&self.env.db, id)?;
+        let (db, game_dir, id) = (
+            self.env.db.clone(),
+            instance::game_dir(&self.env.paths, &inst),
+            id.to_string(),
+        );
+        blocking(move || f(&db, &game_dir, &id)).await
+    }
+
+    /// Modrinth のカテゴリー名のうち、種類に合うもの。
+    pub async fn content_categories(&self, kind: ContentKind) -> Result<Vec<String>, CoreError> {
+        let tags = categories(
+            &self.env.http,
+            &self.env.urls.modrinth_api,
+            &self.env.paths.meta_cache_dir(),
+        )
+        .await?;
+        Ok(tags
+            .into_iter()
+            .filter(|t| t.project_type == kind.as_str())
+            .map(|t| t.name)
+            .collect())
+    }
+
+    /// アイコンの PNG。`key` は 40 桁の 16 進（sha1）だけを受け付け、それ以外と無いものは `None`。
+    pub fn content_icon(&self, key: &str) -> Result<Option<Vec<u8>>, CoreError> {
+        if key.len() != 40 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(None);
+        }
+        let path = self
+            .env
+            .paths
+            .content_icons_dir()
+            .join(format!("{key}.png"));
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(source) => Err(CoreError::Io {
+                path: path.display().to_string(),
+                source,
+            }),
+        }
     }
 
     /// 削除と複製の前の確認。起動中、またはインストールか起動のタスクが動いていれば `InstanceBusy`。

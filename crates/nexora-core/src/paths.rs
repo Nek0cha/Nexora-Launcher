@@ -109,6 +109,11 @@ impl AppPaths {
         self.cache_dir().join("skins")
     }
 
+    /// mod などのアイコン（`<sha1>.png`）。無ければ特定のときに作られる。
+    pub fn content_icons_dir(&self) -> PathBuf {
+        self.cache_dir().join("content-icons")
+    }
+
     /// 取得した Forge と NeoForge のインストーラ。導入のたびには消さない。
     pub fn installers_dir(&self) -> PathBuf {
         self.cache_dir().join("installers")
