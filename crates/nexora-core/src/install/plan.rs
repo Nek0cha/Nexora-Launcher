@@ -33,6 +33,8 @@ pub struct GamePlan {
     pub classpath: Vec<PathBuf>,
     pub natives: Vec<NativeJar>,
     pub logging: Option<LoggingConfig>,
+    /// 取得せずに、インストーラの `maven/` の展開か processor が置くファイル（`downloads.artifact.url` が空のライブラリ）。
+    pub generated: Vec<PathBuf>,
 }
 
 fn unsupported(reason: &str) -> CoreError {
@@ -127,6 +129,7 @@ pub fn plan_game(
     let mut classpath = Vec::new();
     let mut on_classpath = HashSet::new();
     let mut natives = Vec::new();
+    let mut generated = Vec::new();
 
     for lib in &version.libraries {
         if !allowed(lib.rules.as_deref(), env) {
@@ -142,13 +145,18 @@ pub fn plan_game(
                     message: format!("library {} has no path", lib.name),
                 })?;
             let path = libraries_dir.join(checked_relative(rel, &lib.name)?);
-            downloads.push(DownloadItem {
-                url: artifact.url.clone(),
-                path: path.clone(),
-                size: Some(artifact.size),
-                sha1: Some(artifact.sha1.clone()),
-                executable: false,
-            });
+            if artifact.url.is_empty() {
+                // URL の無いもの（Forge のクライアントの jar など）は、インストーラが置く
+                generated.push(path.clone());
+            } else {
+                downloads.push(DownloadItem {
+                    url: artifact.url.clone(),
+                    path: path.clone(),
+                    size: Some(artifact.size),
+                    sha1: Some(artifact.sha1.clone()),
+                    executable: false,
+                });
+            }
             if on_classpath.insert(path.clone()) {
                 classpath.push(path);
             }
@@ -263,6 +271,7 @@ pub fn plan_game(
         classpath,
         natives,
         logging,
+        generated,
     })
 }
 
@@ -560,6 +569,56 @@ mod tests {
         assert_eq!(intermediary.sha1, None);
         assert_eq!(intermediary.size, None);
         assert!(plan.classpath.contains(&intermediary.path));
+    }
+
+    #[test]
+    fn empty_artifact_url_is_generated_not_downloaded() {
+        // Forge 1.16.5 の `net.minecraftforge:forge:...` のように、URL が空のライブラリは
+        // インストーラの `maven/` か processor が置くもので、取得しない
+        let mut v = with_library(serde_json::json!({
+            "name": "net.minecraftforge:forge:1.16.5-36.2.39",
+            "downloads": { "artifact": {
+                "path": "net/minecraftforge/forge/1.16.5-36.2.39/forge-1.16.5-36.2.39.jar",
+                "url": "",
+                "sha1": "0094f0546dba2d5bcee90e6a0a4f98d3adb40baf",
+                "size": 212574
+            }}
+        }));
+        v.libraries.push(
+            serde_json::from_value(serde_json::json!({
+                "name": "com.example:lib:1.0",
+                "downloads": { "artifact": {
+                    "path": "com/example/lib/1.0/lib-1.0.jar",
+                    "url": "https://example.invalid/lib.jar",
+                    "sha1": "0000000000000000000000000000000000000000",
+                    "size": 1
+                }}
+            }))
+            .unwrap(),
+        );
+        let plan = plan_of(&v).unwrap();
+        let forge =
+            "shared/libraries/net/minecraftforge/forge/1.16.5-36.2.39/forge-1.16.5-36.2.39.jar";
+        assert!(plan.downloads.iter().all(|d| rel(&d.path) != forge));
+        assert!(plan.downloads.iter().all(|d| !d.url.is_empty()));
+        assert!(plan.classpath.iter().any(|p| rel(p) == forge));
+        assert_eq!(
+            plan.generated.iter().map(|p| rel(p)).collect::<Vec<_>>(),
+            vec![forge.to_string()]
+        );
+        // URL のあるものは従来どおり取得し、generated には入らない
+        let lib = plan
+            .downloads
+            .iter()
+            .find(|d| d.url == "https://example.invalid/lib.jar")
+            .unwrap();
+        assert_eq!(
+            rel(&lib.path),
+            "shared/libraries/com/example/lib/1.0/lib-1.0.jar"
+        );
+        assert!(plan.classpath.contains(&lib.path));
+        // Vanilla の計画には generated が無い
+        assert!(plan_of(&fixture("1.21.5")).unwrap().generated.is_empty());
     }
 
     #[test]

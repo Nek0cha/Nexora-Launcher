@@ -86,7 +86,16 @@ fn variables<'a>(inputs: &ArgInputs<'a>) -> BTreeMap<&'static str, String> {
         ("clientid", String::new()),
         ("user_type", s.user_type.arg_value().to_string()),
         ("user_properties", "{}".to_string()),
-        ("version_name", inputs.version.id.clone()),
+        // ローダーを重ねたものは、クライアントの jar を持つ Vanilla の id にする
+        (
+            "version_name",
+            inputs
+                .version
+                .jar
+                .as_deref()
+                .unwrap_or(&inputs.version.id)
+                .to_string(),
+        ),
         ("version_type", inputs.version.kind.clone()),
         ("game_directory", path_str(inputs.game_dir)),
         ("assets_root", path_str(inputs.assets_root)),
@@ -380,6 +389,43 @@ mod tests {
                 "{input:?}"
             );
         }
+    }
+
+    /// `${version_name}` の値（`--version` の次の引数）。
+    fn version_arg(version: &VersionJson) -> String {
+        let env = RuleEnv {
+            os: OsName::Windows,
+            os_version: "10.0".into(),
+            arch: "x86_64".into(),
+        };
+        let args = build_args(&ArgInputs {
+            version,
+            session: &player_session(),
+            env: &env,
+            game_dir: Path::new("/game"),
+            assets_root: Path::new("/assets"),
+            natives_dir: Path::new("/natives"),
+            library_dir: Path::new("/lib"),
+            classpath: &[],
+            logging_argument: None,
+            memory_mb: 2048,
+            extra_jvm_args: &[],
+            launcher_version: "0.1.0",
+        });
+        let i = args.game.iter().position(|a| a == "--version").unwrap();
+        args.game[i + 1].clone()
+    }
+
+    #[test]
+    fn version_name_is_the_jar_owner_id() {
+        let mut v = fixture("1.21.5");
+        v.id = "1.20.1-forge-47.3.0".into();
+        v.jar = Some("1.20.1".into());
+        assert_eq!(version_arg(&v), "1.20.1");
+        // jar が無ければ id のまま
+        v.jar = None;
+        assert_eq!(version_arg(&v), "1.20.1-forge-47.3.0");
+        assert_eq!(version_arg(&fixture("1.21.5")), "1.21.5");
     }
 
     #[test]
