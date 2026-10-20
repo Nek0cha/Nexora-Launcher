@@ -336,6 +336,10 @@ impl TaskManager {
             entry.snapshot.updated_at = now_ms();
             // この通知が最新を運ぶため、待っている進捗の通知は同じ revision なら出さない
             entry.last_progress_revision = entry.snapshot.revision;
+            // 新しい段階の最初の進捗（処理の数が決まった直後など）は間引かずに知らせる
+            // 前の段階の通知待ちが残っていても、それに先を越されない
+            entry.last_progress_notify = None;
+            entry.progress_flush_pending = false;
             entry.snapshot.revision
         };
         self.notifier.notify(id, revision, TaskChange::Phase);
