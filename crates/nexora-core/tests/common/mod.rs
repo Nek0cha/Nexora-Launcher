@@ -249,6 +249,75 @@ impl FakeMojang {
     }
 }
 
+/// FakeLoaderMeta が配るローダーのライブラリの中身。
+pub const LOADER_LIBRARY: &[u8] = b"loader-library-jar";
+/// FakeLoaderMeta が配る Fabric と Quilt のローダーの版。
+pub const FABRIC_VERSION: &str = "0.16.10";
+pub const QUILT_VERSION: &str = "0.28.1";
+
+/// Fabric と Quilt のメタデータの偽物。FakeMojang のサーバーに、version 1.99-test 用の
+/// プロファイル（`/fabric/v2/...`、`/quilt/v3/...`）と、そのライブラリ（`/maven/...`）を足す。
+/// ほかの版のプロファイルは 404 になる。
+pub struct FakeLoaderMeta {
+    base: String,
+}
+
+impl FakeLoaderMeta {
+    pub async fn start(fake: &FakeMojang) -> Self {
+        let server = &fake.server;
+        let u = server.uri();
+        for (kind, api, main_class, group, version) in [
+            (
+                "fabric",
+                "v2",
+                "net.fabricmc.loader.impl.launch.knot.KnotClient",
+                "net.fabricmc",
+                FABRIC_VERSION,
+            ),
+            (
+                "quilt",
+                "v3",
+                "org.quiltmc.loader.impl.launch.knot.KnotClient",
+                "org.quiltmc",
+                QUILT_VERSION,
+            ),
+        ] {
+            let profile = format!(
+                r#"{{"id":"{kind}-loader-{version}-1.99-test","inheritsFrom":"1.99-test","type":"release",
+"mainClass":"{main_class}",
+"arguments":{{"game":[],"jvm":["-DFabricMcEmu= net.minecraft.client.main.Main "]}},
+"libraries":[{{"name":"{group}:{kind}-loader:{version}","url":"{u}/maven/","sha1":"{ls}","size":{ll}}}]}}"#,
+                ls = sha1_hex(LOADER_LIBRARY),
+                ll = LOADER_LIBRARY.len(),
+            );
+            serve(
+                server,
+                &format!("/{kind}/{api}/versions/loader/1.99-test/{version}/profile/json"),
+                profile.as_bytes(),
+            )
+            .await;
+            serve(
+                server,
+                &format!(
+                    "/maven/{}/{kind}-loader/{version}/{kind}-loader-{version}.jar",
+                    group.replace('.', "/")
+                ),
+                LOADER_LIBRARY,
+            )
+            .await;
+        }
+        Self { base: u }
+    }
+
+    pub fn fabric_url(&self) -> String {
+        format!("{}/fabric", self.base)
+    }
+
+    pub fn quilt_url(&self) -> String {
+        format!("{}/quilt", self.base)
+    }
+}
+
 use std::path::Path;
 use std::pin::Pin;
 

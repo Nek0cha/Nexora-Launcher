@@ -4,13 +4,17 @@ pub mod plan;
 
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::db::Db;
 use crate::error::CoreError;
-use crate::instance::{self, InstanceState};
+use crate::instance::{self, Instance, InstanceState};
 use crate::java::verify::JavaProbe;
-use crate::meta::loader::{FABRIC_META_URL, LoaderMeta, QUILT_META_URL};
+use crate::meta::loader::merge::merge_profile;
+use crate::meta::loader::{FABRIC_META_URL, LoaderKind, LoaderMeta, QUILT_META_URL};
 use crate::meta::mojang::manifest::{MANIFEST_URL, MojangMeta};
 use crate::meta::mojang::rules::RuleEnv;
+use crate::meta::mojang::version::VersionJson;
 use crate::net::{Depth, Http, fetch_all};
 use crate::paths::AppPaths;
 use crate::settings;
@@ -111,7 +115,8 @@ async fn install_inner(
     let inst = instance::get(&env.db, instance_id)?;
     instance::set_state(&env.db, instance_id, InstanceState::Installing)?;
     let token = handle.token();
-    let version = env.meta.pin_version(&inst.mc_version, token).await?;
+    let vanilla = env.meta.pin_version(&inst.mc_version, token).await?;
+    let version = overlay_loader(env, &inst, vanilla, token).await?;
     plan::check_profile(&version)?;
     let index = env.meta.pin_asset_index(&version, token).await?;
     let game = plan::plan_game(
@@ -147,6 +152,30 @@ async fn install_inner(
     .await?;
     crate::java::finish_runtime(&env.db, &runtime, env.probe.as_ref(), now_ms()).await?;
     Ok(())
+}
+
+/// Vanilla の VersionJson に、インスタンスのローダーの差分を重ねた解決済みの VersionJson を返す。
+/// 固定済みのプロファイルがあればネットワークを使わず、無ければ取得して固定する。
+pub(crate) async fn overlay_loader(
+    env: &InstallEnv,
+    inst: &Instance,
+    vanilla: VersionJson,
+    token: &CancellationToken,
+) -> Result<VersionJson, CoreError> {
+    if inst.loader == LoaderKind::Vanilla {
+        return Ok(vanilla);
+    }
+    let loader_version =
+        inst.loader_version
+            .as_deref()
+            .ok_or_else(|| CoreError::InvalidInstanceSetting {
+                field: "loaderVersion".to_string(),
+            })?;
+    let profile = tokio::select! {
+        _ = token.cancelled() => return Err(CoreError::Cancelled),
+        profile = env.loader.pin_profile(inst.loader, &inst.mc_version, loader_version) => profile?,
+    };
+    merge_profile(&vanilla, &profile)
 }
 
 #[cfg(test)]

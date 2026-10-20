@@ -13,7 +13,7 @@ use crate::auth::service::AuthService;
 use crate::db::Db;
 use crate::error::CoreError;
 use crate::install::plan::{check_profile, plan_game};
-use crate::install::{InstallEnv, Urls, install, kib, now_ms};
+use crate::install::{InstallEnv, Urls, install, kib, now_ms, overlay_loader};
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
@@ -450,10 +450,11 @@ impl Launcher {
         };
         let token = handle.token();
         // 固定済みのメタデータだけで解決する。欠けていればそのときだけ取得する
-        let version = match load_pinned_version(&env.paths, &inst.mc_version)? {
+        let vanilla = match load_pinned_version(&env.paths, &inst.mc_version)? {
             Some(v) => v,
             None => env.meta.pin_version(&inst.mc_version, token).await?,
         };
+        let version = overlay_loader(env, &inst, vanilla, token).await?;
         check_profile(&version)?;
         let index = match load_pinned_asset_index(&env.paths, &version.asset_index.id)? {
             Some(i) => i,
