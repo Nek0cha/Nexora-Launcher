@@ -3,3 +3,4 @@
 pub mod data;
 pub mod installer;
 pub mod profile;
+pub mod run;

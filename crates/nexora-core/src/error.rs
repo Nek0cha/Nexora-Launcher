@@ -37,6 +37,14 @@ pub enum CoreError {
     VersionNotFound { id: String },
     #[error("unsupported version profile: {reason}")]
     UnsupportedProfile { reason: String },
+    #[error("Forge install processor {processor} failed (exit code {code:?})")]
+    ProcessorFailed {
+        processor: String,
+        code: Option<i32>,
+        log_tail: String,
+    },
+    #[error("loader files are missing: {path}")]
+    LoaderFilesMissing { path: String },
     #[error("no Java runtime {component} is available for {platform}")]
     NoCompatibleRuntime { component: String, platform: String },
     #[error("installed Java did not match: expected major {expected_major}, found {found}")]
@@ -108,6 +116,8 @@ impl CoreError {
             CoreError::InvalidMetadata { .. } => "meta.invalid",
             CoreError::VersionNotFound { .. } => "meta.version_not_found",
             CoreError::UnsupportedProfile { .. } => "install.unsupported_profile",
+            CoreError::ProcessorFailed { .. } => "install.processor_failed",
+            CoreError::LoaderFilesMissing { .. } => "install.loader_files_missing",
             CoreError::NoCompatibleRuntime { .. } => "java.no_compatible_runtime",
             CoreError::JavaVerifyFailed { .. } => "java.verify_failed",
             CoreError::JavaPathMissing { .. } => "java.path_missing",
@@ -160,6 +170,20 @@ impl CoreError {
             }
             CoreError::UnsupportedProfile { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
+            }
+            CoreError::ProcessorFailed {
+                processor,
+                code,
+                log_tail,
+            } => {
+                params.insert("processor".into(), ParamValue::Str(processor.clone()));
+                if let Some(code) = code {
+                    params.insert("code".into(), ParamValue::Num(f64::from(*code)));
+                }
+                params.insert("logTail".into(), ParamValue::Str(log_tail.clone()));
+            }
+            CoreError::LoaderFilesMissing { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
             }
             CoreError::NoCompatibleRuntime {
                 component,
@@ -269,6 +293,55 @@ mod tests {
             "settings.invalid_value"
         );
         assert_eq!(CoreError::Cancelled.code(), "task.cancelled");
+        assert_eq!(
+            CoreError::ProcessorFailed {
+                processor: "p".into(),
+                code: Some(1),
+                log_tail: "t".into(),
+            }
+            .code(),
+            "install.processor_failed"
+        );
+        assert_eq!(
+            CoreError::LoaderFilesMissing { path: "p".into() }.code(),
+            "install.loader_files_missing"
+        );
+    }
+
+    #[test]
+    fn phase5_processor_params() {
+        let p = CoreError::ProcessorFailed {
+            processor: "net.minecraftforge:binarypatcher:1.0".into(),
+            code: Some(3),
+            log_tail: "boom".into(),
+        }
+        .to_payload();
+        assert_eq!(
+            p.params.get("processor"),
+            Some(&ParamValue::Str(
+                "net.minecraftforge:binarypatcher:1.0".into()
+            ))
+        );
+        assert_eq!(p.params.get("code"), Some(&ParamValue::Num(3.0)));
+        assert_eq!(
+            p.params.get("logTail"),
+            Some(&ParamValue::Str("boom".into()))
+        );
+        let p = CoreError::ProcessorFailed {
+            processor: "x".into(),
+            code: None,
+            log_tail: String::new(),
+        }
+        .to_payload();
+        assert!(!p.params.contains_key("code"));
+        let p = CoreError::LoaderFilesMissing {
+            path: "a/b.jar".into(),
+        }
+        .to_payload();
+        assert_eq!(
+            p.params.get("path"),
+            Some(&ParamValue::Str("a/b.jar".into()))
+        );
     }
 
     #[test]

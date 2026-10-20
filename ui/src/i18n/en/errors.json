@@ -30,7 +30,9 @@
     "version_not_found": "Version {{id}} was not found"
   },
   "install": {
-    "unsupported_profile": "This version's format isn't supported"
+    "unsupported_profile": "This version's format isn't supported",
+    "processor_failed": "The loader install step ({{processor}}) failed",
+    "loader_files_missing": "The loader files were not found: {{path}}"
   },
   "java": {
     "no_compatible_runtime": "No Java ({{component}}) is available for this computer",

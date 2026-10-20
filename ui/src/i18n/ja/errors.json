@@ -30,7 +30,9 @@
     "version_not_found": "バージョン {{id}} が見つかりません"
   },
   "install": {
-    "unsupported_profile": "このバージョンの形式には対応していません"
+    "unsupported_profile": "このバージョンの形式には対応していません",
+    "processor_failed": "ローダーの導入処理（{{processor}}）に失敗しました",
+    "loader_files_missing": "ローダーのファイルが見つかりません：{{path}}"
   },
   "java": {
     "no_compatible_runtime": "この PC で使える Java（{{component}}）がありません",
