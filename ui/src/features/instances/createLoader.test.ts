@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fallbackLoader, LOADER_TABS, pickLoaderVersion, tabState, versionsFor } from "./createLoader";
+import { fallbackLoader, LOADER_TABS, pickLoaderVersion, tabState, versionForLoader, versionsFor } from "./createLoader";
 
 describe("LOADER_TABS", () => {
   it("lists the tabs in display order", () => {
@@ -8,25 +8,40 @@ describe("LOADER_TABS", () => {
 });
 
 describe("tabState", () => {
+  const vanilla = ["26.3", "1.21.5", "1.20.1", "1.8.9"];
   it("always enables vanilla", () => {
-    expect(tabState("vanilla", null, {})).toEqual({ enabled: true });
-    expect(tabState("vanilla", "1.8.9", { fabric: [] })).toEqual({ enabled: true });
-  });
-  it("treats forge and neoforge like fabric and never reports a coming-soon reason", () => {
-    expect(tabState("forge", "1.20.1", { forge: ["1.20.1"] })).toEqual({ enabled: true });
-    expect(tabState("forge", "1.12.2", { forge: ["1.20.1"] })).toEqual({ enabled: false, reason: "unsupportedVersion" });
-    expect(tabState("neoforge", "1.21.1", { neoforge: ["1.21.1"] })).toEqual({ enabled: true });
-    expect(tabState("neoforge", "1.20.1", {})).toEqual({ enabled: false, reason: "loading" });
+    expect(tabState("vanilla", [], {})).toEqual({ enabled: true });
+    expect(tabState("vanilla", vanilla, { fabric: [] })).toEqual({ enabled: true });
   });
   it("is loading while the game version list is not fetched", () => {
-    expect(tabState("fabric", "1.20.1", {})).toEqual({ enabled: false, reason: "loading" });
-    expect(tabState("quilt", "1.20.1", { quilt: undefined })).toEqual({ enabled: false, reason: "loading" });
+    expect(tabState("fabric", vanilla, {})).toEqual({ enabled: false, reason: "loading" });
+    expect(tabState("quilt", vanilla, { quilt: undefined })).toEqual({ enabled: false, reason: "loading" });
+    expect(tabState("neoforge", vanilla, {})).toEqual({ enabled: false, reason: "loading" });
   });
-  it("is unsupported when the version is not in the list", () => {
-    expect(tabState("fabric", "1.8.9", { fabric: ["1.20.1"] })).toEqual({ enabled: false, reason: "unsupportedVersion" });
+  it("has no versions when nothing in the list matches a known vanilla version", () => {
+    expect(tabState("fabric", vanilla, { fabric: ["1.7.10"] })).toEqual({ enabled: false, reason: "noVersions" });
+    expect(tabState("forge", vanilla, { forge: [] })).toEqual({ enabled: false, reason: "noVersions" });
   });
-  it("is enabled when the version is in the list", () => {
-    expect(tabState("quilt", "1.20.1", { quilt: ["1.20.1"] })).toEqual({ enabled: true });
+  it("is enabled when the loader supports any known version, even if the newest is unsupported", () => {
+    expect(tabState("forge", vanilla, { forge: ["1.21.5", "1.20.1"] })).toEqual({ enabled: true });
+    expect(tabState("neoforge", vanilla, { neoforge: ["1.21.5"] })).toEqual({ enabled: true });
+  });
+});
+
+describe("versionForLoader", () => {
+  const vanilla = ["26.3", "1.21.5", "1.20.1"];
+  it("keeps the current version when the loader supports it", () => {
+    expect(versionForLoader("forge", "1.20.1", vanilla, { forge: ["1.21.5", "1.20.1"] })).toBe("1.20.1");
+  });
+  it("always keeps the current version for vanilla", () => {
+    expect(versionForLoader("vanilla", "26.3", vanilla, {})).toBe("26.3");
+  });
+  it("moves to the newest supported version otherwise", () => {
+    expect(versionForLoader("forge", "26.3", vanilla, { forge: ["1.20.1", "1.21.5"] })).toBe("1.21.5");
+  });
+  it("returns null when nothing is supported or the list is not fetched", () => {
+    expect(versionForLoader("forge", "26.3", vanilla, { forge: ["1.7.10"] })).toBeNull();
+    expect(versionForLoader("forge", "26.3", vanilla, {})).toBeNull();
   });
 });
 
@@ -44,12 +59,13 @@ describe("versionsFor", () => {
 });
 
 describe("fallbackLoader", () => {
-  it("falls back to vanilla when the tab is no longer selectable", () => {
-    expect(fallbackLoader("fabric", "1.8.9", { fabric: ["1.20.1"] })).toBe("vanilla");
+  const vanilla = ["1.21.5", "1.20.1", "1.8.9"];
+  it("falls back to vanilla when the loader no longer supports the version", () => {
+    expect(fallbackLoader("fabric", "1.8.9", vanilla, { fabric: ["1.20.1"] })).toBe("vanilla");
   });
-  it("keeps the current loader when selectable", () => {
-    expect(fallbackLoader("fabric", "1.20.1", { fabric: ["1.20.1"] })).toBe("fabric");
-    expect(fallbackLoader("vanilla", "1.8.9", {})).toBe("vanilla");
+  it("keeps the current loader when it supports the version", () => {
+    expect(fallbackLoader("fabric", "1.20.1", vanilla, { fabric: ["1.20.1"] })).toBe("fabric");
+    expect(fallbackLoader("vanilla", "1.8.9", vanilla, {})).toBe("vanilla");
   });
 });
 

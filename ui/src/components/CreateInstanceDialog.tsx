@@ -29,6 +29,7 @@ import {
   pickLoaderVersion,
   type TabState,
   tabState,
+  versionForLoader,
   versionsFor,
 } from "../features/instances/createLoader";
 import { defaultName, nextName } from "../features/instances/createName";
@@ -141,6 +142,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const [advanced, setAdvanced] = useState(ADVANCED_DEFAULTS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  const vanillaIds = versions.data?.map((v) => v.id) ?? [];
   const gameVersions: Partial<Record<LoaderKind, string[]>> = {
     fabric: fabricGames.data,
     forge: forgeGames.data,
@@ -172,7 +174,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   }, [first, version]);
 
   // 対応バージョンの一覧が取り直され、選んでいるローダーが今のバージョンに対応しなくなったら Vanilla に戻す
-  const fallback = version === null ? loader : fallbackLoader(loader, version, gameVersions);
+  const fallback = version === null ? loader : fallbackLoader(loader, version, vanillaIds, gameVersions);
   useEffect(() => {
     if (version !== null && fallback !== loader) select(fallback, version);
     // select は毎回作り直されるが、判定に使う値はこの 3 つだけである
@@ -185,11 +187,11 @@ function CreateForm({ onDone }: { onDone: () => void }) {
       // バージョンの一覧がまだ届いていない間は、ローダーの一覧も揃っていないものとして扱う
       if (version === null) return { enabled: false, reason: "loading" };
     }
-    return tabState(l, version, gameVersions);
+    return tabState(l, vanillaIds, gameVersions);
   };
   const tabTitle = (s: ReturnType<typeof tabInfo>) => {
     if (s.enabled || s.reason === null) return undefined;
-    return { unsupportedVersion: t("create.tabUnsupportedVersion"), loading: t("create.loadingLoaderVersions") }[s.reason];
+    return { noVersions: t("create.tabNoVersions"), loading: t("create.loadingLoaderVersions") }[s.reason];
   };
 
   const loaderVersion = loader === "vanilla" ? null : pickLoaderVersion(loaderVersions.data ?? [], chosenLoaderVersion);
@@ -223,7 +225,6 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     );
   };
 
-  const vanillaIds = versions.data?.map((v) => v.id) ?? [];
   const versionOptions = versionsFor(loader, vanillaIds, gameVersions[loader]);
 
   return (
@@ -243,7 +244,10 @@ function CreateForm({ onDone }: { onDone: () => void }) {
         <Tabs
           selectedKey={loader}
           onSelectionChange={(key) => {
-            if (version !== null && key !== loader) select(key as LoaderKind, version);
+            if (version === null || key === loader) return;
+            // 今のバージョンに対応していなければ、そのローダーが対応する最新のバージョンへ移る
+            const next = versionForLoader(key as LoaderKind, version, vanillaIds, gameVersions);
+            if (next !== null) select(key as LoaderKind, next);
           }}
           className="px-5 pt-4"
         >
@@ -285,7 +289,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
                 label={t("create.version")}
                 value={version ?? ""}
                 options={versionOptions.map((id) => ({ id, label: id }))}
-                onChange={(next) => select(fallbackLoader(loader, next, gameVersions), next)}
+                onChange={(next) => select(fallbackLoader(loader, next, vanillaIds, gameVersions), next)}
                 triggerClassName={controlWidth}
               />
             </QueryRow>

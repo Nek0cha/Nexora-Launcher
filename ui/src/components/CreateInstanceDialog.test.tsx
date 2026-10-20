@@ -233,17 +233,17 @@ describe("CreateInstanceDialog", () => {
   });
 
   it("gives a disabled tab's reason to assistive tech through aria-describedby", async () => {
+    // Forge の一覧に、ダイアログが知るどの正式版も含まれない
+    vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) => (loader === "forge" ? ["1.7.10"] : GAME_VERSIONS[loader] ?? []));
     const dialog = await openWithLoaders();
-    // 1.16.5 は Forge だけが対応する
-    await choose(dialog, /Version/, "1.16.5");
-    await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(true));
-    const fabric = tab(dialog, "Fabric");
-    const id = fabric.getAttribute("aria-describedby");
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Forge"))).toBe(true));
+    const forge = tab(dialog, "Forge");
+    const id = forge.getAttribute("aria-describedby");
     expect(id).toBeTruthy();
-    expect(document.getElementById(id as string)?.textContent).toBe("Not available for this version");
+    expect(document.getElementById(id as string)?.textContent).toBe("No supported versions");
     // 選べるタブには参照を付けない
-    expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false);
-    expect(tab(dialog, "Forge").getAttribute("aria-describedby")).toBeNull();
+    expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false);
+    expect(tab(dialog, "Fabric").getAttribute("aria-describedby")).toBeNull();
   });
 
   it("marks every loader tab as loading until its list arrives", async () => {
@@ -271,16 +271,14 @@ describe("CreateInstanceDialog", () => {
     expect(options).toEqual(["1.21.5", "1.21.4"]);
   });
 
-  it("disables the Fabric tab for a version Fabric does not support, and falls back to Vanilla when the selected loader loses support", async () => {
+  it("keeps a loader tab enabled for an unsupported selected version and falls back to Vanilla when the selected loader loses support", async () => {
     const dialog = await openWithLoaders();
     await choose(dialog, /Version/, "1.8.9");
-    await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(true));
-    expect(tab(dialog, "Fabric").querySelector("[title]")?.getAttribute("title")).toBe("Not available for this version");
-    // 古いバージョンは Forge の対応範囲の外
-    expect(isDisabledTab(tab(dialog, "Forge"))).toBe(true);
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.8.9"));
+    expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false);
+    expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false);
 
     await choose(dialog, /Version/, "1.21.5");
-    await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false));
     fireEvent.click(tab(dialog, "Fabric"));
     await waitFor(() => expect(nameInput(dialog).value).toBe("Fabric 1.21.5"));
     // 一覧が取り直され、選んでいるバージョンに Fabric が対応しなくなった
@@ -290,6 +288,29 @@ describe("CreateInstanceDialog", () => {
     await waitFor(() => expect(isSelectedTab(tab(dialog, "Vanilla"))).toBe(true));
     expect(nameInput(dialog).value).toBe("1.21.5");
     expect(within(dialog).queryByRole("button", { name: /Loader version/ })).toBeNull();
+  });
+
+  it("moves to the newest version a loader supports when the latest release is unsupported", async () => {
+    vi.mocked(listVersions).mockResolvedValue([{ id: "26.3", releaseTime: "2026-09-01T00:00:00Z" }, ...LOADER_TEST_VERSIONS]);
+    vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) =>
+      loader === "fabric" ? ["26.3", ...(GAME_VERSIONS.fabric ?? [])] : (GAME_VERSIONS[loader] ?? []),
+    );
+    mount();
+    const dialog = await open();
+    await waitFor(() => expect(nameInput(dialog).value).toBe("26.3"));
+    await waitFor(() => expect(isDisabledTab(tab(dialog, "Forge"))).toBe(false));
+    expect(isDisabledTab(tab(dialog, "NeoForge"))).toBe(false);
+    expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false);
+
+    fireEvent.click(tab(dialog, "Forge"));
+    await waitFor(() => expect(isSelectedTab(tab(dialog, "Forge"))).toBe(true));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Version/ }).textContent).toContain("1.21.5"));
+    await waitFor(() => expect(nameInput(dialog).value).toBe("Forge 1.21.5"));
+
+    fireEvent.click(tab(dialog, "Vanilla"));
+    await waitFor(() => expect(isSelectedTab(tab(dialog, "Vanilla"))).toBe(true));
+    expect(within(dialog).getByRole("button", { name: /Version/ }).textContent).toContain("1.21.5");
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
   });
 
   it('names the instance "Fabric 1.21.4" until the user edits the name', async () => {

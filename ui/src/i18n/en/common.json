@@ -54,7 +54,7 @@
       "neoforge": "NeoForge",
       "quilt": "Quilt"
     },
-    "tabUnsupportedVersion": "Not available for this version",
+    "tabNoVersions": "No supported versions",
     "loadingLoaderVersions": "Loading loader versions",
     "noLoaderVersions": "No loader versions are available for this Minecraft version",
     "retryLoaders": "Retry loading loaders"

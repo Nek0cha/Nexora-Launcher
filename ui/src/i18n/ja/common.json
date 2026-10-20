@@ -54,7 +54,7 @@
       "neoforge": "NeoForge",
       "quilt": "Quilt"
     },
-    "tabUnsupportedVersion": "このバージョンには対応していません",
+    "tabNoVersions": "対応するバージョンがありません",
     "loadingLoaderVersions": "ローダーを読み込んでいます",
     "noLoaderVersions": "このMinecraftのバージョンに対応するローダーのバージョンがありません",
     "retryLoaders": "ローダーの一覧を再試行"
