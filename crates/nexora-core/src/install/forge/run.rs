@@ -211,6 +211,36 @@ async fn run_one(
         log_tail: format!("failed to start {}: {e}", program.display()),
     })?;
 
+    let result = supervise(&mut child, p, token).await;
+    if result.is_err() {
+        // 起動した後に失敗したとき（キャンセル、0 以外の終了、待てなかった、出力が足りない）は、
+        // 途中まで書かれた出力を残さない。実行したのは出力が揃っていなかったからなので、消しても失うものはない。
+        remove_declared_outputs(p);
+    }
+    result
+}
+
+/// 宣言された出力だけを消す（できる範囲で）。それ以外のファイルには触らない。
+fn remove_declared_outputs(p: &PlannedProcessor) {
+    for o in &p.outputs {
+        match std::fs::remove_file(&o.path) {
+            Ok(()) => {
+                tracing::debug!(processor = %p.name, path = %o.path.display(), "removed a partial processor output");
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::debug!(processor = %p.name, path = %o.path.display(), error = %e, "could not remove a processor output");
+            }
+        }
+    }
+}
+
+/// 起動した子プロセスの出力を読み、終了（またはキャンセル）を待つ。
+async fn supervise(
+    child: &mut tokio::process::Child,
+    p: &PlannedProcessor,
+    token: &CancellationToken,
+) -> Result<(), CoreError> {
     let tail = Arc::new(Mutex::new(LogTail::default()));
     // 片方だけを読むと、もう片方のパイプが満ちて子が止まるため、両方を同時に読む。
     let mut readers = Vec::new();
@@ -243,10 +273,15 @@ async fn run_one(
         }
     };
     // 終了後はパイプが閉じるまで読み切る。孫のプロセスがパイプを持ち続けても、キャンセルでは抜けられる。
-    for r in readers {
+    for i in 0..readers.len() {
         tokio::select! {
-            _ = r => {}
-            _ = token.cancelled() => return Err(CoreError::Cancelled),
+            _ = &mut readers[i] => {}
+            _ = token.cancelled() => {
+                for r in &readers[i..] {
+                    r.abort();
+                }
+                return Err(CoreError::Cancelled);
+            }
         }
     }
 

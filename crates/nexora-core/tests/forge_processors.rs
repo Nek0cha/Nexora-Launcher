@@ -1,7 +1,7 @@
 //! Forge の processor の実行。実際の Java の代わりに、引数を記録するだけの「偽の Java」を使う。
 //!
 //! 偽の Java は `-cp <cp> <Main-Class>` の後ろの引数を `記録先 目印 動作 出力` として読む。
-//! 動作は `ok`（出力に書く）、`fail`（標準エラーに書いて終了コード 3）、`spin`（出力に追記し続ける）、
+//! 動作は `ok`（出力に書く）、`fail`（標準エラーに書いて終了コード 3）、`failwrite`（出力に書いてから終了コード 4）、`spin`（出力に追記し続ける）、
 //! `none`（何もしない）。
 
 use std::io::Write;
@@ -29,6 +29,10 @@ if \"%~6\"==\"fail\" (\r\n\
   echo boom-stderr-end 1>&2\r\n\
   exit /b 3\r\n\
 )\r\n\
+if \"%~6\"==\"failwrite\" (\r\n\
+  >\"%~7\" echo partial\r\n\
+  exit /b 4\r\n\
+)\r\n\
 if \"%~6\"==\"spin\" goto spin\r\n\
 exit /b 0\r\n\
 :spin\r\n\
@@ -44,6 +48,7 @@ echo \"$2\" >> \"$1\"\n\
 case \"$3\" in\n\
   ok) echo good > \"$4\" ;;\n\
   fail) echo some stdout; echo boom-stderr-end >&2; exit 3 ;;\n\
+  failwrite) echo partial > \"$4\"; exit 4 ;;\n\
   spin) while :; do echo beat >> \"$4\"; sleep 0.05; done ;;\n\
 esac\n\
 exit 0\n";
@@ -336,4 +341,70 @@ async fn progress_reports_each_step() {
     .await
     .unwrap();
     assert_eq!(*seen.lock().unwrap(), vec![(0, 2), (1, 2), (1, 2), (2, 2)]);
+}
+
+#[tokio::test]
+async fn cancel_removes_declared_outputs_so_the_next_run_starts_over() {
+    let f = fixture();
+    let beat = f.dir.join("beat.txt");
+    let declared = vec![ExpectedOutput {
+        path: beat.clone(),
+        sha1: None,
+    }];
+    let list = vec![f.processor("spin", "spin", &beat, declared.clone())];
+    let token = CancellationToken::new();
+    let java = f.java.clone();
+    let run_token = token.clone();
+    let handle =
+        tokio::spawn(async move { run_processors(&java, &list, &run_token, |_, _| {}).await });
+    for _ in 0..200 {
+        if beat.is_file() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(beat.is_file(), "the fake java never started");
+    token.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(10), handle)
+        .await
+        .expect("run_processors did not return after cancel")
+        .unwrap();
+    assert_eq!(result.unwrap_err().code(), "task.cancelled");
+    // 途中まで書かれた出力は残さない。
+    assert!(!beat.exists(), "a partial output was left behind");
+    assert!(f.jar.is_file());
+    assert!(f.java.is_file());
+
+    // 次の実行では省略されずにもう一度動く（ok で書いて終わる）。
+    let again = vec![f.processor("spin", "ok", &beat, declared)];
+    run_processors(&f.java, &again, &CancellationToken::new(), |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(f.calls(), vec!["spin", "spin"]);
+    assert!(beat.is_file());
+}
+
+#[tokio::test]
+async fn nonzero_exit_removes_declared_outputs_only() {
+    let f = fixture();
+    let out = f.dir.join("partial.jar");
+    let other = f.dir.join("keep.txt");
+    std::fs::write(&other, b"keep").unwrap();
+    let list = vec![f.processor(
+        "partial",
+        "failwrite",
+        &out,
+        vec![ExpectedOutput {
+            path: out.clone(),
+            sha1: None,
+        }],
+    )];
+    let err = run_processors(&f.java, &list, &CancellationToken::new(), |_, _| {})
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "install.processor_failed");
+    assert!(!out.exists(), "a partial output was left behind");
+    assert!(other.is_file());
+    assert!(f.jar.is_file());
+    assert!(f.record.is_file());
 }
