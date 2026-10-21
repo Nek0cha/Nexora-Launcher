@@ -39,6 +39,11 @@ export function activeCount(table: TaskTable): number {
   return Object.values(table).filter((t) => !isTerminal(t)).length;
 }
 
+/** そのインスタンスで終わっていない（待機中か実行中の）、指定の種類のタスクがあるか。 */
+export function hasActiveTask(table: TaskTable, kind: string, instanceId: string): boolean {
+  return Object.values(table).some((t) => t.kind === kind && t.instanceId === instanceId && !isTerminal(t));
+}
+
 export function sortedTasks(table: TaskTable): TaskSnapshot[] {
   return Object.values(table).sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 }

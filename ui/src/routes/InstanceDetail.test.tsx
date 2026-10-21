@@ -382,6 +382,19 @@ describe("InstanceDetail", () => {
       await expectLocked(await openContent({ tasks: [duplicateTask] }));
     });
 
+    it("while a content task is running or queued", async () => {
+      const contentTask: TaskSnapshot = { ...duplicateTask, id: "c1", kind: "content" };
+      await expectLocked(await openContent({ tasks: [contentTask] }));
+      cleanup();
+      vi.mocked(addContentFiles).mockClear();
+      await expectLocked(await openContent({ tasks: [{ ...contentTask, state: "queued" }] }));
+    });
+
+    it("but not for a content task of another instance", async () => {
+      await openContent({ tasks: [{ ...duplicateTask, id: "c2", kind: "content", instanceId: "other" }] });
+      expect(screen.queryByText(/You can't change content while/)).toBeNull();
+    });
+
     it("but not after the duplicate task finished", async () => {
       await openContent({ tasks: [{ ...duplicateTask, state: "succeeded" }] });
       expect(screen.queryByText(/You can't change content while/)).toBeNull();

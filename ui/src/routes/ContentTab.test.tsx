@@ -164,8 +164,15 @@ function mount(busy = false, target: Instance = instance) {
       <ToastRegion />
     </QueryClientProvider>
   );
-  const { rerender } = render(tree(busy));
-  return { setBusy: (b: boolean) => rerender(tree(b)) };
+  let view = render(tree(busy));
+  return {
+    setBusy: (b: boolean) => view.rerender(tree(b)),
+    // 同じ QueryClient のまま、タブを閉じて開き直す
+    remount: () => {
+      view.unmount();
+      view = render(tree(busy));
+    },
+  };
 }
 
 const subTab = (name: RegExp) => screen.getByRole("tab", { name });
@@ -276,7 +283,7 @@ describe("ContentTab", () => {
   it("controls and drops are disabled while the instance is busy", async () => {
     mount(true);
     await ready();
-    expect(screen.getByText("You can't change content while the instance is running, installing or being duplicated.")).toBeTruthy();
+    expect(screen.getByText("You can't change content while the instance is running, installing, being duplicated or adding or updating mods.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
     act(() => handlers!.enter());
@@ -572,6 +579,42 @@ describe("ContentTab", () => {
       // 閉じられる
       await press(within(summary).getByRole("button", { name: "Dismiss" }));
       expect(screen.queryByRole("alert", { name: "Mods that couldn't be updated: 1" })).toBeNull();
+    });
+
+    it("the failure summary survives reopening the tab", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(contentTaskReport).mockResolvedValue(report({
+        updated: 1,
+        failures: [{ name: "Mod Menu", error: { code: "net.offline", params: {}, detail: null } }],
+      }));
+      const view = mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update all (2)" }));
+      await screen.findByRole("alert", { name: "Mods that couldn't be updated: 1" });
+      handlers = null;
+      view.remount();
+      await ready();
+      const summary = await screen.findByRole("alert", { name: "Mods that couldn't be updated: 1" });
+      expect(within(summary).getByText("Mod Menu")).toBeTruthy();
+    });
+
+    it("toggling, removing or adding a mod checks updates again", async () => {
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+      // 有効、無効の切り替え
+      await press(screen.getByRole("button", { name: "Enable Sodium" }));
+      await waitFor(() => expect(setContentEnabled).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(2));
+      // 削除
+      await press(screen.getByRole("button", { name: "Remove Mystery" }));
+      await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Remove" }));
+      await waitFor(() => expect(removeContent).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(3));
+      // ファイルの追加
+      await act(async () => handlers!.drop(["C:\Downloads\a.jar"]));
+      await waitFor(() => expect(addContentFiles).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(4));
     });
 
     it("a failed or cancelled update task is reported", async () => {

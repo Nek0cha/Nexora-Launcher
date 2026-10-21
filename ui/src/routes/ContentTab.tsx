@@ -39,7 +39,12 @@ import {
   useRemove,
   useSetEnabled,
 } from "../features/content/useContent";
-import { useContentUpdates, useRecheckUpdates, useUpdateContent } from "../features/modrinth/useModrinth";
+import {
+  useContentUpdates,
+  useRecheckUpdates,
+  useUpdateContent,
+  useUpdateFailures,
+} from "../features/modrinth/useModrinth";
 
 const kinds: ContentKind[] = ["mod", "resourcepack", "shader"];
 
@@ -162,7 +167,8 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   const update = useUpdateContent(instance.id);
   // 更新している行と、直前の更新で失敗した MOD
   const [updating, setUpdating] = useState<ReadonlySet<string>>(noRows);
-  const [failures, setFailures] = useState<ItemFailure[] | null>(null);
+  // 失敗の一覧はタブを開き直しても残す
+  const [failures, setFailures] = useUpdateFailures(instance.id);
 
   // 開いたときに 1 回だけ特定する（StrictMode で効果が 2 回走っても 1 回にする）
   const identified = useRef(false);
@@ -286,7 +292,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
         setUpdating(noRows);
       }
     },
-    [update.mutateAsync],
+    [setFailures, update.mutateAsync],
   );
 
   const onUpdate = useCallback((item: ContentItem) => void runUpdate([item.relPath]), [runUpdate]);

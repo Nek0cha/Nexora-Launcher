@@ -38,7 +38,11 @@ import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { activeDuplicate } from "../features/instances/duplicateState";
 import { useRunning } from "../features/play/useGameSync";
+import { hasActiveTask } from "../features/tasks/taskTable";
 import { useTasks } from "../features/tasks/useTasks";
+
+/** Modrinth からの導入と更新のタスクの種類（core の CONTENT_KIND と同じ） */
+const CONTENT_TASK_KIND = "content";
 import { ContentTab } from "./ContentTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -123,9 +127,13 @@ export default function InstanceDetail() {
     );
 
   const isRunning = running?.some((s) => s.instanceId === instance.id) ?? false;
-  // コンテンツを変えられないのは、起動中、インストール中、複製中（複製元として読まれている）のとき
+  // コンテンツを変えられないのは、起動中、インストール中、複製中（複製元として読まれている）、
+  // Modrinth からの導入や更新のタスクが待機中か実行中のとき
   const contentLocked =
-    isRunning || instance.state === "installing" || activeDuplicate(tasks, instance.id) !== undefined;
+    isRunning ||
+    instance.state === "installing" ||
+    activeDuplicate(tasks, instance.id) !== undefined ||
+    hasActiveTask(tasks, CONTENT_TASK_KIND, instance.id);
 
   // コンテンツのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
   const layout = tab === "content" ? "h-full min-h-[34rem] max-w-5xl" : "max-w-2xl";

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addContentFiles,
   identifyContent,
@@ -10,9 +10,24 @@ import {
 import type { ContentKind } from "../../bindings/ContentKind";
 
 const contentKey = (instanceId: string) => ["content", instanceId] as const;
+/** 更新の確認の結果のキー（useModrinth の useContentUpdates と同じ） */
+export const updatesKey = (instanceId: string) => ["content-updates", instanceId] as const;
 
-export function useContentList(instanceId: string, kind: ContentKind) {
-  return useQuery({ queryKey: [...contentKey(instanceId), kind], queryFn: () => listContent(instanceId, kind) });
+/**
+ * 中身を変えたあとに、一覧と更新の確認を取り直す。更新の確認が古いままだと、
+ * 消した行や名前の変わった行を「すべて更新」に送ってしまう。
+ */
+function invalidateChanged(client: QueryClient, instanceId: string) {
+  void client.invalidateQueries({ queryKey: contentKey(instanceId) });
+  void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
+}
+
+export function useContentList(instanceId: string, kind: ContentKind, enabled = true) {
+  return useQuery({
+    queryKey: [...contentKey(instanceId), kind],
+    queryFn: () => listContent(instanceId, kind),
+    enabled,
+  });
 }
 
 /**
@@ -42,7 +57,7 @@ export function useSetEnabled(instanceId: string) {
   return useMutation({
     mutationFn: ({ kind, relPath, enabled }: { kind: ContentKind; relPath: string; enabled: boolean }) =>
       setContentEnabled(instanceId, kind, relPath, enabled),
-    onSettled: () => client.invalidateQueries({ queryKey: contentKey(instanceId) }),
+    onSettled: () => invalidateChanged(client, instanceId),
   });
 }
 
@@ -51,7 +66,7 @@ export function useRemove(instanceId: string) {
   return useMutation({
     mutationFn: ({ kind, relPath }: { kind: ContentKind; relPath: string }) =>
       removeContent(instanceId, kind, relPath),
-    onSettled: () => client.invalidateQueries({ queryKey: contentKey(instanceId) }),
+    onSettled: () => invalidateChanged(client, instanceId),
   });
 }
 
@@ -60,6 +75,6 @@ export function useAddFiles(instanceId: string) {
   return useMutation({
     mutationFn: ({ kind, paths, overwrite }: { kind: ContentKind; paths: string[]; overwrite: boolean }) =>
       addContentFiles(instanceId, kind, paths, overwrite),
-    onSettled: () => client.invalidateQueries({ queryKey: contentKey(instanceId) }),
+    onSettled: () => invalidateChanged(client, instanceId),
   });
 }

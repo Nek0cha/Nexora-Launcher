@@ -1,4 +1,5 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import {
   checkContentUpdates,
   contentTaskReport,
@@ -9,9 +10,11 @@ import {
   updateContent,
 } from "../../api/commands";
 import type { ContentTaskReport } from "../../bindings/ContentTaskReport";
+import type { ItemFailure } from "../../bindings/ItemFailure";
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { SearchQuery } from "../../bindings/SearchQuery";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
+import { updatesKey } from "../content/useContent";
 import { isTerminal, type TaskTable } from "../tasks/taskTable";
 import { TASKS_KEY } from "../tasks/useTasks";
 
@@ -19,7 +22,6 @@ import { TASKS_KEY } from "../tasks/useTasks";
 export const SEARCH_PAGE_SIZE = 20;
 
 const searchKey = (instanceId: string | null, query: SearchQuery) => ["modrinth-search", instanceId, query] as const;
-const updatesKey = (instanceId: string) => ["content-updates", instanceId] as const;
 
 /** 検索。条件が変わると別のキャッシュになり、古い結果は新しい入力に混ざらない（placeholderData は使わない）。 */
 export function useModrinthSearch(instanceId: string | null, query: SearchQuery) {
@@ -34,31 +36,49 @@ export function useModrinthSearch(instanceId: string | null, query: SearchQuery)
   });
 }
 
-/** タスクが終わるのを待つ。タスクの表（useTaskSync が更新する）を見て、表に無ければ一度だけ取得する。 */
+/** タスクを直接読み直す間隔（ミリ秒） */
+export const WAIT_POLL_MS = 2000;
+/** 続けてこの回数だけ読めなければ、待つのをやめてその失敗で終える */
+export const WAIT_MAX_FAILURES = 3;
+
+/**
+ * タスクが終わるのを待つ。タスクの表（useTaskSync が更新する）を見つつ、表の通知を取りこぼしたときや
+ * 表に無い（すでに終わって消えた）ときに備えて、一定の間隔で直接も読む。
+ * 続けて読めなければ（タスクが見つからないなど）、いつまでも待たずにその失敗で終える。
+ */
 export function waitForTask(client: QueryClient, taskId: string): Promise<TaskSnapshot> {
   return new Promise((resolve, reject) => {
     let done = false;
+    let failures = 0;
     const cache = client.getQueryCache();
     const finish = (fn: () => void) => {
       if (done) return;
       done = true;
       unsubscribe();
+      clearInterval(timer);
       fn();
     };
     const check = () => {
       const task = client.getQueryData<TaskTable>(TASKS_KEY)?.[taskId];
       if (task && isTerminal(task)) finish(() => resolve(task));
     };
+    const poll = () => {
+      getTask(taskId).then(
+        (task) => {
+          failures = 0;
+          if (isTerminal(task)) finish(() => resolve(task));
+        },
+        (error: unknown) => {
+          failures += 1;
+          if (failures >= WAIT_MAX_FAILURES) finish(() => reject(error));
+        },
+      );
+    };
     const unsubscribe = cache.subscribe(check);
+    const timer = setInterval(poll, WAIT_POLL_MS);
     check();
     if (done) return;
-    // 表に無い（すでに終わって消えた）場合に備え、一度だけ直接取得する
-    getTask(taskId).then(
-      (task) => {
-        if (isTerminal(task)) finish(() => resolve(task));
-      },
-      () => {},
-    );
+    poll();
   });
 }
 
@@ -139,4 +159,27 @@ export function useUpdateContent(instanceId: string) {
       void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
     },
   });
+}
+
+const failuresKey = (instanceId: string) => ["content-update-failures", instanceId] as const;
+
+/**
+ * 直前の「すべて更新」で失敗した MOD。画面の状態に持ち（すぐに描き直す）、同じものを問い合わせの
+ * キャッシュにも置いて（通信はしない）、タブを閉じて開き直しても残す。
+ */
+export function useUpdateFailures(instanceId: string) {
+  const client = useQueryClient();
+  const [failures, setLocal] = useState<ItemFailure[] | null>(
+    () => client.getQueryData<ItemFailure[] | null>(failuresKey(instanceId)) ?? null,
+  );
+  const set = useCallback(
+    (next: ItemFailure[] | null) => {
+      setLocal(next);
+      // 見ている部品が無くても消えないようにする
+      client.setQueryDefaults(failuresKey(instanceId), { gcTime: Infinity });
+      client.setQueryData(failuresKey(instanceId), next);
+    },
+    [client, instanceId],
+  );
+  return [failures, set] as const;
 }
