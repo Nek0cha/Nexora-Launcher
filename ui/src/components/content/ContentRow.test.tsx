@@ -221,18 +221,26 @@ describe("ContentRow version picker", () => {
 
   it("the full version name of an option is shown in a tooltip while it is focused", async () => {
     const long = "mc1.21.5-0.7.0-beta.3+build.987654-extra-long";
-    vi.mocked(listContentVersions).mockResolvedValue([choice("v9", long, "beta"), choices[2]!]);
+    vi.mocked(listContentVersions).mockResolvedValue([choice("v9", long, "beta"), choices[1]!]);
+    // 切り詰めているとき（文字の幅が箱より広い）だけ出す。jsdom は幅を持たないので、長い版だけ広く見せる
+    const width = vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (this: Element) {
+      return this.textContent === long ? 900 : 0;
+    });
     mount([sodium], {});
     fireEvent.click(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
     const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
     // キーボードで先頭の版に移る
-    const first = within(list).getAllByRole("option")[0]!;
+    const [first, short] = within(list).getAllByRole("option") as [HTMLElement, HTMLElement];
     fireEvent.keyDown(document.body, { key: "Tab" });
     act(() => first.focus());
     // 開いている一覧の外は読み上げから隠れるので、隠れたものも含めて探す（読み上げは選択肢の文字で全体が分かる）
     const tooltip = await screen.findByRole("tooltip", { hidden: true });
     expect(tooltip.textContent).toBe(long);
     expect(within(list).getAllByRole("option")[0]!.textContent).toContain(long);
+    // 切り詰めていない版では出さない
+    act(() => short.focus());
+    await waitFor(() => expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull());
+    width.mockRestore();
   });
 
   it("a pinned mod shows a pin that explains updates are not offered", async () => {

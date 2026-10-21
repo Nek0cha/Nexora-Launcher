@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -207,17 +207,30 @@ function VersionPicker(
 }
 
 /**
- * 版の一覧の、版の名前。長い名前は切り詰め、乗せたときとキーボードで選んでいるときに全体をツールチップで見せる。
+ * 版の一覧の、版の名前。長い名前は切り詰め、切り詰めているときだけ、乗せたときとキーボードで選んでいるときに
+ * 全体をツールチップで見せる（一覧の右に出し、ほかの版に重ねない）。
  * 選択肢そのものはフォーカスを受けるので、名前は無効の Focusable にしてツールチップの位置の基準にだけ使う
  * （読み上げは選択肢の文字に全体が入っている）。
  */
 function VersionName({ text, isOpen }: { text: string; isOpen: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // ツールチップは選択肢の行の右（一覧の外）に出す
+  const anchor = useRef<Element | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  // 開くときに、切り詰めているかを測る
+  useLayoutEffect(() => {
+    if (!isOpen || !ref.current) return;
+    anchor.current = ref.current.closest('[role="option"]') ?? ref.current;
+    setTruncated(ref.current.scrollWidth > ref.current.clientWidth);
+  }, [isOpen, text]);
   return (
-    <TooltipTrigger isOpen={isOpen}>
+    <TooltipTrigger isOpen={isOpen && truncated}>
       <Focusable isDisabled>
-        <span className="tabular min-w-0 flex-1 truncate">{text}</span>
+        <span ref={ref} className="tabular min-w-0 flex-1 truncate">
+          {text}
+        </span>
       </Focusable>
-      <Tooltip offset={6} placement="top start" className={tooltipClass}>
+      <Tooltip triggerRef={anchor} offset={12} placement="end" className={tooltipClass}>
         {text}
       </Tooltip>
     </TooltipTrigger>
