@@ -1,5 +1,6 @@
 //! インスタンスの中身（mod、リソースパック、シェーダー）の型。
 
+pub(crate) mod journal;
 pub(crate) mod store;
 
 pub mod identify;

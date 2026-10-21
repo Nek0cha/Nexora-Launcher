@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::auth::login::{LOGIN_KIND, LoginMethod, LoginNotifier, UrlOpener, run_login};
 use crate::auth::service::AuthService;
 use crate::content::identify::{IdentifyReport, identify};
+use crate::content::journal;
 use crate::content::modrinth::categories;
 use crate::content::ops::{self, AddReport};
 use crate::content::scan::scan;
@@ -529,6 +530,12 @@ impl Launcher {
 
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {
         self.processes.list()
+    }
+
+    /// 途中で止まった中身の操作を復旧する（spec 0 の 3.7 節）。起動時に、コマンドを受け付ける前に
+    /// 同期的に呼ぶ（復旧が終わるまで走査で DB を更新させないため）。1 件の失敗は警告に残して続ける。
+    pub fn recover_operations(&self) -> Result<(), CoreError> {
+        journal::recover(&self.env.db, &self.env.paths)
     }
 
     /// ランチャーの起動時に一度だけ呼ぶ（tokio の実行環境の中で）。二度目以降は何もしない。

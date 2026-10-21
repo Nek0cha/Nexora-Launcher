@@ -149,6 +149,44 @@ async fn mutations_are_refused_with_instance_busy_while_running() {
 }
 
 #[tokio::test]
+async fn recover_operations_rolls_back_a_prepared_operation() {
+    let h = harness().await;
+    put_mod(&h, "a.jar", b"new");
+    put_mod(&h, "added.jar", b"added");
+    let targets = r#"[{"rel_path":"mods/a.jar","backup":"a.jar","created":false},
+                      {"rel_path":"mods/added.jar","backup":null,"created":true}]"#;
+    let id = h.id.clone();
+    h.launcher
+        .db()
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO operations VALUES ('op1', 'install', ?1, 'prepared', ?2, 1)",
+                [id.as_str(), targets],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let staging = h.paths.staging_dir().join("op1");
+    std::fs::create_dir_all(staging.join("backup")).unwrap();
+    std::fs::write(staging.join("backup").join("a.jar"), b"old").unwrap();
+
+    h.launcher.recover_operations().unwrap();
+
+    assert_eq!(
+        std::fs::read(h.game_dir().join("mods").join("a.jar")).unwrap(),
+        b"old"
+    );
+    assert!(!h.game_dir().join("mods").join("added.jar").exists());
+    assert!(!staging.exists());
+    let left: i64 = h
+        .launcher
+        .db()
+        .with_conn(|conn| Ok(conn.query_row("SELECT count(*) FROM operations", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
 async fn add_then_identify_then_list_shows_modrinth_metadata() {
     let h = harness().await;
     let body = b"some-jar-bytes";
