@@ -1,12 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, GridListItem, Tooltip, TooltipTrigger } from "react-aria-components";
+import { Button, Focusable, GridListItem, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconResourcePack from "~icons/ph/image";
 import IconShader from "~icons/ph/package";
 import IconMod from "~icons/ph/puzzle-piece";
+import IconUpdate from "~icons/ph/arrow-up";
+import IconSpinner from "~icons/ph/circle-notch";
 import IconTrash from "~icons/ph/trash";
+import IconWarning from "~icons/ph/warning";
 import { getContentIcon } from "../../api/commands";
+import type { AvailableUpdate } from "../../bindings/AvailableUpdate";
 import type { ContentItem } from "../../bindings/ContentItem";
 import type { ContentKind } from "../../bindings/ContentKind";
 import { tooltipClass } from "../tooltip";
@@ -27,6 +31,14 @@ const iconButton = [
   "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3 disabled:opacity-50 disabled:hover:bg-transparent",
+  ring,
+].join(" ");
+
+// 更新のボタン。行の中で目立ちすぎないよう小さく、文字は短くする（行き先の版はツールチップで見せる）
+const updateButton = [
+  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-line-control px-1.5 text-xs text-accent @lg:px-2",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 pressed:bg-surface-3 disabled:opacity-50 disabled:hover:bg-transparent",
   ring,
 ].join(" ");
 
@@ -81,6 +93,13 @@ export function ContentRow(props: {
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  /** 更新の確認で見つかった更新。無ければ更新のボタンを出さない */
+  update?: AvailableUpdate | null;
+  /** このインスタンスに合う版が Modrinth に無かったとき、名前の横に控えめな印を出す */
+  noCompatible?: boolean;
+  /** 更新している最中。ボタンの代わりに「更新中…」を出す */
+  updating?: boolean;
+  onUpdate?: (item: ContentItem) => void;
 }) {
   const { t } = useTranslation();
   const { item } = props;
@@ -101,6 +120,23 @@ export function ContentRow(props: {
             {item.versionNumber !== null && (
               <span className="tabular shrink-0 text-xs text-text-muted">{item.versionNumber}</span>
             )}
+            {props.noCompatible && (
+              <TooltipTrigger delay={300}>
+                <Focusable>
+                  <span
+                    role="img"
+                    tabIndex={0}
+                    aria-label={t("modrinth.noCompatible")}
+                    className={`shrink-0 self-center rounded-sm text-warning outline-none ${ring}`}
+                  >
+                    <IconWarning aria-hidden className="size-3.5" />
+                  </span>
+                </Focusable>
+                <Tooltip offset={6} className={tooltipClass}>
+                  {t("modrinth.noCompatible")}
+                </Tooltip>
+              </TooltipTrigger>
+            )}
             {item.installedAs === "dependency" && (
               <span className="shrink-0 self-center rounded-sm border border-line px-1.5 text-xs leading-4 text-text-muted">
                 {t("content.row.dependency")}
@@ -110,6 +146,31 @@ export function ContentRow(props: {
           {item.description !== null && <span className="truncate text-xs text-text-muted">{item.description}</span>}
         </div>
       </div>
+      {/* 更新があるときだけ出す。無効の MOD にも出す（更新しても無効のまま） */}
+      {props.updating ? (
+        <span className="inline-flex h-7 shrink-0 items-center gap-1 px-2 text-xs text-text-muted">
+          <IconSpinner aria-hidden className="size-3.5 motion-safe:animate-spin" />
+          <span>{t("modrinth.updating")}</span>
+        </span>
+      ) : (
+        props.update && (
+          <TooltipTrigger delay={300}>
+            <Button
+              aria-label={t("modrinth.updateNamed", { name, version: props.update.versionNumber })}
+              isDisabled={props.busy}
+              onPress={() => props.onUpdate?.(item)}
+              className={updateButton}
+            >
+              <IconUpdate aria-hidden className="size-3.5 shrink-0" />
+              {/* 狭い一覧では絵だけにして、名前の幅を残す（版はツールチップで分かる） */}
+              <span className="hidden @lg:inline">{t("modrinth.update")}</span>
+            </Button>
+            <Tooltip offset={6} className={tooltipClass}>
+              {t("modrinth.updateTo", { version: props.update.versionNumber })}
+            </Tooltip>
+          </TooltipTrigger>
+        )
+      )}
       <Button
         aria-label={t("content.row.enable", { name })}
         aria-pressed={item.enabled}

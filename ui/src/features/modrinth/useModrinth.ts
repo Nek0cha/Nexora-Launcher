@@ -103,12 +103,17 @@ export function useInstallContent() {
   });
 }
 
-/** 更新の確認（キャッシュを使う）。 */
-export function useContentUpdates(instanceId: string) {
+/**
+ * 更新の確認（キャッシュを使う）。`enabled` が偽の間は確認しない。
+ * オフラインや 429 で失敗しても繰り返さない（画面は「あとで確認します」にとどめる）。
+ */
+export function useContentUpdates(instanceId: string, enabled = true) {
   return useQuery({
     queryKey: updatesKey(instanceId),
     queryFn: () => checkContentUpdates(instanceId, false),
     staleTime: 5 * 60_000,
+    retry: false,
+    enabled,
   });
 }
 

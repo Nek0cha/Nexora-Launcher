@@ -1,7 +1,8 @@
 import type { ContentItem } from "../../bindings/ContentItem";
 import type { Side } from "../../bindings/Side";
 
-export type StatusKey = "enabled" | "disabled" | "dependency";
+/** 状態の絞り込み。「update」は更新の確認で更新が見つかった行（MOD のサブタブだけで出す）。 */
+export type StatusKey = "enabled" | "disabled" | "dependency" | "update";
 
 export type FilterState = {
   query: string;
@@ -23,11 +24,20 @@ function matchesName(item: ContentItem, query: string): boolean {
   return q === "" || (item.name ?? item.fileName).toLowerCase().includes(q);
 }
 
-function matchesStatus(item: ContentItem, status: StatusKey[]): boolean {
+function matchesStatus(item: ContentItem, status: StatusKey[], updatable: ReadonlySet<string>): boolean {
   if (status.length === 0) return true;
-  return status.some((key) =>
-    key === "enabled" ? item.enabled : key === "disabled" ? !item.enabled : item.installedAs === "dependency",
-  );
+  return status.some((key) => {
+    switch (key) {
+      case "enabled":
+        return item.enabled;
+      case "disabled":
+        return !item.enabled;
+      case "dependency":
+        return item.installedAs === "dependency";
+      case "update":
+        return updatable.has(item.relPath);
+    }
+  });
 }
 
 function matchesMetadata(item: ContentItem, state: FilterState): boolean {
@@ -39,16 +49,18 @@ function matchesMetadata(item: ContentItem, state: FilterState): boolean {
 /**
  * 絞り込む。メタデータの条件があるとき、Modrinth 未特定（local）の行は `visible` に入れず、
  * 名前と状態には合っていた行だけを `excluded` に入れる。
+ * `updatable` は更新が見つかった行の `relPath`。状態の「更新あり」はこれで判定する。
  */
 export function applyFilter(
   items: ContentItem[],
   state: FilterState,
+  updatable: ReadonlySet<string> = new Set(),
 ): { visible: ContentItem[]; excluded: ContentItem[] } {
   const metadata = isMetadataFiltered(state);
   const visible: ContentItem[] = [];
   const excluded: ContentItem[] = [];
   for (const item of items) {
-    if (!matchesName(item, state.query) || !matchesStatus(item, state.status)) continue;
+    if (!matchesName(item, state.query) || !matchesStatus(item, state.status, updatable)) continue;
     if (metadata && item.provider === "local") excluded.push(item);
     else if (matchesMetadata(item, state)) visible.push(item);
   }

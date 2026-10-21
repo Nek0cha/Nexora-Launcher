@@ -72,6 +72,19 @@ describe("applyFilter", () => {
     expect(result.excluded).toEqual([]);
   });
 
+  it("status_filter_has_update_available", () => {
+    const a = item({ relPath: "a", name: "Sodium" });
+    const b = item({ relPath: "b", name: "Lithium", enabled: false });
+    const c = item({ relPath: "c", name: "Iris" });
+    const updatable = new Set(["a", "b"]);
+    expect(applyFilter([a, b, c], { ...emptyFilter, status: ["update"] }, updatable).visible).toEqual([a, b]);
+    // 他の状態とは「どれか」で組み合わせる
+    expect(applyFilter([a, b, c], { ...emptyFilter, status: ["update", "enabled"] }, updatable).visible).toEqual([a, b, c]);
+    expect(applyFilter([a, b, c], { ...emptyFilter, status: ["update"], query: "lith" }, updatable).visible).toEqual([b]);
+    // 確認の結果が無ければ、どの行も「更新あり」に当たらない
+    expect(applyFilter([a, b, c], { ...emptyFilter, status: ["update"] }).visible).toEqual([]);
+  });
+
   it("status filter combines with the others", () => {
     const on = item({ relPath: "1", name: "Aa" });
     const off = item({ relPath: "2", name: "Ab", enabled: false });

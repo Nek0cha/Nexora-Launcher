@@ -11,7 +11,7 @@ import { inputBase } from "../settingsLayout";
 type CategorySlug = keyof (typeof resources)["ja"]["common"]["content"]["category"];
 
 const sides: Side[] = ["required", "optional", "unsupported"];
-const statuses: StatusKey[] = ["enabled", "disabled", "dependency"];
+const defaultStatuses: StatusKey[] = ["enabled", "disabled", "dependency"];
 
 /** 訳のあるカテゴリか。Modrinth の検索結果の categories には、ローダーの名前も混ざっている。 */
 export function isKnownCategory(slug: string): boolean {
@@ -101,6 +101,7 @@ export function ContentSearchField(props: {
  * 絞り込みの部品。一覧には依存しない（5-4 の検索画面でも使う）。
  * `categories` が null（取得できない）ならカテゴリを、`showStatus` が偽なら状態を出さない。
  * `showSearch` が偽なら名前の入力を出さない（呼び出し側が ContentSearchField を別の場所に置く）。
+ * `statuses` は出す状態の札。省くと有効、無効、依存の 3 つ（「更新あり」は MOD のサブタブで足す）。
  */
 export function ContentFilter(props: {
   state: FilterState;
@@ -108,6 +109,7 @@ export function ContentFilter(props: {
   categories: string[] | null;
   showStatus: boolean;
   showSearch?: boolean;
+  statuses?: StatusKey[];
 }) {
   const { t } = useTranslation();
   const { state, onChange } = props;
@@ -141,7 +143,10 @@ export function ContentFilter(props: {
       {props.showStatus && (
         <ChipGroup
           label={t("content.filter.status")}
-          options={statuses.map((id) => ({ id, label: t(`content.filter.statusValue.${id}`) }))}
+          options={(props.statuses ?? defaultStatuses).map((id) => ({
+            id,
+            label: t(`content.filter.statusValue.${id}`),
+          }))}
           selected={state.status}
           onChange={(status) => onChange({ ...state, status })}
         />

@@ -269,7 +269,8 @@
       "statusValue": {
         "enabled": "有効",
         "disabled": "無効",
-        "dependency": "依存"
+        "dependency": "依存",
+        "update": "更新あり"
       }
     },
     "category": {
@@ -405,12 +406,24 @@
     "dependenciesAdded": "依存 MOD を {{count}} 件追加しました",
     "cancelled": "{{name}} の追加をキャンセルしました",
     "noLoader": "このインスタンスにはローダーがないため、MOD を追加できません。",
+    "sort": "並び順",
+    "sortValue": {
+      "relevance": "関連度",
+      "downloads": "ダウンロード数"
+    },
     "update": "更新",
-    "updateAll": "すべて更新",
+    "updateTo": "{{version}} に更新",
+    "updateNamed": "{{name}} を {{version}} に更新",
+    "updating": "更新中…",
+    "updateAll": "すべて更新（{{count}}）",
     "checkUpdates": "更新を確認",
+    "checking": "確認中…",
+    "checkLater": "いまは Modrinth に接続できません。更新はあとで確認します。",
     "upToDate": "すべて最新です",
-    "noCompatible": "このインスタンスに合う版がありません",
+    "noCompatible": "このインスタンスに合う版が Modrinth に見つかりません",
     "updated": "{{count}} 件を更新しました",
-    "failed": "{{name}} に失敗しました"
+    "updateCancelled": "更新をキャンセルしました",
+    "updateFailures": "{{count}} 件を更新できませんでした",
+    "dismiss": "閉じる"
   }
 }

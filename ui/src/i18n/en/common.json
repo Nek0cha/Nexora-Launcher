@@ -269,7 +269,8 @@
       "statusValue": {
         "enabled": "Enabled",
         "disabled": "Disabled",
-        "dependency": "Dependency"
+        "dependency": "Dependency",
+        "update": "Update available"
       }
     },
     "category": {
@@ -405,12 +406,24 @@
     "dependenciesAdded": "Added {{count}} required mods",
     "cancelled": "Adding {{name}} was cancelled",
     "noLoader": "This instance has no mod loader, so mods can't be added.",
+    "sort": "Sort by",
+    "sortValue": {
+      "relevance": "Relevance",
+      "downloads": "Downloads"
+    },
     "update": "Update",
-    "updateAll": "Update all",
+    "updateTo": "Update to {{version}}",
+    "updateNamed": "Update {{name}} to {{version}}",
+    "updating": "Updating…",
+    "updateAll": "Update all ({{count}})",
     "checkUpdates": "Check for updates",
+    "checking": "Checking…",
+    "checkLater": "Can't reach Modrinth right now. Updates will be checked later.",
     "upToDate": "Everything is up to date",
-    "noCompatible": "No compatible version for this instance",
-    "updated": "Updated {{count}} items",
-    "failed": "{{name}} failed"
+    "noCompatible": "No version for this instance was found on Modrinth",
+    "updated": "Mods updated: {{count}}",
+    "updateCancelled": "The update was cancelled",
+    "updateFailures": "Mods that couldn't be updated: {{count}}",
+    "dismiss": "Dismiss"
   }
 }
