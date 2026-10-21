@@ -369,5 +369,28 @@
       "conflictBody": "These files are already installed. Replace them?",
       "replace": "Replace"
     }
+  },
+  "modrinth": {
+    "title": "Modrinth",
+    "search": "Search mods",
+    "install": "Install",
+    "installing": "Installing...",
+    "update": "Update",
+    "updateAll": "Update all",
+    "checkUpdates": "Check for updates",
+    "upToDate": "Everything is up to date",
+    "noCompatible": "No compatible version for this instance",
+    "openPage": "Open on Modrinth",
+    "chooseInstance": "Target instance",
+    "noInstances": "No instance can install this",
+    "confirmTitle": "Install {{name}}",
+    "confirmBody": "Version {{version}} will be installed with {{count}} dependencies.",
+    "incompatibleWarning": "Incompatible with: {{names}}",
+    "installAnyway": "Install anyway",
+    "loadMore": "Load more",
+    "noResults": "No results",
+    "done": "Installed ({{deps}} dependencies)",
+    "updated": "Updated {{count}} items",
+    "failed": "{{name}} failed"
   }
 }

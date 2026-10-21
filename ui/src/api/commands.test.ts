@@ -20,7 +20,15 @@ import {
   openInstanceFolder,
   stopInstance,
   updateInstance,
+  searchModrinth,
+  previewContentInstall,
+  installContent,
+  checkContentUpdates,
+  updateContent,
+  contentTaskReport,
+  openModrinthProject,
 } from "./commands";
+import type { SearchQuery } from "../bindings/SearchQuery";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
 import type { NewInstance } from "../bindings/NewInstance";
 
@@ -130,5 +138,27 @@ describe("content commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("list_content_categories", { kind: "mod" });
     await getContentIcon("k");
     expect(invoke).toHaveBeenLastCalledWith("get_content_icon", { key: "k" });
+  });
+});
+
+describe("modrinth commands", () => {
+  it("passes the camelCase argument names", async () => {
+    const query: SearchQuery = {
+      query: "x", mcVersion: null, loaders: [], categories: [], clientSides: [], serverSides: [], sort: "relevance",
+    };
+    await searchModrinth(null, query, 20);
+    expect(invoke).toHaveBeenLastCalledWith("search_modrinth", { instanceId: null, query, offset: 20 });
+    await previewContentInstall("i1", "p1");
+    expect(invoke).toHaveBeenLastCalledWith("preview_content_install", { instanceId: "i1", projectId: "p1" });
+    await installContent("i1", "p1", true);
+    expect(invoke).toHaveBeenLastCalledWith("install_content", { instanceId: "i1", projectId: "p1", acceptIncompatible: true });
+    await checkContentUpdates("i1", true);
+    expect(invoke).toHaveBeenLastCalledWith("check_content_updates", { instanceId: "i1", force: true });
+    await updateContent("i1", ["mods/a.jar"]);
+    expect(invoke).toHaveBeenLastCalledWith("update_content", { instanceId: "i1", relPaths: ["mods/a.jar"] });
+    await contentTaskReport("t1");
+    expect(invoke).toHaveBeenLastCalledWith("content_task_report", { taskId: "t1" });
+    await openModrinthProject("sodium");
+    expect(invoke).toHaveBeenLastCalledWith("open_modrinth_project", { slug: "sodium" });
   });
 });

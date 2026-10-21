@@ -369,5 +369,28 @@
       "conflictBody": "次のファイルはすでにあります。置き換えますか？",
       "replace": "置き換える"
     }
+  },
+  "modrinth": {
+    "title": "Modrinth",
+    "search": "MOD を検索",
+    "install": "導入",
+    "installing": "導入中…",
+    "update": "更新",
+    "updateAll": "すべて更新",
+    "checkUpdates": "更新を確認",
+    "upToDate": "すべて最新です",
+    "noCompatible": "このインスタンスに合う版がありません",
+    "openPage": "Modrinth のページを開く",
+    "chooseInstance": "導入先のインスタンス",
+    "noInstances": "導入できるインスタンスがありません",
+    "confirmTitle": "{{name}} を導入",
+    "confirmBody": "版 {{version}}、依存 {{count}} 件を一緒に導入します。",
+    "incompatibleWarning": "次の MOD と非互換です: {{names}}",
+    "installAnyway": "それでも導入",
+    "loadMore": "さらに表示",
+    "noResults": "見つかりませんでした",
+    "done": "導入しました（依存 {{deps}} 件）",
+    "updated": "{{count}} 件を更新しました",
+    "failed": "{{name}} に失敗しました"
   }
 }
