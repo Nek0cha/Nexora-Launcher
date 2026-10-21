@@ -201,21 +201,28 @@ function RowIcon({ item }: { item: ContentItem }) {
   });
   const remote = remoteFailed ? null : item.iconUrl;
   const src = remote ?? (localFailed ? null : (local.data ?? null));
-  if (src !== null)
-    return (
-      <img
-        key={src}
-        src={src}
-        alt=""
-        loading="lazy"
-        onError={() => (remote !== null ? setRemoteFailed(true) : setLocalFailed(true))}
-        className="size-8 shrink-0 rounded-sm object-cover"
-      />
-    );
   const Icon = defaultIcons[item.kind];
+  // 枠は画像の有無にかかわらず同じ正方形にする。画像は枠に重ねて枠いっぱいに広げ、はみ出しは切り抜く。
+  // grid の中の高さ 100% は効かない（画像の縦横比の高さになる）ので、絶対配置で枠に合わせる
   return (
-    <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-text-muted">
-      <Icon aria-hidden className="size-4" />
+    <span
+      data-testid="content-icon"
+      className="relative grid aspect-square size-9 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-2 text-text-muted"
+    >
+      {src !== null ? (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          width={36}
+          height={36}
+          loading="lazy"
+          onError={() => (remote !== null ? setRemoteFailed(true) : setLocalFailed(true))}
+          className="absolute inset-0 block size-full max-w-none object-cover"
+        />
+      ) : (
+        <Icon aria-hidden className="size-4" />
+      )}
     </span>
   );
 }

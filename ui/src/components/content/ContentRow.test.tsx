@@ -215,3 +215,20 @@ describe("ContentRow version picker", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
   });
 });
+
+describe("ContentRow icon", () => {
+  it("the icon and the placeholder sit in the same square frame", () => {
+    const withIcon = item({ iconUrl: "https://cdn.modrinth.com/data/p1/icon.png" });
+    const withoutIcon = item({ relPath: "plain.jar", fileName: "plain.jar", sha1: "s9", name: "Plain", iconUrl: null });
+    mount([withIcon, withoutIcon], {});
+    for (const name of ["Sodium", "Plain"]) {
+      const frame = within(row(name)).getByTestId("content-icon");
+      // 枠が大きさを決める（正方形、縮まない、はみ出しは切る）
+      for (const c of ["size-9", "aspect-square", "shrink-0", "overflow-hidden"]) expect(frame.classList).toContain(c);
+    }
+    const img = within(row("Sodium")).getByTestId("content-icon").querySelector("img")!;
+    expect(img.classList).toContain("size-full");
+    expect(img.classList).toContain("object-cover");
+    expect(within(row("Plain")).getByTestId("content-icon").querySelector("img")).toBeNull();
+  });
+});
