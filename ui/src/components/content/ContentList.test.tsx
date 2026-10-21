@@ -141,4 +141,17 @@ describe("ContentList", () => {
     fireEvent.error(document.querySelector("img[src^='data:']")!);
     await waitFor(() => expect(document.querySelector("img")).toBeNull());
   });
+  it("keeps rendering when a row's file name changes after a toggle", () => {
+    const client = new QueryClient();
+    const props = { onToggle: vi.fn(), onRemove: vi.fn(), busy: false };
+    const view = (items: ContentItem[]) => (
+      <QueryClientProvider client={client}>
+        <ContentList items={items} {...props} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view([item({ relPath: "mods/sodium.jar", fileName: "sodium.jar" })]));
+    // 無効にするとファイル名（= 行の id）が変わる。同じ位置の行で id が変わっても落ちないこと
+    rerender(view([item({ relPath: "mods/sodium.jar.disabled", fileName: "sodium.jar.disabled", enabled: false })]));
+    expect(screen.getByText("Sodium")).toBeTruthy();
+  });
 });
