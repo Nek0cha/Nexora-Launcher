@@ -177,7 +177,8 @@
   },
   "instances": {
     "more": "More",
-    "details": "Details",
+    "content": "Content",
+    "settings": "Settings",
     "duplicate": "Duplicate",
     "delete": "Delete",
     "openFolder": "Open folder",

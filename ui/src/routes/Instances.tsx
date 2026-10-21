@@ -3,6 +3,7 @@ import { Button, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-compone
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import IconMore from "~icons/ph/dots-three-bold";
+import IconContent from "~icons/ph/puzzle-piece";
 import IconEmpty from "~icons/ph/stack";
 import { openInstanceFolder } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
@@ -39,6 +40,20 @@ const popoverClass = [
   "motion-safe:placement-bottom:entering:-translate-y-1 motion-safe:placement-bottom:exiting:-translate-y-1",
   "motion-safe:placement-top:entering:translate-y-1 motion-safe:placement-top:exiting:translate-y-1",
   "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
+].join(" ");
+
+// 「コンテンツ」のリンク。行の主な行き先なので、枠を付けて控えめな操作より目立たせる
+const contentLink = [
+  "inline-flex h-9 items-center gap-1.5 rounded-md border border-line-control px-2.5 text-sm text-text",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 pressed:bg-surface-3",
+  ring,
+].join(" ");
+
+// 名前のリンク。見た目は名前のまま、乗せたときだけ下線を出す
+const nameLink = [
+  "min-w-0 self-start truncate rounded-sm text-text-strong underline-offset-2 hover:underline",
+  ring,
 ].join(" ");
 
 const menuItemClass =
@@ -209,9 +224,10 @@ function InstanceRow({
   return (
     <li aria-labelledby={nameId} className="relative flex min-h-16 items-center gap-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span id={nameId} className="truncate text-text-strong">
+        {/* 名前からも詳細（コンテンツのタブ）を開ける */}
+        <Link id={nameId} to={`/instances/${instance.id}`} className={nameLink}>
           {instance.name}
-        </span>
+        </Link>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-text-muted">
           <span className="tabular">{instance.mcVersion}</span>
           {dot}
@@ -241,8 +257,13 @@ function InstanceRow({
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <PlayButton instance={instance} size="row" isDisabled={busy} />
-        <Link to={`/instances/${instance.id}`} className={rowButton}>
-          {t("instances.details")}
+        <Link to={`/instances/${instance.id}`} className={contentLink}>
+          <IconContent aria-hidden className="size-4 shrink-0" />
+          <span>{t("instances.content")}</span>
+        </Link>
+        {/* 詳細の設定のタブを開く */}
+        <Link to={`/instances/${instance.id}`} state={{ tab: "settings" }} className={rowButton}>
+          {t("instances.settings")}
         </Link>
         <MenuTrigger>
           <Button aria-label={t("instances.more")} isDisabled={busy} className={`${rowButton} w-9 px-0`}>

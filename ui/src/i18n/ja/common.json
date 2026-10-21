@@ -177,7 +177,8 @@
   },
   "instances": {
     "more": "その他",
-    "details": "詳細",
+    "content": "コンテンツ",
+    "settings": "設定",
     "duplicate": "複製",
     "delete": "削除",
     "openFolder": "フォルダを開く",
