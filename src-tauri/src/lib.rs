@@ -170,6 +170,8 @@ pub fn run() {
             commands::install_content,
             commands::check_content_updates,
             commands::update_content,
+            commands::list_content_versions,
+            commands::change_content_version,
             commands::content_task_report,
             commands::open_modrinth_project,
             commands::get_content_icon,

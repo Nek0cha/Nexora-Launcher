@@ -18,7 +18,7 @@ use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
-use nexora_core::launcher::{CreatedInstance, InstallPreview};
+use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
@@ -366,6 +366,37 @@ pub async fn update_content(
         .services()?
         .launcher
         .update_content(&instance_id, rel_paths)
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD の行の、このインスタンスに合う版の一覧（新しい順、いまの版に印）。
+#[tauri::command]
+pub async fn list_content_versions(
+    state: State<'_, AppState>,
+    instance_id: String,
+    rel_path: String,
+) -> CmdResult<Vec<VersionChoice>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_content_versions(&instance_id, &rel_path)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD を選んだ版に入れ替えるタスクを始め、そのタスクの ID を返す。
+/// `install_content` と同じ理由で `async` にする。
+#[tauri::command]
+pub async fn change_content_version(
+    state: State<'_, AppState>,
+    instance_id: String,
+    rel_path: String,
+    version_id: String,
+) -> CmdResult<String> {
+    state
+        .services()?
+        .launcher
+        .change_content_version(&instance_id, &rel_path, &version_id)
         .map_err(ErrorPayload::from)
 }
 
