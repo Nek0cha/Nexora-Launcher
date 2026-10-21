@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { AvailableUpdate } from "../../bindings/AvailableUpdate";
 import type { ContentItem } from "../../bindings/ContentItem";
 import type { VersionChoice } from "../../bindings/VersionChoice";
-import { ContentRow, ROW_SIZE } from "./ContentRow";
+import { ContentRow, ROW_SIZE, rowId } from "./ContentRow";
 
 /** 行に出す更新の状態。キーはどれも行の `relPath`。 */
 export type RowUpdates = {
@@ -31,14 +31,24 @@ export function ContentList(props: {
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  /** 切り替えの最中の行（キーは `rowId`）。その行のトグルだけを止める */
+  toggling?: ReadonlySet<string>;
   label?: string;
   updates?: RowUpdates;
 }) {
   const { t } = useTranslation();
   const { updates } = props;
   // 行はデータの id で識別される。id が無いと位置で識別され、切り替えや更新でファイル名（= relPath）が
-  // 変わったときに「id を変えられない」で落ちる。relPath を id にして、行ごとに別の項目として扱わせる
-  const rows = useMemo(() => props.items.map((item) => ({ id: item.relPath, item })), [props.items]);
+  // 変わったときに「id を変えられない」で落ちる。id は `.disabled` を除いた relPath にして、
+  // 有効無効を切り替えても同じ行のままにする（作り直すとアイコンやフォーカスが一瞬リセットされる）。
+  // 有効なファイルと無効なファイルが両方あるときだけ、重ならないよう relPath をそのまま使う
+  const rows = useMemo(() => {
+    const ids = new Set(props.items.map((item) => item.relPath));
+    return props.items.map((item) => {
+      const id = rowId(item.relPath);
+      return { id: id !== item.relPath && ids.has(id) ? item.relPath : id, item };
+    });
+  }, [props.items]);
   const instanceId = updates?.instanceId;
   const onChangeVersion = updates?.onChangeVersion;
   const versionPicker = useMemo(
@@ -52,16 +62,18 @@ export function ContentList(props: {
         aria-label={props.label ?? t("content.row.list")}
         items={rows}
         // 行の描画は items が同じなら使い回されるので、busy と操作と更新の状態が替わったら描き直す
-        dependencies={[props.busy, props.onToggle, props.onRemove, updates]}
+        dependencies={[props.busy, props.toggling, props.onToggle, props.onRemove, updates]}
         // 行の中身を一覧の幅で切り替える（狭いときは更新のボタンを絵だけにする）
         className="scroll-thin @container h-full min-h-0 overflow-auto outline-none"
       >
-        {({ item }) => (
+        {({ id, item }) => (
           <ContentRow
+            id={id}
             item={item}
             onToggle={props.onToggle}
             onRemove={props.onRemove}
             busy={props.busy}
+            toggling={props.toggling?.has(id) ?? false}
             update={updates?.available.get(item.relPath) ?? null}
             noCompatible={updates?.noCompatible.has(item.relPath) ?? false}
             updating={updates?.updating.has(item.relPath) ?? false}

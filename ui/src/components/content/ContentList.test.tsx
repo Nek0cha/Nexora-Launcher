@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getContentIcon } from "../../api/commands";
@@ -153,5 +153,59 @@ describe("ContentList", () => {
     // 無効にするとファイル名（= 行の id）が変わる。同じ位置の行で id が変わっても落ちないこと
     rerender(view([item({ relPath: "mods/sodium.jar.disabled", fileName: "sodium.jar.disabled", enabled: false })]));
     expect(screen.getByText("Sodium")).toBeTruthy();
+  });
+
+  it("keeps the same row and icon nodes across a toggle (no remount)", () => {
+    const client = new QueryClient();
+    const props = { onToggle: vi.fn(), onRemove: vi.fn(), busy: false };
+    const view = (items: ContentItem[]) => (
+      <QueryClientProvider client={client}>
+        <ContentList items={items} {...props} />
+      </QueryClientProvider>
+    );
+    const icon = "https://cdn.example/sodium.png";
+    const other = item({ relPath: "mods/iris.jar", fileName: "iris.jar", sha1: "s2", name: "Iris" });
+    const { rerender } = render(view([item({ relPath: "mods/sodium.jar", iconUrl: icon }), other]));
+    const row = screen.getByRole("button", { name: "Enable Sodium" }).closest("[role=row]");
+    const img = document.querySelector(`img[src='${icon}']`);
+    expect(img).not.toBeNull();
+    // キーボードで切り替えた直後も、フォーカスは同じトグルに残る
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => screen.getByRole("button", { name: "Enable Sodium" }).focus());
+    const disabled = item({ relPath: "mods/sodium.jar.disabled", fileName: "sodium.jar.disabled", enabled: false, iconUrl: icon });
+    rerender(view([disabled, other]));
+    const toggle = screen.getByRole("button", { name: "Enable Sodium" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.closest("[role=row]")).toBe(row);
+    expect(document.querySelector(`img[src='${icon}']`)).toBe(img);
+    expect(document.activeElement).toBe(toggle);
+    // 押したときは、いまの（名前の変わった）項目を渡す
+    fireEvent.click(toggle);
+    expect(props.onToggle).toHaveBeenCalledWith(disabled);
+  });
+
+  it("disables only the toggle of a row that is being toggled", () => {
+    const client = new QueryClient();
+    const items = [
+      item({ relPath: "mods/sodium.jar.disabled", fileName: "sodium.jar.disabled", enabled: false }),
+      item({ relPath: "mods/iris.jar", fileName: "iris.jar", sha1: "s2", name: "Iris" }),
+    ];
+    render(
+      <QueryClientProvider client={client}>
+        <ContentList items={items} onToggle={vi.fn()} onRemove={vi.fn()} busy={false} toggling={new Set(["mods/sodium.jar"])} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Enable Iris" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Remove Iris" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("does not collide when both the enabled and the disabled file exist", () => {
+    mount([
+      item({ relPath: "mods/sodium.jar", fileName: "sodium.jar" }),
+      item({ relPath: "mods/sodium.jar.disabled", fileName: "sodium.jar.disabled", sha1: "s2", name: "Sodium old", enabled: false }),
+    ]);
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("Sodium old")).toBeTruthy();
   });
 });

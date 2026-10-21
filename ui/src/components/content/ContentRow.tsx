@@ -102,6 +102,14 @@ const typeBadge: Record<string, string> = {
   alpha: "border-danger/50 text-danger",
 };
 
+/**
+ * 行の id。有効無効の切り替えでファイル名に付け外しする `.disabled` を除いた relPath にして、
+ * 切り替えの前後で同じ行として扱わせる（行を作り直すと、アイコンやフォーカスが一瞬リセットされる）。
+ */
+export function rowId(relPath: string): string {
+  return relPath.endsWith(".disabled") ? relPath.slice(0, -".disabled".length) : relPath;
+}
+
 /** 版を切り替えるときに要るもの。Modrinth で特定された MOD の行にだけ使う。 */
 export type VersionPickerProps = {
   instanceId: string;
@@ -228,10 +236,14 @@ function RowIcon({ item }: { item: ContentItem }) {
 }
 
 export function ContentRow(props: {
+  /** 行の id。省くと `rowId(item.relPath)` */
+  id?: string;
   item: ContentItem;
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  /** この行の切り替えの最中。トグルだけを止める */
+  toggling?: boolean;
   /** 更新の確認で見つかった更新。無ければ更新のボタンを出さない */
   update?: AvailableUpdate | null;
   /** このインスタンスに合う版が Modrinth に無かったとき、名前の横に控えめな印を出す */
@@ -253,7 +265,7 @@ export function ContentRow(props: {
 
   return (
     <GridListItem
-      id={item.relPath}
+      id={props.id ?? rowId(item.relPath)}
       textValue={name}
       className={`flex h-14 items-center gap-3 rounded-md px-3 outline-none hover:bg-surface-1 ${ring}`}
     >
@@ -329,7 +341,7 @@ export function ContentRow(props: {
       <Button
         aria-label={t("content.row.enable", { name })}
         aria-pressed={item.enabled}
-        isDisabled={props.busy}
+        isDisabled={props.busy || (props.toggling ?? false)}
         onPress={() => props.onToggle(item)}
         className={toggleClass}
       >

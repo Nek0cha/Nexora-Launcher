@@ -19,7 +19,7 @@ import type { VersionChoice } from "../bindings/VersionChoice";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
 import { ContentList, type RowUpdates } from "../components/content/ContentList";
-import { ROW_SIZE } from "../components/content/ContentRow";
+import { ROW_SIZE, rowId } from "../components/content/ContentRow";
 import { FailureNotice } from "../components/FailureNotice";
 import { Notice } from "../components/settingsLayout";
 import { useToast } from "../components/toast/useToast";
@@ -189,7 +189,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     mods: [] as ContentItem[],
     toast,
     t,
-    setEnabled: setEnabled.mutate,
+    setEnabled: setEnabled.mutateAsync,
     add: add.mutate,
     identify: identify.mutate,
   });
@@ -202,7 +202,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
       mods: lists.mod.data ?? [],
       toast,
       t,
-      setEnabled: setEnabled.mutate,
+      setEnabled: setEnabled.mutateAsync,
       add: add.mutate,
       identify: identify.mutate,
     };
@@ -210,11 +210,25 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   // 追加の最中のドロップは受けない。状態の反映を待たずに止めるため ref で持つ
   const adding = useRef(false);
 
-  const toggle = useCallback((item: ContentItem) => {
-    latest.current.setEnabled(
-      { kind: item.kind, relPath: item.relPath, enabled: !item.enabled },
-      { onError: latest.current.toast.showError },
-    );
+  // 切り替えの最中の行（キーは rowId）。一覧全体ではなく、その行のトグルだけを止める。
+  // 一覧全体を止めると、押すたびにすべての行のボタンが無効の見た目になって一瞬ちらつく
+  const [toggling, setToggling] = useState<ReadonlySet<string>>(noRows);
+  // 状態の反映を待たずに二度押しを止めるため ref でも持つ
+  const togglingRef = useRef(new Set<string>());
+
+  const toggle = useCallback(async (item: ContentItem) => {
+    const id = rowId(item.relPath);
+    if (togglingRef.current.has(id)) return;
+    togglingRef.current.add(id);
+    setToggling(new Set(togglingRef.current));
+    try {
+      await latest.current.setEnabled({ kind: item.kind, relPath: item.relPath, enabled: !item.enabled });
+    } catch (error) {
+      latest.current.toast.showError(error);
+    } finally {
+      togglingRef.current.delete(id);
+      setToggling(new Set(togglingRef.current));
+    }
   }, []);
 
   const addFiles = useCallback((target: ContentKind, paths: string[], overwrite: boolean) => {
@@ -256,13 +270,14 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
           return;
         }
       }
-      toggle(item);
+      void toggle(item);
     },
     [toggle],
   );
 
   const onRemove = useCallback((item: ContentItem) => {
-    if (latest.current.locked) return;
+    // 切り替えの最中の行は、名前が変わる前の relPath で消さないよう待たせる
+    if (latest.current.locked || togglingRef.current.has(rowId(item.relPath))) return;
     const dependents = item.kind === "mod" ? dependentsOf(latest.current.mods, item) : [];
     setDialog({ type: "remove", item, dependents });
     setDialogOpen(true);
@@ -386,7 +401,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     }
     if (dialog.type === "disable") {
       closeDialog();
-      toggle(dialog.item);
+      void toggle(dialog.item);
     } else if (dialog.type === "remove") {
       if (remove.isPending) return;
       remove.mutate(
@@ -399,7 +414,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     }
   };
 
-  const busy = locked || setEnabled.isPending || remove.isPending || update.isPending || change.isPending;
+  const busy = locked || remove.isPending || update.isPending || change.isPending;
 
   const updateControls: UpdateControls | undefined = canUpdate
     ? {
@@ -442,6 +457,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
               onToggle={onToggle}
               onRemove={onRemove}
               busy={busy}
+              toggling={toggling}
               // ローダーの無いインスタンスには MOD を入れられないので出さない
               addHref={k === "mod" && canUpdate ? `/instances/${instance.id}/modrinth` : undefined}
               updates={k === "mod" ? updateControls : undefined}
@@ -484,6 +500,7 @@ function KindPanel(props: {
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  toggling: ReadonlySet<string>;
   /** 「Modrinth から追加」の行き先。無ければボタンを出さない */
   addHref?: string;
   /** 更新の部品（MOD のサブタブだけ）。無ければ更新の確認もボタンも出さない */
@@ -564,6 +581,7 @@ function KindPanel(props: {
               onToggle={props.onToggle}
               onRemove={props.onRemove}
               busy={props.busy}
+              toggling={props.toggling}
               updates={updates?.rows}
             />
           </div>
@@ -578,6 +596,7 @@ function KindPanel(props: {
               onToggle={props.onToggle}
               onRemove={props.onRemove}
               busy={props.busy}
+              toggling={props.toggling}
               updates={updates?.rows}
               label={t("content.excludedList")}
             />

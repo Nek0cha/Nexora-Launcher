@@ -51,13 +51,19 @@ export function useCategories(kind: ContentKind) {
   });
 }
 
-/** 有効、無効を切り替える。一覧は一部だけ変わっていることがあるので、失敗でも取り直す。 */
+/**
+ * 有効、無効を切り替える。一覧は一部だけ変わっていることがあるので、失敗でも取り直す。
+ * 一覧の取り直しが終わるまで終わったことにしない（古い relPath の行をもう一度押させない）。
+ */
 export function useSetEnabled(instanceId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ kind, relPath, enabled }: { kind: ContentKind; relPath: string; enabled: boolean }) =>
       setContentEnabled(instanceId, kind, relPath, enabled),
-    onSettled: () => invalidateChanged(client, instanceId),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
+      return client.invalidateQueries({ queryKey: contentKey(instanceId) });
+    },
   });
 }
 

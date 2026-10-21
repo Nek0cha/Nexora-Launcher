@@ -251,6 +251,29 @@ describe("ContentTab", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("a pending toggle disables only that row's toggle, not the other rows", async () => {
+    const pending = deferred<null>();
+    vi.mocked(setContentEnabled).mockReturnValue(pending.promise);
+    mount();
+    await ready();
+    await press(screen.getByRole("button", { name: "Enable Mod Menu" }));
+    await waitFor(() => expect(setContentEnabled).toHaveBeenCalledWith("i1", "mod", "modmenu.jar", false));
+    expect(screen.getByRole("button", { name: "Enable Mod Menu" }).hasAttribute("disabled")).toBe(true);
+    // ほかの行の操作はそのまま（一覧全体が無効の見た目にならない）
+    for (const name of ["Enable Sodium", "Remove Sodium", "Enable Mystery", "Remove Mod Menu"])
+      expect(screen.getByRole("button", { name }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Check for updates" }).hasAttribute("disabled")).toBe(false);
+    // 同じ行の二度押しは送らない
+    await press(screen.getByRole("button", { name: "Enable Mod Menu" }));
+    expect(setContentEnabled).toHaveBeenCalledTimes(1);
+    lists.mod = [item(), fabricApi, { ...modMenu, relPath: "modmenu.jar.disabled", fileName: "modmenu.jar.disabled", enabled: false }, localMod];
+    await act(async () => pending.resolve(null));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Enable Mod Menu" }).getAttribute("aria-pressed")).toBe("false"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Enable Mod Menu" }).hasAttribute("disabled")).toBe(false));
+  });
+
   it("toggling a resource pack does not ask", async () => {
     lists.resourcepack = [pack, item({ ...pack, relPath: "dep.zip", sha1: "r2", name: "Addon", dependencies: ["p-faithful"] })];
     mount();
