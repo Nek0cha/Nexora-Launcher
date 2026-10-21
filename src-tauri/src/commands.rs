@@ -324,8 +324,9 @@ pub async fn preview_content_install(
 }
 
 /// MOD を導入するタスクを始め、そのタスクの ID を返す。起動中は `instance.busy`。
+/// タスクの起動に tokio の実行環境が要るため、`async` にする（同期のコマンドは UI のスレッドで動く）。
 #[tauri::command]
-pub fn install_content(
+pub async fn install_content(
     state: State<'_, AppState>,
     instance_id: String,
     project_id: String,
@@ -354,8 +355,9 @@ pub async fn check_content_updates(
 }
 
 /// 選んだ MOD を更新するタスクを始め、そのタスクの ID を返す。
+/// `install_content` と同じ理由で `async` にする。
 #[tauri::command]
-pub fn update_content(
+pub async fn update_content(
     state: State<'_, AppState>,
     instance_id: String,
     rel_paths: Vec<String>,
