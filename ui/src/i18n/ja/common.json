@@ -434,6 +434,7 @@
     "changeVersion": "{{name}} の版を変える（いまは {{version}}）",
     "versions": "{{name}} の版",
     "versionsLoading": "版を読み込んでいます…",
+    "pinned": "この版に固定しているため、更新は案内しません。版の一覧で最新のリリースを選ぶと固定を外せます。",
     "currentVersion": "使用中",
     "versionType": {
       "release": "リリース",

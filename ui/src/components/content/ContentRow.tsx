@@ -19,6 +19,7 @@ import IconMod from "~icons/ph/puzzle-piece";
 import IconUpdate from "~icons/ph/arrow-up";
 import IconCaret from "~icons/ph/caret-down";
 import IconSpinner from "~icons/ph/circle-notch";
+import IconPin from "~icons/ph/push-pin";
 import IconTrash from "~icons/ph/trash";
 import IconWarning from "~icons/ph/warning";
 import { getContentIcon } from "../../api/commands";
@@ -72,9 +73,9 @@ const knobClass = [
   "group-aria-pressed:translate-x-3 group-aria-pressed:bg-accent-ink motion-reduce:transition-colors",
 ].join(" ");
 
-// 版の番号のボタン。文字のように見せ、乗せたときだけ面を出す
+// 版の番号のボタン。文字のように見せ、乗せたときだけ面を出す。長い版の名前は切り詰め、全体はツールチップで見せる
 const versionButton = [
-  "-mx-1 inline-flex h-5 shrink-0 items-center gap-0.5 self-center rounded-sm px-1 text-xs text-text-muted",
+  "-mx-1 inline-flex h-5 min-w-0 max-w-48 shrink items-center gap-0.5 self-center rounded-sm px-1 text-xs text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3 disabled:opacity-50 disabled:hover:bg-transparent",
   ring,
@@ -158,7 +159,9 @@ function VersionPicker(
       >
         {({ v }) => (
           <ListBoxItem id={v.versionId} textValue={v.versionNumber} className={versionOption}>
-            <span className="tabular min-w-0 flex-1 truncate">{v.versionNumber}</span>
+            {({ isHovered, isFocusVisible }) => (
+              <>
+                <VersionName text={v.versionNumber} isOpen={isHovered || isFocusVisible} />
             {v.current && <span className="shrink-0 text-xs text-accent">{t("modrinth.currentVersion")}</span>}
             <span
               className={`shrink-0 rounded-sm border px-1.5 text-xs leading-4 ${typeBadge[v.versionType] ?? typeBadge.release}`}
@@ -167,10 +170,12 @@ function VersionPicker(
                 ? t(`modrinth.versionType.${v.versionType}` as never)
                 : v.versionType}
             </span>
-            {v.datePublished !== "" && (
-              <time dateTime={v.datePublished} className="tabular w-24 shrink-0 text-right text-xs text-text-muted">
-                {date.format(new Date(v.datePublished))}
-              </time>
+                {v.datePublished !== "" && (
+                  <time dateTime={v.datePublished} className="tabular w-24 shrink-0 text-right text-xs text-text-muted">
+                    {date.format(new Date(v.datePublished))}
+                  </time>
+                )}
+              </>
             )}
           </ListBoxItem>
         )}
@@ -179,20 +184,43 @@ function VersionPicker(
 
   return (
     <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-      <Button
-        aria-label={t("modrinth.changeVersion", { name, version: props.version })}
-        isDisabled={props.busy}
-        className={versionButton}
-      >
-        <span className="tabular">{props.version}</span>
-        <IconCaret aria-hidden className="size-3 shrink-0" />
-      </Button>
+      <TooltipTrigger delay={300}>
+        <Button
+          aria-label={t("modrinth.changeVersion", { name, version: props.version })}
+          isDisabled={props.busy}
+          className={versionButton}
+        >
+          <span className="tabular truncate">{props.version}</span>
+          <IconCaret aria-hidden className="size-3 shrink-0" />
+        </Button>
+        <Tooltip offset={6} className={tooltipClass}>
+          {props.version}
+        </Tooltip>
+      </TooltipTrigger>
       <Popover placement="bottom start" offset={4} className={versionPopover}>
         <Dialog aria-label={t("modrinth.versions", { name })} className="outline-none">
           {body}
         </Dialog>
       </Popover>
     </DialogTrigger>
+  );
+}
+
+/**
+ * 版の一覧の、版の名前。長い名前は切り詰め、乗せたときとキーボードで選んでいるときに全体をツールチップで見せる。
+ * 選択肢そのものはフォーカスを受けるので、名前は無効の Focusable にしてツールチップの位置の基準にだけ使う
+ * （読み上げは選択肢の文字に全体が入っている）。
+ */
+function VersionName({ text, isOpen }: { text: string; isOpen: boolean }) {
+  return (
+    <TooltipTrigger isOpen={isOpen}>
+      <Focusable isDisabled>
+        <span className="tabular min-w-0 flex-1 truncate">{text}</span>
+      </Focusable>
+      <Tooltip offset={6} placement="top start" className={tooltipClass}>
+        {text}
+      </Tooltip>
+    </TooltipTrigger>
   );
 }
 
@@ -301,6 +329,23 @@ export function ContentRow(props: {
                 </Focusable>
                 <Tooltip offset={6} className={tooltipClass}>
                   {t("modrinth.noCompatible")}
+                </Tooltip>
+              </TooltipTrigger>
+            )}
+            {item.pinned && (
+              <TooltipTrigger delay={300}>
+                <Focusable>
+                  <span
+                    role="img"
+                    tabIndex={0}
+                    aria-label={t("modrinth.pinned")}
+                    className={`shrink-0 self-center rounded-sm text-text-muted outline-none ${ring}`}
+                  >
+                    <IconPin aria-hidden className="size-3.5" />
+                  </span>
+                </Focusable>
+                <Tooltip offset={6} className={`${tooltipClass} max-w-72`}>
+                  {t("modrinth.pinned")}
                 </Tooltip>
               </TooltipTrigger>
             )}

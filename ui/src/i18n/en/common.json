@@ -434,6 +434,7 @@
     "changeVersion": "Change the version of {{name}} (now {{version}})",
     "versions": "Versions of {{name}}",
     "versionsLoading": "Loading versions…",
+    "pinned": "Fixed at this version, so updates aren't offered. Choose the newest release in the version list to unpin it.",
     "currentVersion": "Current",
     "versionType": {
       "release": "Release",

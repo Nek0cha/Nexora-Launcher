@@ -208,6 +208,43 @@ describe("ContentRow version picker", () => {
     expect(screen.getByText("0.6.0")).toBeTruthy();
   });
 
+  it("the full version name of the trigger is shown in a tooltip", async () => {
+    const long = "mc1.21.5-0.6.13-fabric-build.1234+very-long-suffix";
+    mount([item({ versionNumber: long })], {});
+    const trigger = screen.getByRole("button", { name: `Change the version of Sodium (now ${long})` });
+    // 長い版の名前は行の中では切り詰め、ツールチップで全体を見せる
+    expect(trigger.querySelector(".truncate")).not.toBeNull();
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => trigger.focus());
+    expect((await screen.findByRole("tooltip")).textContent).toBe(long);
+  });
+
+  it("the full version name of an option is shown in a tooltip while it is focused", async () => {
+    const long = "mc1.21.5-0.7.0-beta.3+build.987654-extra-long";
+    vi.mocked(listContentVersions).mockResolvedValue([choice("v9", long, "beta"), choices[2]!]);
+    mount([sodium], {});
+    fireEvent.click(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+    const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
+    // キーボードで先頭の版に移る
+    const first = within(list).getAllByRole("option")[0]!;
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => first.focus());
+    // 開いている一覧の外は読み上げから隠れるので、隠れたものも含めて探す（読み上げは選択肢の文字で全体が分かる）
+    const tooltip = await screen.findByRole("tooltip", { hidden: true });
+    expect(tooltip.textContent).toBe(long);
+    expect(within(list).getAllByRole("option")[0]!.textContent).toContain(long);
+  });
+
+  it("a pinned mod shows a pin that explains updates are not offered", async () => {
+    mount([item({ pinned: true }), iris], {});
+    const message = "Fixed at this version, so updates aren't offered. Choose the newest release in the version list to unpin it.";
+    const pin = within(row("Sodium")).getByRole("img", { name: message });
+    expect(within(row("Iris")).queryByRole("img", { name: message })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => pin.focus());
+    expect((await screen.findByRole("tooltip")).textContent).toBe(message);
+  });
+
   it("a failed version list shows the reason in the popover", async () => {
     vi.mocked(listContentVersions).mockRejectedValue({ code: "net.offline", params: {}, detail: null });
     mount([sodium], {});
