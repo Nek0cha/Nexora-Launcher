@@ -306,6 +306,29 @@ describe("ModrinthBrowser", () => {
     expect(openModrinthProject).toHaveBeenCalledWith("sodium");
   });
 
+  it("sorts_by_relevance_by_default_and_by_downloads_when_chosen", async () => {
+    mount();
+    await screen.findByRole("article", { name: "Sodium" });
+    expect(lastQuery().sort).toBe("relevance");
+    const sort = screen.getByRole("radiogroup", { name: "Sort by" });
+    expect(within(sort).getByRole("radio", { name: "Relevance" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(sort).getByRole("radio", { name: "Downloads" }));
+    await waitFor(() => expect(lastQuery().sort).toBe("downloads"));
+    // 選んでいる方をもう一度押しても、選択は外れない
+    fireEvent.click(within(sort).getByRole("radio", { name: "Downloads" }));
+    expect(within(sort).getByRole("radio", { name: "Downloads" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(sort).getByRole("radio", { name: "Relevance" }));
+    await waitFor(() => expect(lastQuery().sort).toBe("relevance"));
+  });
+
+  it("the_sort_control_is_also_shown_for_an_instance", async () => {
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Sort by" })).getByRole("radio", { name: "Downloads" }));
+    await waitFor(() => expect(lastQuery().sort).toBe("downloads"));
+    expect(lastQuery().mcVersion).toBe("1.20.1");
+  });
+
   it("shows the name, description, downloads and categories of a hit", async () => {
     mount();
     const sodium = await screen.findByRole("article", { name: "Sodium" });

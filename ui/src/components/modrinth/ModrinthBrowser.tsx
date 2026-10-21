@@ -7,7 +7,10 @@ import {
   ListBoxItem,
   Popover,
   Select as AriaSelect,
+  type Key,
   SelectValue,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconCaret from "~icons/ph/caret-up-down";
@@ -22,6 +25,7 @@ import type { Instance } from "../../bindings/Instance";
 import type { LoaderKind } from "../../bindings/LoaderKind";
 import type { SearchHit } from "../../bindings/SearchHit";
 import type { SearchQuery } from "../../bindings/SearchQuery";
+import type { SearchSort } from "../../bindings/SearchSort";
 import { emptyFilter, type FilterState } from "../../features/content/contentFilter";
 import { useCategories } from "../../features/content/useContent";
 import { useVersions } from "../../features/instances/useCreateInstance";
@@ -70,6 +74,40 @@ const popoverMotion = [
   "motion-safe:placement-top:entering:translate-y-1 motion-safe:placement-top:exiting:translate-y-1",
   "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
 ].join(" ");
+
+const sortOptions: SearchSort[] = ["relevance", "downloads"];
+
+// 並び順の切り替え。2 つだけなので、枠の中に並べて選んだ方に面を敷く（サブタブと同じ見せ方）
+const sortItemClass = [
+  "inline-flex h-7 cursor-default items-center rounded-sm px-2.5 text-xs text-text-muted outline-none",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:text-text selected:bg-surface-3 selected:text-text-strong",
+  ring,
+].join(" ");
+
+/** 並び順の選択。選んでいる方を押しても外れない。 */
+function SortToggle(props: { value: SearchSort; onChange: (value: SearchSort) => void }) {
+  const { t } = useTranslation();
+  return (
+    <ToggleButtonGroup
+      aria-label={t("modrinth.sort")}
+      selectionMode="single"
+      disallowEmptySelection
+      selectedKeys={[props.value]}
+      onSelectionChange={(keys: Set<Key>) => {
+        const [next] = keys;
+        if (next !== undefined) props.onChange(next as SearchSort);
+      }}
+      className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-line-control p-0.5"
+    >
+      {sortOptions.map((id) => (
+        <ToggleButton key={id} id={id} className={sortItemClass}>
+          {t(`modrinth.sortValue.${id}`)}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+}
 
 const optionClass =
   "flex h-9 cursor-default items-center gap-2 rounded-sm px-2 text-sm text-text outline-none hover:bg-surface-3 focused:bg-surface-3 selected:text-text-strong";
@@ -241,6 +279,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
   const [filter, setFilter] = useState<FilterState>(emptyFilter);
   const [mcVersion, setMcVersion] = useState<string | null>(null);
   const [loaders, setLoaders] = useState<ModLoader[]>([]);
+  const [sort, setSort] = useState<SearchSort>("relevance");
   const categories = useCategories("mod");
   const instances = useInstances();
   const settings = useSettings();
@@ -256,9 +295,9 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
       categories: filter.categories,
       clientSides: filter.client,
       serverSides: filter.server,
-      sort: "relevance",
+      sort,
     }),
-    [text, instance, mcVersion, loaders, filter.categories, filter.client, filter.server],
+    [text, instance, mcVersion, loaders, filter.categories, filter.client, filter.server, sort],
   );
   const search = useModrinthSearch(instance?.id ?? null, query);
 
@@ -328,6 +367,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
               {t("modrinth.total", { value: number.format(total) })}
             </span>
           )}
+          <SortToggle value={sort} onChange={setSort} />
         </div>
         <div className="scroll-thin min-h-0 flex-1 overflow-auto pr-1">
           {search.isPending && !error ? (
