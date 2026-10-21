@@ -9,7 +9,6 @@
   },
   "empty": {
     "instances": "インスタンスはまだありません。バージョンを選んで作成しましょう。",
-    "browse": "Mod やリソースパックを探す機能は、今後のバージョンで使えるようになります。",
     "accounts": "Microsoft アカウントを追加すると、Minecraft を遊べます。"
   },
   "play": {
@@ -77,7 +76,8 @@
       "install": "インストール",
       "launch": "起動",
       "login": "ログイン",
-      "duplicate": "複製"
+      "duplicate": "複製",
+      "content": "MOD"
     },
     "state": {
       "queued": "待機中",
@@ -177,7 +177,8 @@
   },
   "instances": {
     "more": "その他",
-    "details": "詳細",
+    "content": "コンテンツ",
+    "settings": "設定",
     "duplicate": "複製",
     "delete": "削除",
     "openFolder": "フォルダを開く",
@@ -270,7 +271,8 @@
       "statusValue": {
         "enabled": "有効",
         "disabled": "無効",
-        "dependency": "依存"
+        "dependency": "依存",
+        "update": "更新あり"
       }
     },
     "category": {
@@ -335,7 +337,8 @@
       "resourcepack": "リソースパック",
       "shader": "シェーダー"
     },
-    "busy": "起動中、インストール中、複製中のインスタンスは変更できません。",
+    "busy": "起動中、インストール中、複製中、MOD の追加中や更新中のインスタンスは変更できません。",
+    "busyShort": "いまは変更できません（起動中、インストール中など）",
     "excluded": "絞り込みの対象外 {{count}} 件",
     "excludedShow": "表示",
     "excludedHide": "隠す",
@@ -369,5 +372,77 @@
       "conflictBody": "次のファイルはすでにあります。置き換えますか？",
       "replace": "置き換える"
     }
+  },
+  "modrinth": {
+    "title": "Modrinth",
+    "browseTitle": "MOD を探す",
+    "addFromModrinth": "Modrinth から追加",
+    "instanceTitle": "{{name}} に MOD を追加",
+    "search": "MOD を検索",
+    "mcVersion": "Minecraft のバージョン",
+    "anyVersion": "すべてのバージョン",
+    "loader": "ローダー",
+    "fixed": "固定: {{version}} / {{loader}}",
+    "fixedLabel": "このインスタンスの条件",
+    "total": "{{value}} 件",
+    "searching": "検索しています…",
+    "noResults": "条件に合う MOD は見つかりませんでした。",
+    "offline": "Modrinth に接続できません。検索と追加は、オンラインのときに使えます。",
+    "retry": "再試行",
+    "loadMore": "さらに表示",
+    "downloads": "{{value}} ダウンロード",
+    "results": "検索結果",
+    "openPage": "Modrinth のページを開く",
+    "addTo": "インスタンスに追加",
+    "addToLast": "{{name}} に追加",
+    "addToLastUnset": "前回のインスタンスに追加",
+    "install": "追加",
+    "installing": "追加中…",
+    "installed": "導入済み",
+    "chooseInstance": "追加先のインスタンス",
+    "noInstances": "追加できるインスタンスがありません",
+    "confirmTitle": "{{name}} を追加しますか？",
+    "confirmBody_one": "版 {{version}}、依存 {{count}} 件を一緒に導入します。",
+    "confirmBody_other": "版 {{version}}、依存 {{count}} 件を一緒に導入します。",
+    "incompatibleBody": "導入済みの次の MOD は、この MOD と同時に使えないと宣言しています。",
+    "installAnyway": "それでも追加",
+    "cancel": "キャンセル",
+    "added": "{{name}} を {{instance}} に追加しました",
+    "enabled": "{{instance}} の {{name}} を有効にしました",
+    "dependenciesAdded_one": "依存 MOD を {{count}} 件追加しました",
+    "dependenciesAdded_other": "依存 MOD を {{count}} 件追加しました",
+    "cancelled": "{{name}} の追加をキャンセルしました",
+    "noLoader": "このインスタンスにはローダーがないため、MOD を追加できません。",
+    "sort": "並び順",
+    "sortValue": {
+      "relevance": "関連度",
+      "downloads": "ダウンロード数"
+    },
+    "update": "更新",
+    "updateTo": "{{version}} に更新",
+    "updateNamed": "{{name}} を {{version}} に更新",
+    "updating": "更新中…",
+    "updateAll": "すべて更新（{{count}}）",
+    "checkUpdates": "更新を確認",
+    "checking": "確認中…",
+    "checkLater": "いまは Modrinth に接続できません。更新はあとで確認します。",
+    "upToDate": "すべて最新です",
+    "noCompatible": "このインスタンスに合う版が Modrinth に見つかりません",
+    "updated": "{{count}} 件を更新しました",
+    "updateCancelled": "更新をキャンセルしました",
+    "updateFailures": "{{count}} 件を更新できませんでした",
+    "dismiss": "閉じる",
+    "changeVersion": "{{name}} の版を変える（いまは {{version}}）",
+    "versions": "{{name}} の版",
+    "versionsLoading": "版を読み込んでいます…",
+    "pinned": "この版に固定しているため、更新は案内しません。版の一覧で最新のリリースを選ぶと固定を外せます。",
+    "currentVersion": "使用中",
+    "versionType": {
+      "release": "リリース",
+      "beta": "ベータ",
+      "alpha": "アルファ"
+    },
+    "versionChanged": "{{name}} を {{version}} に切り替えました",
+    "versionChangeCancelled": "版の切り替えをキャンセルしました"
   }
 }

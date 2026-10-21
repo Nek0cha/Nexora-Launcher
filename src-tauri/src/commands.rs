@@ -8,14 +8,17 @@ use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
 use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
+use nexora_core::content::apply::ContentTaskReport;
 use nexora_core::content::identify::IdentifyReport;
+use nexora_core::content::modrinth::{SearchPage, SearchQuery};
 use nexora_core::content::ops::AddReport;
+use nexora_core::content::updates::UpdateCheck;
 use nexora_core::content::{ContentItem, ContentKind};
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
-use nexora_core::launcher::CreatedInstance;
+use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
@@ -289,6 +292,150 @@ pub async fn add_content_files(
         .map_err(ErrorPayload::from)
 }
 
+/// Modrinth で MOD を検索する。`instance_id` があれば、そのインスタンスの Minecraft とローダーで絞る。
+#[tauri::command]
+pub async fn search_modrinth(
+    state: State<'_, AppState>,
+    instance_id: Option<String>,
+    query: SearchQuery,
+    offset: u32,
+) -> CmdResult<SearchPage> {
+    let services = state.services()?;
+    services
+        .launcher
+        .search_modrinth(instance_id.as_deref(), query, offset)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 導入の前に、入る版、依存の数、非互換の導入済みの MOD を調べる。
+#[tauri::command]
+pub async fn preview_content_install(
+    state: State<'_, AppState>,
+    instance_id: String,
+    project_id: String,
+) -> CmdResult<InstallPreview> {
+    let services = state.services()?;
+    services
+        .launcher
+        .preview_content_install(&instance_id, &project_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD を導入するタスクを始め、そのタスクの ID を返す。起動中は `instance.busy`。
+/// タスクの起動に tokio の実行環境が要るため、`async` にする（同期のコマンドは UI のスレッドで動く）。
+#[tauri::command]
+pub async fn install_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+    project_id: String,
+    accept_incompatible: bool,
+) -> CmdResult<String> {
+    state
+        .services()?
+        .launcher
+        .install_content(&instance_id, &project_id, accept_incompatible)
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD の更新を確認する。`force` でキャッシュを使わない。
+#[tauri::command]
+pub async fn check_content_updates(
+    state: State<'_, AppState>,
+    instance_id: String,
+    force: bool,
+) -> CmdResult<UpdateCheck> {
+    let services = state.services()?;
+    services
+        .launcher
+        .check_content_updates(&instance_id, force)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 選んだ MOD を更新するタスクを始め、そのタスクの ID を返す。
+/// `install_content` と同じ理由で `async` にする。
+#[tauri::command]
+pub async fn update_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+    rel_paths: Vec<String>,
+) -> CmdResult<String> {
+    state
+        .services()?
+        .launcher
+        .update_content(&instance_id, rel_paths)
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD の行の、このインスタンスに合う版の一覧（新しい順、いまの版に印）。
+#[tauri::command]
+pub async fn list_content_versions(
+    state: State<'_, AppState>,
+    instance_id: String,
+    rel_path: String,
+) -> CmdResult<Vec<VersionChoice>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_content_versions(&instance_id, &rel_path)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// MOD を選んだ版に入れ替えるタスクを始め、そのタスクの ID を返す。
+/// `install_content` と同じ理由で `async` にする。
+#[tauri::command]
+pub async fn change_content_version(
+    state: State<'_, AppState>,
+    instance_id: String,
+    rel_path: String,
+    version_id: String,
+) -> CmdResult<String> {
+    state
+        .services()?
+        .launcher
+        .change_content_version(&instance_id, &rel_path, &version_id)
+        .map_err(ErrorPayload::from)
+}
+
+/// 導入や更新のタスクの結果。覚えていなければ `null`。
+#[tauri::command]
+pub fn content_task_report(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CmdResult<Option<ContentTaskReport>> {
+    Ok(state.services()?.launcher.content_task_report(&task_id))
+}
+
+/// Modrinth のプロジェクトのページ。`slug` は小文字の英数字、`-`、`_` だけを受け付ける。
+fn modrinth_project_url(slug: &str) -> Option<String> {
+    let valid = !slug.is_empty()
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
+    valid.then(|| format!("https://modrinth.com/mod/{slug}"))
+}
+
+/// Modrinth のプロジェクトのページを、システムのブラウザで開く。
+#[tauri::command]
+pub fn open_modrinth_project(app: AppHandle, slug: String) -> CmdResult<()> {
+    let url = modrinth_project_url(&slug).ok_or_else(|| {
+        CoreError::InvalidInstanceSetting {
+            field: "slug".to_string(),
+        }
+        .to_payload()
+    })?;
+    app.opener().open_url(url, None::<&str>).map_err(|err| {
+        tracing::warn!(%err, "failed to open the Modrinth page");
+        CoreError::Unexpected {
+            message: "failed to open the browser".to_string(),
+        }
+        .to_payload()
+    })
+}
+
 /// Modrinth のカテゴリー名のうち、種類に合うもの。
 #[tauri::command]
 pub async fn list_content_categories(
@@ -543,4 +690,24 @@ pub async fn open_instance_folder(
 #[tauri::command]
 pub fn system_memory_mb() -> u32 {
     nexora_core::system::total_memory_mb()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::modrinth_project_url;
+
+    #[test]
+    fn project_url_accepts_only_slug_characters() {
+        assert_eq!(
+            modrinth_project_url("fabric-api").as_deref(),
+            Some("https://modrinth.com/mod/fabric-api")
+        );
+        assert_eq!(
+            modrinth_project_url("a_b-1").as_deref(),
+            Some("https://modrinth.com/mod/a_b-1")
+        );
+        for bad in ["", "A", "a/b", "a b", "a?x=1", "a#b", "..", r"a\b", "日本"] {
+            assert_eq!(modrinth_project_url(bad), None, "{bad}");
+        }
+    }
 }

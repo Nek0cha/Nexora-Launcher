@@ -1,16 +1,27 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addContentFiles,
+  changeContentVersion,
+  checkContentUpdates,
+  contentTaskReport,
   getContentIcon,
+  getTask,
   identifyContent,
   listContent,
   listContentCategories,
+  listContentVersions,
   removeContent,
   setContentEnabled,
+  updateContent,
 } from "../api/commands";
 import { type DragDropHandlers, onFilesDropped } from "../api/dragDrop";
+import { IpcError } from "../api/ipc";
+import type { ContentTaskReport } from "../bindings/ContentTaskReport";
+import type { TaskSnapshot } from "../bindings/TaskSnapshot";
+import type { UpdateCheck } from "../bindings/UpdateCheck";
 import type { ContentItem } from "../bindings/ContentItem";
 import type { ContentKind } from "../bindings/ContentKind";
 import type { Instance } from "../bindings/Instance";
@@ -27,6 +38,12 @@ vi.mock("../api/commands", () => ({
   addContentFiles: vi.fn(),
   listContentCategories: vi.fn(),
   getContentIcon: vi.fn(),
+  checkContentUpdates: vi.fn(),
+  updateContent: vi.fn(),
+  listContentVersions: vi.fn(),
+  changeContentVersion: vi.fn(),
+  getTask: vi.fn(),
+  contentTaskReport: vi.fn(),
 }));
 
 vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
@@ -66,6 +83,25 @@ const pack = item({
 });
 
 let lists: Record<ContentKind, ContentItem[]>;
+const noUpdates: UpdateCheck = { updates: [], noCompatible: [] };
+const report = (over: Partial<ContentTaskReport> = {}): ContentTaskReport => ({
+  installed: 0, dependenciesAdded: 0, updated: 0, failures: [], ...over,
+});
+
+function snapshot(state: TaskSnapshot["state"], error: TaskSnapshot["error"] = null): TaskSnapshot {
+  return {
+    id: "t1", kind: "content", instanceId: "i1", state, phase: null, progress: { current: 0, total: 0 },
+    revision: 1, error, createdAt: 0, updatedAt: 0,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 let handlers: DragDropHandlers | null;
 const unlisten = vi.fn();
 
@@ -103,6 +139,10 @@ beforeEach(() => {
   vi.mocked(setContentEnabled).mockResolvedValue(null);
   vi.mocked(removeContent).mockResolvedValue(null);
   vi.mocked(addContentFiles).mockResolvedValue({ added: [], conflicts: [], rejected: [] });
+  vi.mocked(checkContentUpdates).mockResolvedValue(noUpdates);
+  vi.mocked(updateContent).mockResolvedValue("t1");
+  vi.mocked(getTask).mockResolvedValue(snapshot("succeeded"));
+  vi.mocked(contentTaskReport).mockResolvedValue(report({ updated: 1 }));
   vi.mocked(onFilesDropped).mockImplementation(async (h) => {
     handlers = h;
     return unlisten;
@@ -115,16 +155,28 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function mount(busy = false) {
+function mount(busy = false, target: Instance = instance) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const tree = (b: boolean) => (
     <QueryClientProvider client={client}>
-      <ContentTab instance={instance} busy={b} />
+      <MemoryRouter initialEntries={["/instances/i1"]}>
+        <Routes>
+          <Route path="/instances/:id" element={<ContentTab instance={target} busy={b} />} />
+          <Route path="/instances/:id/modrinth" element={<p>modrinth page</p>} />
+        </Routes>
+      </MemoryRouter>
       <ToastRegion />
     </QueryClientProvider>
   );
-  const { rerender } = render(tree(busy));
-  return { setBusy: (b: boolean) => rerender(tree(b)) };
+  let view = render(tree(busy));
+  return {
+    setBusy: (b: boolean) => view.rerender(tree(b)),
+    // 同じ QueryClient のまま、タブを閉じて開き直す
+    remount: () => {
+      view.unmount();
+      view = render(tree(busy));
+    },
+  };
 }
 
 const subTab = (name: RegExp) => screen.getByRole("tab", { name });
@@ -199,6 +251,29 @@ describe("ContentTab", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("a pending toggle disables only that row's toggle, not the other rows", async () => {
+    const pending = deferred<null>();
+    vi.mocked(setContentEnabled).mockReturnValue(pending.promise);
+    mount();
+    await ready();
+    await press(screen.getByRole("button", { name: "Enable Mod Menu" }));
+    await waitFor(() => expect(setContentEnabled).toHaveBeenCalledWith("i1", "mod", "modmenu.jar", false));
+    expect(screen.getByRole("button", { name: "Enable Mod Menu" }).hasAttribute("disabled")).toBe(true);
+    // ほかの行の操作はそのまま（一覧全体が無効の見た目にならない）
+    for (const name of ["Enable Sodium", "Remove Sodium", "Enable Mystery", "Remove Mod Menu"])
+      expect(screen.getByRole("button", { name }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Check for updates" }).hasAttribute("disabled")).toBe(false);
+    // 同じ行の二度押しは送らない
+    await press(screen.getByRole("button", { name: "Enable Mod Menu" }));
+    expect(setContentEnabled).toHaveBeenCalledTimes(1);
+    lists.mod = [item(), fabricApi, { ...modMenu, relPath: "modmenu.jar.disabled", fileName: "modmenu.jar.disabled", enabled: false }, localMod];
+    await act(async () => pending.resolve(null));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Enable Mod Menu" }).getAttribute("aria-pressed")).toBe("false"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Enable Mod Menu" }).hasAttribute("disabled")).toBe(false));
+  });
+
   it("toggling a resource pack does not ask", async () => {
     lists.resourcepack = [pack, item({ ...pack, relPath: "dep.zip", sha1: "r2", name: "Addon", dependencies: ["p-faithful"] })];
     mount();
@@ -235,13 +310,35 @@ describe("ContentTab", () => {
   it("controls and drops are disabled while the instance is busy", async () => {
     mount(true);
     await ready();
-    expect(screen.getByText("You can't change content while the instance is running, installing or being duplicated.")).toBeTruthy();
+    expect(screen.getByText("Can't change content right now (running, installing, etc.)")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
     act(() => handlers!.enter());
     expect(screen.queryByText("Drop here to add")).toBeNull();
     await act(async () => handlers!.drop(["C:\\Downloads\\a.jar"]));
     expect(addContentFiles).not.toHaveBeenCalled();
+  });
+
+  it("the busy notice sits in the sub-tab row so the list does not move when it appears", async () => {
+    const view = mount(false);
+    await ready();
+    const tabs = screen.getByRole("tablist", { name: "Content type" });
+    const row = tabs.parentElement!;
+    const root = row.parentElement!;
+    const before = [...root.children];
+    view.setBusy(true);
+    const notice = await screen.findByText("Can't change content right now (running, installing, etc.)");
+    // 表示の有無で、タブの上に行が増えたり減ったりしない（一覧の位置が変わらない）
+    expect([...root.children]).toEqual(before);
+    expect(row.contains(notice)).toBe(true);
+    // 1 行に収め、理由の全体は title で読める
+    expect(notice.classList).toContain("truncate");
+    expect(notice.getAttribute("title")).toBe(
+      "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
+    );
+    view.setBusy(false);
+    await waitFor(() => expect(screen.queryByText(/Can't change content right now/)).toBeNull());
+    expect([...root.children]).toEqual(before);
   });
 
   it("dropping files calls addContentFiles for the open sub-tab with overwrite=false", async () => {
@@ -390,5 +487,355 @@ describe("ContentTab", () => {
     await ready();
     cleanup();
     await waitFor(() => expect(unlisten).toHaveBeenCalledTimes(1));
+  });
+
+  it("content_tab_shows_the_add_button_only_on_the_mod_tab", async () => {
+    mount();
+    await ready();
+    expect(screen.getByRole("link", { name: "Add from Modrinth" })).toBeTruthy();
+    fireEvent.click(subTab(/^Resource packs/));
+    await screen.findByRole("button", { name: "Enable Faithful" });
+    expect(screen.queryByRole("link", { name: "Add from Modrinth" })).toBeNull();
+    fireEvent.click(subTab(/^Shaders/));
+    expect(screen.queryByRole("link", { name: "Add from Modrinth" })).toBeNull();
+    fireEvent.click(subTab(/^Mods/));
+    fireEvent.click(await screen.findByRole("link", { name: "Add from Modrinth" }));
+    expect(await screen.findByText("modrinth page")).toBeTruthy();
+  });
+  describe("version change", () => {
+    const versions = [
+      { versionId: "v2", versionNumber: "0.6.1", versionType: "release", datePublished: "2024-06-01T00:00:00Z", current: false },
+      { versionId: "v1", versionNumber: "0.6.0", versionType: "release", datePublished: "2024-05-01T00:00:00Z", current: true },
+    ];
+
+    it("choosing a version runs the change, shows the row as updating and refreshes the list and the update check", async () => {
+      vi.mocked(listContentVersions).mockResolvedValue(versions);
+      vi.mocked(changeContentVersion).mockResolvedValue("t1");
+      const task = deferred<TaskSnapshot>();
+      vi.mocked(getTask).mockReturnValue(task.promise);
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+
+      await press(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+      const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
+      expect(listContentVersions).toHaveBeenCalledWith("i1", "sodium.jar");
+      await press(within(list).getByRole("option", { name: /0\.6\.1/ }));
+
+      await waitFor(() => expect(changeContentVersion).toHaveBeenCalledWith("i1", "sodium.jar", "v2"));
+      // 更新と同じく、行は「更新中…」になり、ほかの操作は止まる
+      expect(await screen.findByText("Updating…")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Change the version of Mod Menu (now 0.6.0)" }).hasAttribute("disabled")).toBe(true);
+
+      await act(async () => task.resolve(snapshot("succeeded")));
+      await within(toasts()).findAllByText("Changed Sodium to 0.6.1");
+      await waitFor(() => expect(vi.mocked(listContent).mock.calls.filter(([, k]) => k === "mod").length).toBeGreaterThan(1));
+      await waitFor(() => expect(vi.mocked(checkContentUpdates).mock.calls.length).toBeGreaterThan(1));
+      expect(screen.queryByText("Updating…")).toBeNull();
+    });
+
+    it("a failed change shows the error", async () => {
+      vi.mocked(listContentVersions).mockResolvedValue(versions);
+      vi.mocked(changeContentVersion).mockResolvedValue("t1");
+      vi.mocked(getTask).mockResolvedValue(
+        snapshot("failed", { code: "content.version_unavailable", params: { name: "Sodium" }, detail: null }),
+      );
+      mount();
+      await ready();
+      await press(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+      await press(within(await screen.findByRole("listbox")).getByRole("option", { name: /0\.6\.1/ }));
+      await within(toasts()).findAllByText(/Sodium can't be changed to that version/);
+    });
+
+    it("version buttons are disabled while the instance is busy", async () => {
+      mount(true);
+      await ready();
+      expect(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }).hasAttribute("disabled")).toBe(true);
+      // Modrinth で特定されていない MOD には出さない
+      expect(screen.queryByRole("button", { name: /Change the version of Mystery/ })).toBeNull();
+    });
+  });
+
+  describe("updates", () => {
+    const withUpdates: UpdateCheck = {
+      updates: [
+        { relPath: "sodium.jar", versionId: "v2", versionNumber: "0.6.1" },
+        { relPath: "modmenu.jar", versionId: "v9", versionNumber: "11.0.0" },
+      ],
+      noCompatible: ["fabric-api.jar"],
+    };
+    const quiet = "Can't reach Modrinth right now. Updates will be checked later.";
+
+    it("opening_the_mod_tab_checks_updates_once", async () => {
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+      expect(checkContentUpdates).toHaveBeenCalledWith("i1", false);
+      // サブタブを行き来しても確認し直さない
+      fireEvent.click(subTab(/^Resource packs/));
+      await screen.findByRole("button", { name: "Enable Faithful" });
+      // 更新を確認する部品は MOD のサブタブだけ
+      expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+      fireEvent.click(subTab(/^Mods/));
+      await screen.findByRole("button", { name: "Enable Sodium" });
+      expect(checkContentUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not check updates for a vanilla instance", async () => {
+      mount(false, { ...instance, loader: "vanilla", loaderVersion: null });
+      await ready();
+      expect(checkContentUpdates).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+    });
+
+    it("update_button_appears_only_for_rows_with_an_update_and_shows_the_target_version_on_hover", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue({
+        updates: [...withUpdates.updates, { relPath: "fabric-api.jar", versionId: "v5", versionNumber: "0.120.0" }],
+        noCompatible: [],
+      });
+      mount();
+      await ready();
+      const button = await screen.findByRole("button", { name: "Update Sodium to 0.6.1" });
+      expect(screen.getByRole("button", { name: "Update Mod Menu to 11.0.0" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /^Update Mystery/ })).toBeNull();
+      // ボタンの文字は短く、行き先の版はツールチップで見せる（先頭の行で確かめる）
+      expect(button.textContent).toBe("Update");
+      const first = screen.getByRole("button", { name: "Update Fabric API to 0.120.0" });
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      act(() => first.focus());
+      expect((await screen.findByRole("tooltip")).textContent).toBe("Update to 0.120.0");
+      await press(button);
+      await waitFor(() => expect(updateContent).toHaveBeenCalledWith("i1", ["sodium.jar"]));
+      await within(toasts()).findAllByText("Mods updated: 1");
+      // 終わったら一覧と更新の確認を取り直す
+      await waitFor(() => expect(vi.mocked(listContent).mock.calls.filter(([, k]) => k === "mod").length).toBeGreaterThan(1));
+      await waitFor(() => expect(vi.mocked(checkContentUpdates).mock.calls.length).toBeGreaterThan(1));
+    });
+
+    it("disabled_mod_with_update_shows_the_button", async () => {
+      lists.mod = [item({ enabled: false, relPath: "sodium.jar.disabled", fileName: "sodium.jar.disabled" })];
+      vi.mocked(checkContentUpdates).mockResolvedValue({
+        updates: [{ relPath: "sodium.jar.disabled", versionId: "v2", versionNumber: "0.6.1" }], noCompatible: [],
+      });
+      mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await waitFor(() => expect(updateContent).toHaveBeenCalledWith("i1", ["sodium.jar.disabled"]));
+    });
+
+    it("check_button_forces_a_recheck", async () => {
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole("button", { name: /^Update all/ })).toBeNull();
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      await press(screen.getByRole("button", { name: "Check for updates" }));
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenLastCalledWith("i1", true));
+      expect(await screen.findByRole("button", { name: "Update all (2)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Update Sodium to 0.6.1" })).toBeTruthy();
+    });
+
+    it("a forced check without updates says everything is up to date", async () => {
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+      await press(screen.getByRole("button", { name: "Check for updates" }));
+      await within(toasts()).findAllByText("Everything is up to date");
+    });
+
+    it("update_all_button_shows_the_count_and_runs_one_task", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(contentTaskReport).mockResolvedValue(report({ updated: 2 }));
+      const task = deferred<TaskSnapshot>();
+      vi.mocked(getTask).mockReturnValue(task.promise);
+      mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update all (2)" }));
+      await waitFor(() => expect(updateContent).toHaveBeenCalledTimes(1));
+      expect(new Set(vi.mocked(updateContent).mock.calls[0]![1])).toEqual(new Set(["sodium.jar", "modmenu.jar"]));
+      expect(vi.mocked(updateContent).mock.calls[0]![1]).toHaveLength(2);
+      // 更新の最中は行の操作と、もう一度の更新を止める
+      expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Remove Mystery" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getAllByText("Updating…")).toHaveLength(2);
+      expect(screen.getByRole("button", { name: /^Update all/ }).hasAttribute("disabled")).toBe(true);
+      await act(async () => task.resolve(snapshot("succeeded")));
+      await within(toasts()).findAllByText("Mods updated: 2");
+      expect(updateContent).toHaveBeenCalledTimes(1);
+    });
+
+    it("partial_failure_lists_names_and_reasons_after_completion", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(contentTaskReport).mockResolvedValue(report({
+        updated: 1,
+        failures: [
+          { name: "Mod Menu", error: { code: "content.incompatible", params: { names: "Sodium" }, detail: null } },
+        ],
+      }));
+      mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update all (2)" }));
+      const summary = await screen.findByRole("alert", { name: "Mods that couldn't be updated: 1" });
+      expect(within(summary).getByText("Mod Menu")).toBeTruthy();
+      expect(within(summary).getByText(/declared incompatible with installed mods \(Sodium\)/)).toBeTruthy();
+      await within(toasts()).findAllByText("Mods updated: 1");
+      // 閉じられる
+      await press(within(summary).getByRole("button", { name: "Dismiss" }));
+      expect(screen.queryByRole("alert", { name: "Mods that couldn't be updated: 1" })).toBeNull();
+    });
+
+    it("the failure summary survives reopening the tab", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(contentTaskReport).mockResolvedValue(report({
+        updated: 1,
+        failures: [{ name: "Mod Menu", error: { code: "net.offline", params: {}, detail: null } }],
+      }));
+      const view = mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update all (2)" }));
+      await screen.findByRole("alert", { name: "Mods that couldn't be updated: 1" });
+      handlers = null;
+      view.remount();
+      await ready();
+      const summary = await screen.findByRole("alert", { name: "Mods that couldn't be updated: 1" });
+      expect(within(summary).getByText("Mod Menu")).toBeTruthy();
+    });
+
+    it("identifies the new rows once after an update or a version change finishes", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(listContentVersions).mockResolvedValue([
+        { versionId: "v2", versionNumber: "0.6.1", versionType: "release", datePublished: "", current: false },
+        { versionId: "v1", versionNumber: "0.6.0", versionType: "release", datePublished: "", current: true },
+      ]);
+      vi.mocked(changeContentVersion).mockResolvedValue("t2");
+      mount();
+      await ready();
+      expect(identifyContent).toHaveBeenCalledTimes(1);
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findAllByText("Mods updated: 1");
+      await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(2));
+      // 特定のあとに一覧を取り直す
+      await waitFor(() =>
+        expect(Math.max(...vi.mocked(listContent).mock.invocationCallOrder)).toBeGreaterThan(
+          vi.mocked(identifyContent).mock.invocationCallOrder[1]!,
+        ));
+
+      await press(screen.getByRole("button", { name: "Change the version of Mod Menu (now 0.6.0)" }));
+      await press(within(await screen.findByRole("listbox")).getByRole("option", { name: /0\.6\.1/ }));
+      await within(toasts()).findAllByText("Changed Mod Menu to 0.6.1");
+      await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(3));
+
+      // 失敗したタスクのあとは特定しない
+      vi.mocked(getTask).mockResolvedValue(snapshot("failed", { code: "net.offline", params: {}, detail: null }));
+      await press(screen.getByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findByText("Can't connect to the internet");
+      expect(identifyContent).toHaveBeenCalledTimes(3);
+    });
+
+    it("toggling, removing or adding a mod checks updates again", async () => {
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+      // 有効、無効の切り替え
+      await press(screen.getByRole("button", { name: "Enable Sodium" }));
+      await waitFor(() => expect(setContentEnabled).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(2));
+      // 削除
+      await press(screen.getByRole("button", { name: "Remove Mystery" }));
+      await press(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Remove" }));
+      await waitFor(() => expect(removeContent).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(3));
+      // ファイルの追加
+      await act(async () => handlers!.drop(["C:\Downloads\a.jar"]));
+      await waitFor(() => expect(addContentFiles).toHaveBeenCalled());
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(4));
+    });
+
+    it("a failed or cancelled update task is reported", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(contentTaskReport).mockResolvedValue(null);
+      vi.mocked(getTask).mockResolvedValueOnce(snapshot("failed", { code: "net.offline", params: {}, detail: null }));
+      mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findByText("Can't connect to the internet");
+      vi.mocked(getTask).mockResolvedValueOnce(snapshot("cancelled"));
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findAllByText("The update was cancelled");
+    });
+
+    it("a rejected update start shows the error", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(updateContent).mockRejectedValue(new IpcError({ code: "net.offline", params: {}, detail: null }));
+      mount();
+      await ready();
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findByText("Can't connect to the internet");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(false));
+    });
+
+    it("offline_check_shows_a_quiet_message_and_no_update_buttons", async () => {
+      vi.mocked(checkContentUpdates).mockRejectedValue(new IpcError({ code: "net.offline", params: {}, detail: null }));
+      mount();
+      await ready();
+      expect(await screen.findByText(quiet)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /^Update (all|.+ to )/ })).toBeNull();
+      expect(within(toasts()).queryByRole("alert")).toBeNull();
+      // 押して確かめ直しても、同じ控えめな表示にとどめる
+      await press(screen.getByRole("button", { name: "Check for updates" }));
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenLastCalledWith("i1", true));
+      expect(await screen.findByText(quiet)).toBeTruthy();
+      expect(within(toasts()).queryByRole("alert")).toBeNull();
+    });
+
+    it("a rate-limited check is also quiet", async () => {
+      vi.mocked(checkContentUpdates).mockRejectedValue(
+        new IpcError({ code: "net.http_status", params: { status: 429 }, detail: null }),
+      );
+      mount();
+      await ready();
+      expect(await screen.findByText(quiet)).toBeTruthy();
+      expect(screen.queryByText(/HTTP 429/)).toBeNull();
+    });
+
+    it("other check errors are shown as a failure", async () => {
+      vi.mocked(checkContentUpdates).mockRejectedValue(
+        new IpcError({ code: "net.http_status", params: { status: 500 }, detail: null }),
+      );
+      mount();
+      await ready();
+      expect(await screen.findByText(/HTTP 500/)).toBeTruthy();
+      expect(screen.queryByText(quiet)).toBeNull();
+    });
+
+    it("status_filter_has_update_available", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      mount();
+      await ready();
+      await screen.findByRole("button", { name: "Update Sodium to 0.6.1" });
+      const status = screen.getByRole("toolbar", { name: "Status" });
+      fireEvent.click(within(status).getByRole("button", { name: "Update available" }));
+      const names = within(screen.getByRole("grid"))
+        .getAllByRole("button", { name: /^Enable / })
+        .map((b) => b.getAttribute("aria-label"));
+      expect(names).toEqual(["Enable Mod Menu", "Enable Sodium"]);
+      // パックのサブタブには出さない
+      fireEvent.click(subTab(/^Resource packs/));
+      await screen.findByRole("button", { name: "Enable Faithful" });
+      expect(
+        within(screen.getByRole("toolbar", { name: "Status" })).queryByRole("button", { name: "Update available" }),
+      ).toBeNull();
+    });
+
+    it("row_shows_a_hint_when_no_compatible_version_is_found", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      mount();
+      await ready();
+      const hints = await screen.findAllByRole("img", { name: "No version for this instance was found on Modrinth" });
+      expect(hints).toHaveLength(1);
+      expect(hints[0]!.closest("[role=row]")!.textContent).toContain("Fabric API");
+    });
   });
 });

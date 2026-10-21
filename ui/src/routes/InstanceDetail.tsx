@@ -12,7 +12,7 @@ import {
   TooltipTrigger,
 } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
 import IconGame from "~icons/ph/folder-open";
 import IconScreenshots from "~icons/ph/image";
@@ -38,7 +38,11 @@ import { useUpdateInstance } from "../features/instances/useInstanceActions";
 import { useInstances } from "../features/instances/useInstances";
 import { activeDuplicate } from "../features/instances/duplicateState";
 import { useRunning } from "../features/play/useGameSync";
+import { hasActiveTask } from "../features/tasks/taskTable";
 import { useTasks } from "../features/tasks/useTasks";
+
+/** Modrinth からの導入と更新のタスクの種類（core の CONTENT_KIND と同じ） */
+const CONTENT_TASK_KIND = "content";
 import { ContentTab } from "./ContentTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -92,7 +96,11 @@ export default function InstanceDetail() {
   const tasks = useTasks();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
-  const [tab, setTab] = useState<DetailTab>("settings");
+  // 既定はコンテンツのタブ。一覧の「設定」から来たときなど、遷移の state で設定のタブを頼まれたらそれを開く
+  const location = useLocation();
+  const [tab, setTab] = useState<DetailTab>(() =>
+    (location.state as { tab?: unknown } | null)?.tab === "settings" ? "settings" : "content",
+  );
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)
@@ -119,9 +127,13 @@ export default function InstanceDetail() {
     );
 
   const isRunning = running?.some((s) => s.instanceId === instance.id) ?? false;
-  // コンテンツを変えられないのは、起動中、インストール中、複製中（複製元として読まれている）のとき
+  // コンテンツを変えられないのは、起動中、インストール中、複製中（複製元として読まれている）、
+  // Modrinth からの導入や更新のタスクが待機中か実行中のとき
   const contentLocked =
-    isRunning || instance.state === "installing" || activeDuplicate(tasks, instance.id) !== undefined;
+    isRunning ||
+    instance.state === "installing" ||
+    activeDuplicate(tasks, instance.id) !== undefined ||
+    hasActiveTask(tasks, CONTENT_TASK_KIND, instance.id);
 
   // コンテンツのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
   const layout = tab === "content" ? "h-full min-h-[34rem] max-w-5xl" : "max-w-2xl";
@@ -164,21 +176,21 @@ export default function InstanceDetail() {
         className="flex min-h-0 flex-1 flex-col"
       >
         <TabList aria-label={instance.name} className="flex gap-6 border-b border-line">
-          <Tab id="settings" className={tabClass}>
-            {t("instances.detail.tabSettings")}
-          </Tab>
           <Tab id="content" className={tabClass}>
             {t("instances.detail.tabContent")}
           </Tab>
+          <Tab id="settings" className={tabClass}>
+            {t("instances.detail.tabSettings")}
+          </Tab>
         </TabList>
+        {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
+        <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
+          <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
+        </TabPanel>
         {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
         <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">
           {/* インスタンスが替わったら入力を作り直す */}
           <SettingsTab key={instance.id} instance={instance} running={isRunning} />
-        </TabPanel>
-        {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
-        <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
-          <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
         </TabPanel>
       </Tabs>
     </div>

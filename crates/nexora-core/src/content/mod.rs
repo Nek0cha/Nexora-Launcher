@@ -1,12 +1,16 @@
 //! インスタンスの中身（mod、リソースパック、シェーダー）の型。
 
+pub(crate) mod journal;
 pub(crate) mod store;
 
+pub mod apply;
 pub mod identify;
 pub mod local_meta;
 pub mod modrinth;
 pub mod ops;
+pub mod resolve;
 pub mod scan;
+pub mod updates;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

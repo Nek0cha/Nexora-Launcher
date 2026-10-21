@@ -9,6 +9,7 @@ use crate::error::CoreError;
 const KEY_THEME: &str = "theme";
 const KEY_LANGUAGE: &str = "language";
 const KEY_DOWNLOADS: &str = "max_concurrent_downloads";
+const KEY_LAST_ADDED: &str = "last_added_instance";
 const DOWNLOADS_RANGE: std::ops::RangeInclusive<u8> = 1..=16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -35,6 +36,8 @@ pub struct Settings {
     pub theme: Theme,
     pub language: Option<Language>,
     pub max_concurrent_downloads: u8,
+    /// 最後に MOD を追加したインスタンスの ID。読み取り専用で、`record_last_added_instance` だけが書く。
+    pub last_added_instance: Option<String>,
 }
 
 impl Default for Settings {
@@ -43,6 +46,7 @@ impl Default for Settings {
             theme: Theme::System,
             language: None,
             max_concurrent_downloads: 8,
+            last_added_instance: None,
         }
     }
 }
@@ -80,10 +84,33 @@ pub fn load(db: &Db) -> Result<Settings, CoreError> {
                 Ok(n) if DOWNLOADS_RANGE.contains(&n) => settings.max_concurrent_downloads = n,
                 _ => tracing::warn!(key, "ignoring invalid stored setting"),
             },
+            KEY_LAST_ADDED => match serde_json::from_str::<String>(&raw) {
+                Ok(id) => settings.last_added_instance = Some(id),
+                Err(_) => tracing::warn!(key, "ignoring invalid stored setting"),
+            },
             _ => {}
         }
     }
     Ok(settings)
+}
+
+/// 最後に MOD を追加したインスタンスを記録する。UI からは変えられないので `SettingChange` には入れない。
+pub fn record_last_added_instance(
+    db: &Db,
+    instance_id: &str,
+    now_ms: i64,
+) -> Result<(), CoreError> {
+    let value = serde_json::to_string(instance_id).map_err(|e| CoreError::Unexpected {
+        message: e.to_string(),
+    })?;
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![KEY_LAST_ADDED, value, now_ms],
+        )?;
+        Ok(())
+    })
 }
 
 pub fn apply(db: &Db, change: SettingChange, now_ms: i64) -> Result<Settings, CoreError> {
@@ -137,6 +164,22 @@ mod tests {
         assert_eq!(after.language, Some(Language::En));
         assert_eq!(after.max_concurrent_downloads, 4);
         assert_eq!(load(&db).unwrap(), after);
+    }
+
+    #[test]
+    fn last_added_instance_is_recorded_and_not_a_setting_change() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(load(&db).unwrap().last_added_instance, None);
+        record_last_added_instance(&db, "abc", 1).unwrap();
+        record_last_added_instance(&db, "def", 2).unwrap();
+        assert_eq!(
+            load(&db).unwrap().last_added_instance.as_deref(),
+            Some("def")
+        );
+        assert!(
+            serde_json::from_str::<SettingChange>(r#"{"key":"lastAddedInstance","value":"x"}"#)
+                .is_err()
+        );
     }
 
     #[test]

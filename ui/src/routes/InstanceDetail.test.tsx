@@ -53,7 +53,14 @@ const instance = (patch: Partial<Instance> = {}): Instance => ({
 
 function mount(
   list: Instance[],
-  { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null, tasks = [] as TaskSnapshot[] } = {},
+  {
+    id = "i1",
+    running = [] as RunningSession[],
+    totalMb = 8192 as number | null,
+    tasks = [] as TaskSnapshot[],
+    // 設定の入力を見るテストが多いので、既定では設定のタブを開いて始める（何も渡さないときの既定は別に確かめる）
+    state = { tab: "settings" } as unknown,
+  } = {},
 ) {
   // null は物理メモリの取得に失敗する場合
   if (totalMb === null) vi.mocked(systemMemoryMb).mockRejectedValue(new Error("no memory"));
@@ -65,7 +72,7 @@ function mount(
   client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/instances/${id}`]}>
+      <MemoryRouter initialEntries={[{ pathname: `/instances/${id}`, state }]}>
         <Routes>
           <Route path="/instances/:id" element={<InstanceDetail />} />
           <Route path="/instances" element={<p>list page</p>} />
@@ -95,6 +102,11 @@ async function press(el: HTMLElement) {
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
+  // コンテンツのタブは開いたときに一覧を読むので、空の一覧を返しておく
+  vi.mocked(listContent).mockResolvedValue([]);
+  vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+  vi.mocked(listContentCategories).mockResolvedValue([]);
+  vi.mocked(onFilesDropped).mockResolvedValue(() => {});
 });
 
 afterEach(() => {
@@ -294,18 +306,33 @@ describe("InstanceDetail", () => {
     expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
   });
 
-  it("has a content tab", async () => {
+  it("opens on the content tab, which comes before the settings tab", async () => {
+    mount([instance()], { state: null });
+    const tab = await screen.findByRole("tab", { name: "Content" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    const detailTabs = within(screen.getByRole("tablist", { name: "Survival" })).getAllByRole("tab");
+    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Settings"]);
+    expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
+    expect(listContent).toHaveBeenCalledWith("i1", "mod");
+  });
+
+  it("opens the settings tab when asked through the location state", async () => {
+    mount([instance()], { state: { tab: "settings" } });
+    const tab = await screen.findByRole("tab", { name: "Settings" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Content" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("opens the content tab when coming back from the Modrinth page", async () => {
     vi.mocked(listContent).mockResolvedValue([]);
     vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
     vi.mocked(listContentCategories).mockResolvedValue([]);
     vi.mocked(onFilesDropped).mockResolvedValue(() => {});
-    mount([instance()]);
+    mount([instance()], { state: { tab: "content" } });
     const tab = await screen.findByRole("tab", { name: "Content" });
-    await press(tab);
     expect(tab.getAttribute("aria-selected")).toBe("true");
-    expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
     await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
-    expect(listContent).toHaveBeenCalledWith("i1", "mod");
   });
 
   it("keeps unsaved settings when switching to the content tab and back", async () => {
@@ -350,7 +377,7 @@ describe("InstanceDetail", () => {
     }
 
     async function expectLocked(handlers: DragDropHandlers) {
-      expect(screen.getByText(/You can't change content while/)).toBeTruthy();
+      expect(screen.getByText(/Can't change content right now/)).toBeTruthy();
       expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
       expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
       await act(async () => handlers.drop(["C:\\Downloads\\a.jar"]));
@@ -365,9 +392,22 @@ describe("InstanceDetail", () => {
       await expectLocked(await openContent({ tasks: [duplicateTask] }));
     });
 
+    it("while a content task is running or queued", async () => {
+      const contentTask: TaskSnapshot = { ...duplicateTask, id: "c1", kind: "content" };
+      await expectLocked(await openContent({ tasks: [contentTask] }));
+      cleanup();
+      vi.mocked(addContentFiles).mockClear();
+      await expectLocked(await openContent({ tasks: [{ ...contentTask, state: "queued" }] }));
+    });
+
+    it("but not for a content task of another instance", async () => {
+      await openContent({ tasks: [{ ...duplicateTask, id: "c2", kind: "content", instanceId: "other" }] });
+      expect(screen.queryByText(/Can't change content right now/)).toBeNull();
+    });
+
     it("but not after the duplicate task finished", async () => {
       await openContent({ tasks: [{ ...duplicateTask, state: "succeeded" }] });
-      expect(screen.queryByText(/You can't change content while/)).toBeNull();
+      expect(screen.queryByText(/Can't change content right now/)).toBeNull();
       expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(false);
     });
   });

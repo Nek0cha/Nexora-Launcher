@@ -19,6 +19,12 @@ import type { ContentKind } from "../bindings/ContentKind";
 import type { ContentItem } from "../bindings/ContentItem";
 import type { IdentifyReport } from "../bindings/IdentifyReport";
 import type { AddReport } from "../bindings/AddReport";
+import type { SearchQuery } from "../bindings/SearchQuery";
+import type { SearchPage } from "../bindings/SearchPage";
+import type { InstallPreview } from "../bindings/InstallPreview";
+import type { UpdateCheck } from "../bindings/UpdateCheck";
+import type { ContentTaskReport } from "../bindings/ContentTaskReport";
+import type { VersionChoice } from "../bindings/VersionChoice";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -73,3 +79,21 @@ export const addContentFiles = (instanceId: string, kind: ContentKind, paths: st
 export const listContentCategories = (kind: ContentKind) =>
   call<string[]>("list_content_categories", { kind });
 export const getContentIcon = (key: string) => call<string | null>("get_content_icon", { key });
+
+export const searchModrinth = (instanceId: string | null, query: SearchQuery, offset: number) =>
+  call<SearchPage>("search_modrinth", { instanceId, query, offset });
+export const previewContentInstall = (instanceId: string, projectId: string) =>
+  call<InstallPreview>("preview_content_install", { instanceId, projectId });
+export const installContent = (instanceId: string, projectId: string, acceptIncompatible: boolean) =>
+  call<string>("install_content", { instanceId, projectId, acceptIncompatible });
+export const checkContentUpdates = (instanceId: string, force: boolean) =>
+  call<UpdateCheck>("check_content_updates", { instanceId, force });
+export const updateContent = (instanceId: string, relPaths: string[]) =>
+  call<string>("update_content", { instanceId, relPaths });
+export const listContentVersions = (instanceId: string, relPath: string) =>
+  call<VersionChoice[]>("list_content_versions", { instanceId, relPath });
+export const changeContentVersion = (instanceId: string, relPath: string, versionId: string) =>
+  call<string>("change_content_version", { instanceId, relPath, versionId });
+export const contentTaskReport = (taskId: string) =>
+  call<ContentTaskReport | null>("content_task_report", { taskId });
+export const openModrinthProject = (slug: string) => call<null>("open_modrinth_project", { slug });

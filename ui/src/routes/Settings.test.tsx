@@ -35,7 +35,12 @@ describe("Settings route", () => {
   });
 
   it("shows the translated error when a write fails", async () => {
-    vi.mocked(getSettings).mockResolvedValue({ theme: "dark", language: "en", maxConcurrentDownloads: 8 });
+    vi.mocked(getSettings).mockResolvedValue({
+      theme: "dark",
+      language: "en",
+      maxConcurrentDownloads: 8,
+      lastAddedInstance: null,
+    });
     vi.mocked(setSetting).mockRejectedValue(new IpcError({ code: "settings.invalid_value", params: {}, detail: "raw" }));
     mount();
     const buttons = await screen.findAllByRole("button", { name: /increase|increment/i });

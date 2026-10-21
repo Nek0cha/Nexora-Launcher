@@ -574,3 +574,49 @@ fn verification_timing() {
         );
     }
 }
+
+/// 1 件の失敗で止めるとき、ほかの取得の書き込みや作成が終わってから返る。
+/// 返った直後に呼び出し側が置き場所を消しても、消せて、あとから作り直されない。
+#[tokio::test]
+async fn failure_waits_for_in_flight_downloads_before_returning() {
+    let server = MockServer::start().await;
+    let big: Vec<u8> = (0..2_000_000u32).map(|i| (i % 251) as u8).collect();
+    serve(&server, "/big", &big).await;
+    Mock::given(method("GET"))
+        .and(path("/missing"))
+        .respond_with(ResponseTemplate::new(404).set_delay(std::time::Duration::from_millis(5)))
+        .mount(&server)
+        .await;
+    let client = http();
+    for round in 0..20 {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging").join("op");
+        let mut items: Vec<_> = (0..6)
+            .map(|i| {
+                item(
+                    &server,
+                    "/big",
+                    staging.join("new").join(format!("{i}.jar")),
+                    &big,
+                )
+            })
+            .collect();
+        items.push(item(
+            &server,
+            "/missing",
+            staging.join("new").join("m.jar"),
+            b"m",
+        ));
+        let token = CancellationToken::new();
+        let err = fetch_all(&client, items, Depth::Quick, 4, &token, |_, _| {})
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "net.http_status", "round {round}");
+        std::fs::remove_dir_all(&staging)
+            .unwrap_or_else(|e| panic!("round {round}: staging could not be removed: {e}"));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!staging.exists(), "round {round}: staging was recreated");
+        // 取り消しで token そのものは取り消されない（呼び出し側のもの）
+        assert!(!token.is_cancelled());
+    }
+}

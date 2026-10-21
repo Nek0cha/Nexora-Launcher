@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteInstance, duplicateInstance, launchInstance, listInstances, openInstanceFolder, listRunning } from "../api/commands";
 import { IpcError } from "../api/ipc";
@@ -47,6 +47,13 @@ const duplicateTask = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
 
 let client: QueryClient;
 
+/** 詳細の画面の代わり。開いたパスと、頼まれたタブを出す */
+function DetailProbe() {
+  const location = useLocation();
+  const tab = (location.state as { tab?: string } | null)?.tab ?? "default";
+  return <p>{`detail ${location.pathname} tab=${tab}`}</p>;
+}
+
 function mount(list: Instance[], tasks: TaskSnapshot[] = []) {
   vi.mocked(listInstances).mockResolvedValue(list);
   vi.mocked(listRunning).mockResolvedValue([]);
@@ -57,7 +64,10 @@ function mount(list: Instance[], tasks: TaskSnapshot[] = []) {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Instances />
+        <Routes>
+          <Route path="/" element={<Instances />} />
+          <Route path="/instances/:id" element={<DetailProbe />} />
+        </Routes>
       </MemoryRouter>
       <ToastRegion />
     </QueryClientProvider>,
@@ -114,7 +124,10 @@ describe("Instances", () => {
     expect(within(survival).getByText("3 hr 12 min")).toBeTruthy();
     const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
     expect(within(survival).getByText(played)).toBeTruthy();
-    expect(within(survival).getByRole("link", { name: "Details" }).getAttribute("href")).toBe("/instances/i2");
+    // 名前、「コンテンツ」、「設定」のどれからも、そのインスタンスの詳細を開ける
+    expect(within(survival).getByRole("link", { name: "Survival" }).getAttribute("href")).toBe("/instances/i2");
+    expect(within(survival).getByRole("link", { name: "Content" }).getAttribute("href")).toBe("/instances/i2");
+    expect(within(survival).getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/instances/i2");
 
     const creative = await row("Creative");
     expect(within(creative).getByText("1.8.9")).toBeTruthy();
@@ -122,6 +135,27 @@ describe("Instances", () => {
     expect(within(creative).getByText("Not played yet")).toBeTruthy();
     expect(within(await row("Modded")).getByText("Preparing")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create instance" })).toBeTruthy();
+  });
+
+  it("the name and the Content link open the instance's content, the Settings link its settings", async () => {
+    const cases = [
+      ["Survival", "detail /instances/i2 tab=default"],
+      ["Content", "detail /instances/i2 tab=default"],
+      ["Settings", "detail /instances/i2 tab=settings"],
+    ] as const;
+    for (const [name, expected] of cases) {
+      mount([instance("i2", "Survival")]);
+      await press(within(await row("Survival")).getByRole("link", { name }));
+      expect(await screen.findByText(expected)).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("the name link is not nested in another control", async () => {
+    mount([instance("i2", "Survival")]);
+    const link = within(await row("Survival")).getByRole("link", { name: "Survival" });
+    expect(link.parentElement?.closest("a, button")).toBeNull();
+    expect(link.querySelector("a, button")).toBeNull();
   });
 
   it("shows_empty_state_with_create_button", async () => {

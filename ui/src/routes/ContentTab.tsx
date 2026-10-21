@@ -1,19 +1,28 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
+import IconUpdate from "~icons/ph/arrow-up";
+import IconCheck from "~icons/ph/arrows-clockwise";
 import IconDrop from "~icons/ph/download-simple";
+import IconInfo from "~icons/ph/info";
+import IconPlus from "~icons/ph/plus";
+import IconOffline from "~icons/ph/wifi-slash";
 import { onFilesDropped } from "../api/dragDrop";
 import { toErrorPayload } from "../api/ipc";
 import type { ContentItem } from "../bindings/ContentItem";
 import type { ContentKind } from "../bindings/ContentKind";
+import type { ErrorPayload } from "../bindings/ErrorPayload";
 import type { Instance } from "../bindings/Instance";
+import type { ItemFailure } from "../bindings/ItemFailure";
 import type { RejectReason } from "../bindings/RejectReason";
+import type { VersionChoice } from "../bindings/VersionChoice";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { StableLabel } from "../components/StableLabel";
 import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
-import { ContentList } from "../components/content/ContentList";
-import { ROW_SIZE } from "../components/content/ContentRow";
+import { ContentList, type RowUpdates } from "../components/content/ContentList";
+import { ROW_SIZE, rowId } from "../components/content/ContentRow";
 import { FailureNotice } from "../components/FailureNotice";
-import { Notice } from "../components/settingsLayout";
 import { useToast } from "../components/toast/useToast";
 import {
   applyFilter,
@@ -21,6 +30,7 @@ import {
   emptyFilter,
   type FilterState,
   isMetadataFiltered,
+  type StatusKey,
   sortByName,
 } from "../features/content/contentFilter";
 import {
@@ -31,6 +41,13 @@ import {
   useRemove,
   useSetEnabled,
 } from "../features/content/useContent";
+import {
+  useChangeContentVersion,
+  useContentUpdates,
+  useRecheckUpdates,
+  useUpdateContent,
+  useUpdateFailures,
+} from "../features/modrinth/useModrinth";
 
 const kinds: ContentKind[] = ["mod", "resourcepack", "shader"];
 
@@ -54,6 +71,50 @@ const subTabClass = [
 const textButton = [
   "rounded-sm text-sm text-text-muted underline underline-offset-2",
   "data-hovered:text-text data-pressed:text-text-strong",
+  ring,
+].join(" ");
+
+// 一覧の上の行のボタン（確認のダイアログの「キャンセル」と同じ、枠だけのボタン）。高さは名前の入力に揃える
+const addLink = [
+  "inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-line-control px-3 text-sm text-text",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 pressed:bg-surface-3",
+  ring,
+].join(" ");
+
+// MOD のサブタブの状態の札。更新の確認の結果で「更新あり」も選べる
+const modStatuses: StatusKey[] = ["enabled", "disabled", "dependency", "update"];
+
+const noRows: ReadonlySet<string> = new Set();
+
+/** 更新の確認の失敗のうち、控えめに「あとで確認します」とだけ示すもの（オフラインと 429）。 */
+function isQuietCheckError(error: ErrorPayload): boolean {
+  return error.code === "net.offline" || (error.code === "net.http_status" && error.params.status === 429);
+}
+
+/** MOD のサブタブの、更新の部品に渡すもの。 */
+type UpdateControls = {
+  rows: RowUpdates;
+  /** 更新が見つかった行の relPath（状態の絞り込みの「更新あり」に使う） */
+  updatable: ReadonlySet<string>;
+  count: number;
+  checking: boolean;
+  onCheck: () => void;
+  onUpdateAll: () => void;
+  /** 更新や確認を始められないとき（更新の最中、起動中など） */
+  disabled: boolean;
+  /** 確認の失敗。オフラインと 429 は控えめに出す */
+  checkError: ErrorPayload | null;
+  /** 直前の更新で失敗した MOD。閉じるまで残す */
+  failures: ItemFailure[] | null;
+  onDismissFailures: () => void;
+};
+
+// 更新の行のボタン。上の行のボタンと同じ枠だけの形で、一段小さくする
+const barButton = [
+  "inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-line-control px-2.5 text-sm text-text",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 pressed:bg-surface-3 disabled:opacity-50 disabled:hover:bg-transparent",
   ring,
 ].join(" ");
 
@@ -98,6 +159,21 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   const remove = useRemove(instance.id);
   const add = useAddFiles(instance.id);
 
+  // 更新の確認は、ローダーのあるインスタンスで、MOD のサブタブを開いたときに 1 回だけ行う（キャッシュは core が持つ）
+  const canUpdate = instance.loader !== "vanilla";
+  const [modOpened, setModOpened] = useState(kind === "mod");
+  useEffect(() => {
+    if (kind === "mod") setModOpened(true);
+  }, [kind]);
+  const updates = useContentUpdates(instance.id, canUpdate && modOpened);
+  const recheck = useRecheckUpdates(instance.id);
+  const update = useUpdateContent(instance.id);
+  const change = useChangeContentVersion(instance.id);
+  // 更新している行と、直前の更新で失敗した MOD
+  const [updating, setUpdating] = useState<ReadonlySet<string>>(noRows);
+  // 失敗の一覧はタブを開き直しても残す
+  const [failures, setFailures] = useUpdateFailures(instance.id);
+
   // 開いたときに 1 回だけ特定する（StrictMode で効果が 2 回走っても 1 回にする）
   const identified = useRef(false);
   useEffect(() => {
@@ -114,19 +190,20 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     mods: [] as ContentItem[],
     toast,
     t,
-    setEnabled: setEnabled.mutate,
+    setEnabled: setEnabled.mutateAsync,
     add: add.mutate,
     identify: identify.mutate,
   });
   useLayoutEffect(() => {
     latest.current = {
-      locked,
+      // 更新と版の切り替えの最中は、インスタンスが他のコンテンツの変更を受け付けない
+      locked: locked || update.isPending || change.isPending,
       kind,
       dialogOpen,
       mods: lists.mod.data ?? [],
       toast,
       t,
-      setEnabled: setEnabled.mutate,
+      setEnabled: setEnabled.mutateAsync,
       add: add.mutate,
       identify: identify.mutate,
     };
@@ -134,11 +211,25 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   // 追加の最中のドロップは受けない。状態の反映を待たずに止めるため ref で持つ
   const adding = useRef(false);
 
-  const toggle = useCallback((item: ContentItem) => {
-    latest.current.setEnabled(
-      { kind: item.kind, relPath: item.relPath, enabled: !item.enabled },
-      { onError: latest.current.toast.showError },
-    );
+  // 切り替えの最中の行（キーは rowId）。一覧全体ではなく、その行のトグルだけを止める。
+  // 一覧全体を止めると、押すたびにすべての行のボタンが無効の見た目になって一瞬ちらつく
+  const [toggling, setToggling] = useState<ReadonlySet<string>>(noRows);
+  // 状態の反映を待たずに二度押しを止めるため ref でも持つ
+  const togglingRef = useRef(new Set<string>());
+
+  const toggle = useCallback(async (item: ContentItem) => {
+    const id = rowId(item.relPath);
+    if (togglingRef.current.has(id)) return;
+    togglingRef.current.add(id);
+    setToggling(new Set(togglingRef.current));
+    try {
+      await latest.current.setEnabled({ kind: item.kind, relPath: item.relPath, enabled: !item.enabled });
+    } catch (error) {
+      latest.current.toast.showError(error);
+    } finally {
+      togglingRef.current.delete(id);
+      setToggling(new Set(togglingRef.current));
+    }
   }, []);
 
   const addFiles = useCallback((target: ContentKind, paths: string[], overwrite: boolean) => {
@@ -180,17 +271,97 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
           return;
         }
       }
-      toggle(item);
+      void toggle(item);
     },
     [toggle],
   );
 
   const onRemove = useCallback((item: ContentItem) => {
-    if (latest.current.locked) return;
+    // 切り替えの最中の行は、名前が変わる前の relPath で消さないよう待たせる
+    if (latest.current.locked || togglingRef.current.has(rowId(item.relPath))) return;
     const dependents = item.kind === "mod" ? dependentsOf(latest.current.mods, item) : [];
     setDialog({ type: "remove", item, dependents });
     setDialogOpen(true);
   }, []);
+
+  // 更新。1 件でも「すべて更新」でも 1 つのタスクで行い、終わったら結果をまとめて知らせる
+  const runUpdate = useCallback(
+    async (relPaths: string[]) => {
+      if (latest.current.locked || relPaths.length === 0) return;
+      // 状態の反映を待たずに二重の開始を止める
+      latest.current.locked = true;
+      const { t, toast } = latest.current;
+      setUpdating(new Set(relPaths));
+      setFailures(null);
+      try {
+        const outcome = await update.mutateAsync(relPaths);
+        const report = outcome.report;
+        if (report && report.failures.length > 0) setFailures(report.failures);
+        if (outcome.state === "succeeded") {
+          if (report && report.updated > 0)
+            toast.show({ kind: "success", message: t("modrinth.updated", { count: report.updated }) });
+        } else if (outcome.state === "cancelled") {
+          toast.show({ kind: "info", message: t("modrinth.updateCancelled") });
+        } else {
+          toast.showError(outcome.error ?? new Error("update task failed"));
+        }
+      } catch (error) {
+        toast.showError(error);
+      } finally {
+        setUpdating(noRows);
+      }
+    },
+    [setFailures, update.mutateAsync],
+  );
+
+  const onUpdate = useCallback((item: ContentItem) => void runUpdate([item.relPath]), [runUpdate]);
+
+  // 版の切り替え。更新と同じく 1 つのタスクで行い、その間は行を「更新中…」にする
+  const onChangeVersion = useCallback(
+    async (item: ContentItem, choice: VersionChoice) => {
+      if (latest.current.locked) return;
+      latest.current.locked = true;
+      const { t, toast } = latest.current;
+      const name = displayName(item);
+      setUpdating(new Set([item.relPath]));
+      try {
+        const outcome = await change.mutateAsync({ relPath: item.relPath, versionId: choice.versionId });
+        if (outcome.state === "succeeded")
+          toast.show({ kind: "success", message: t("modrinth.versionChanged", { name, version: choice.versionNumber }) });
+        else if (outcome.state === "cancelled") toast.show({ kind: "info", message: t("modrinth.versionChangeCancelled") });
+        else toast.showError(outcome.error ?? new Error("version change task failed"));
+      } catch (error) {
+        toast.showError(error);
+      } finally {
+        setUpdating(noRows);
+      }
+    },
+    [change.mutateAsync],
+  );
+
+  const check = updates.data;
+  const available = useMemo(() => new Map((check?.updates ?? []).map((u) => [u.relPath, u])), [check]);
+  const noCompatible = useMemo(() => new Set(check?.noCompatible ?? []), [check]);
+  const instanceId = instance.id;
+  const rowUpdates = useMemo<RowUpdates>(
+    () => ({ available, noCompatible, updating, onUpdate, instanceId, onChangeVersion }),
+    [available, noCompatible, updating, onUpdate, instanceId, onChangeVersion],
+  );
+  const updatable = useMemo(() => new Set(available.keys()), [available]);
+
+  // 押して確かめ直した失敗は、それより後に確認が成功するまで出す
+  const recheckError =
+    recheck.error && recheck.submittedAt >= updates.dataUpdatedAt ? toErrorPayload(recheck.error) : null;
+  const queryError = updates.error && !updates.data ? toErrorPayload(updates.error) : null;
+
+  const onCheck = () => {
+    if (recheck.isPending) return;
+    recheck.mutate(undefined, {
+      onSuccess: (data) => {
+        if (data.updates.length === 0) toast.show({ kind: "info", message: t("modrinth.upToDate") });
+      },
+    });
+  };
 
   // ファイルのドロップ。受け口はウィンドウ全体に 1 つなので、開いているサブタブの種類で追加する
   useEffect(() => {
@@ -231,7 +402,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     }
     if (dialog.type === "disable") {
       closeDialog();
-      toggle(dialog.item);
+      void toggle(dialog.item);
     } else if (dialog.type === "remove") {
       if (remove.isPending) return;
       remove.mutate(
@@ -244,24 +415,52 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     }
   };
 
-  const busy = locked || setEnabled.isPending || remove.isPending;
+  const busy = locked || remove.isPending || update.isPending || change.isPending;
+
+  const updateControls: UpdateControls | undefined = canUpdate
+    ? {
+        rows: rowUpdates,
+        updatable,
+        count: available.size,
+        checking: recheck.isPending || (updates.isFetching && !updates.data),
+        onCheck,
+        onUpdateAll: () => void runUpdate([...available.keys()]),
+        disabled: busy,
+        checkError: recheckError ?? queryError,
+        failures,
+        onDismissFailures: () => setFailures(null),
+      }
+    : undefined;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-4">
-      {locked && <Notice tone="info">{t("content.busy")}</Notice>}
       <Tabs
         selectedKey={kind}
         onSelectionChange={(key) => setKind(key as ContentKind)}
         className="flex min-h-0 flex-1 flex-col gap-4"
       >
-        <TabList aria-label={t("content.tabs.label")} className="flex gap-1">
-          {kinds.map((k) => (
-            <Tab key={k} id={k} className={subTabClass}>
-              <span>{t(`content.tabs.${k}`)}</span>
-              {lists[k].data && <span className="tabular text-xs text-text-muted">{lists[k].data.length}</span>}
-            </Tab>
-          ))}
-        </TabList>
+        {/* 変更できない間の知らせは、サブタブの行の右に 1 行で出す。タブの上に行を足すと、出るたびに一覧が動く */}
+        <div className="flex h-8 min-w-0 shrink-0 items-center gap-4">
+          <TabList aria-label={t("content.tabs.label")} className="flex shrink-0 gap-1">
+            {kinds.map((k) => (
+              <Tab key={k} id={k} className={subTabClass}>
+                <span>{t(`content.tabs.${k}`)}</span>
+                {lists[k].data && <span className="tabular text-xs text-text-muted">{lists[k].data.length}</span>}
+              </Tab>
+            ))}
+          </TabList>
+          <p role="status" className="ml-auto flex min-w-0 items-center gap-2 text-sm text-text-muted">
+            {locked && (
+              <>
+                <IconInfo aria-hidden className="size-4 shrink-0" />
+                {/* 行に収まるよう短い文にし、理由の全体は title で見せる */}
+                <span className="truncate" title={t("content.busy")}>
+                  {t("content.busyShort")}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
         {kinds.map((k) => (
           <TabPanel key={k} id={k} className="flex min-h-0 flex-1 outline-none">
             <KindPanel
@@ -272,6 +471,10 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
               onToggle={onToggle}
               onRemove={onRemove}
               busy={busy}
+              toggling={toggling}
+              // ローダーの無いインスタンスには MOD を入れられないので出さない
+              addHref={k === "mod" && canUpdate ? `/instances/${instance.id}/modrinth` : undefined}
+              updates={k === "mod" ? updateControls : undefined}
             />
           </TabPanel>
         ))}
@@ -311,15 +514,21 @@ function KindPanel(props: {
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  toggling: ReadonlySet<string>;
+  /** 「Modrinth から追加」の行き先。無ければボタンを出さない */
+  addHref?: string;
+  /** 更新の部品（MOD のサブタブだけ）。無ければ更新の確認もボタンも出さない */
+  updates?: UpdateControls;
 }) {
   const { t } = useTranslation();
-  const { kind, query, filter } = props;
+  const { kind, query, filter, updates } = props;
   const categories = useCategories(kind);
   const [showExcluded, setShowExcluded] = useState(false);
   const items = query.data;
   // 並びは画面に出す名前の順にする（DB はパスの順で返す）
   const sorted = useMemo(() => sortByName(items ?? []), [items]);
-  const { visible, excluded } = useMemo(() => applyFilter(sorted, filter), [sorted, filter]);
+  const updatable = updates?.updatable;
+  const { visible, excluded } = useMemo(() => applyFilter(sorted, filter, updatable), [sorted, filter, updatable]);
   const metadata = isMetadataFiltered(filter);
   // メタデータの絞り込みを外したら、対象外の行を閉じた状態に戻す（付け直したときにいきなり開かない）
   useEffect(() => {
@@ -345,17 +554,28 @@ function KindPanel(props: {
           categories={categories.data ?? null}
           showStatus
           showSearch={false}
+          statuses={updates ? modStatuses : undefined}
         />
       </div>
       <div className="flex min-h-0 flex-col gap-2">
-        {/* 一覧の上の行。名前の入力を置く（5-4 で「Modrinth から追加」などのボタンもここに並べる） */}
+        {/* 一覧の上の行。名前の入力と、MOD のサブタブでは「Modrinth から追加」を置く */}
         <div className="flex shrink-0 items-center gap-2 pb-1">
           <ContentSearchField
             value={filter.query}
             onChange={(query) => props.onFilterChange({ ...filter, query })}
             className="min-w-0 flex-1"
           />
+          {props.addHref !== undefined && (
+            <Link to={props.addHref} className={addLink}>
+              <IconPlus aria-hidden className="size-4 shrink-0" />
+              <span>{t("modrinth.addFromModrinth")}</span>
+            </Link>
+          )}
         </div>
+        {updates && <UpdateBar updates={updates} />}
+        {updates?.failures && updates.failures.length > 0 && (
+          <UpdateFailures failures={updates.failures} onDismiss={updates.onDismissFailures} />
+        )}
         {metadata && excluded.length > 0 && (
           <div className="flex items-center gap-3 px-3 text-sm text-text-muted">
             <span>{t("content.excluded", { count: excluded.length })}</span>
@@ -370,7 +590,14 @@ function KindPanel(props: {
           <p className="px-3 py-2 text-sm text-text-muted">{t("content.noMatch")}</p>
         ) : (
           <div className="min-h-0 flex-1">
-            <ContentList items={visible} onToggle={props.onToggle} onRemove={props.onRemove} busy={props.busy} />
+            <ContentList
+              items={visible}
+              onToggle={props.onToggle}
+              onRemove={props.onRemove}
+              busy={props.busy}
+              toggling={props.toggling}
+              updates={updates?.rows}
+            />
           </div>
         )}
         {metadata && showExcluded && excluded.length > 0 && (
@@ -383,12 +610,95 @@ function KindPanel(props: {
               onToggle={props.onToggle}
               onRemove={props.onRemove}
               busy={props.busy}
+              toggling={props.toggling}
+              updates={updates?.rows}
               label={t("content.excludedList")}
             />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 一覧の上の、更新の行。右に「更新を確認」と、更新があるときだけ「すべて更新（件数）」を置く。
+ * 確認の失敗のうちオフラインと 429 は、左に「あとで確認します」とだけ控えめに出す。それ以外は失敗として示す。
+ */
+function UpdateBar({ updates }: { updates: UpdateControls }) {
+  const { t } = useTranslation();
+  const error = updates.checkError;
+  const quiet = error !== null && isQuietCheckError(error);
+  return (
+    <>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <p role="status" className="flex min-w-0 flex-1 items-center gap-2 px-3 text-sm text-text-muted">
+          {quiet && (
+            <>
+              <IconOffline aria-hidden className="size-4 shrink-0" />
+              {/* 折り返すと行の高さが変わって一覧が動くので、1 行に切り詰める */}
+              <span className="truncate" title={t("modrinth.checkLater")}>
+                {t("modrinth.checkLater")}
+              </span>
+            </>
+          )}
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            onPress={updates.onCheck}
+            isDisabled={updates.checking || updates.disabled}
+            className={barButton}
+          >
+            <IconCheck aria-hidden className="size-4 shrink-0" />
+            <StableLabel
+              labels={[t("modrinth.checkUpdates"), t("modrinth.checking")]}
+              active={updates.checking ? 1 : 0}
+            />
+          </Button>
+          {updates.count > 0 && (
+            <Button onPress={updates.onUpdateAll} isDisabled={updates.disabled} className={barButton}>
+              <IconUpdate aria-hidden className="size-4 shrink-0 text-accent" />
+              <span>{t("modrinth.updateAll", { count: updates.count })}</span>
+            </Button>
+          )}
+        </div>
+      </div>
+      {error !== null && !quiet && (
+        <div role="alert" className="px-3">
+          <FailureNotice error={error} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 更新で失敗した MOD の名前と理由。更新が終わったあとに、閉じるまで一覧の上に出す。 */
+function UpdateFailures({ failures, onDismiss }: { failures: ItemFailure[]; onDismiss: () => void }) {
+  const { t } = useTranslation();
+  const titleId = useId();
+  return (
+    <section
+      role="alert"
+      aria-labelledby={titleId}
+      className="flex shrink-0 flex-col gap-2 rounded-md border border-line bg-surface-1 px-3 py-2.5"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p id={titleId} className="text-sm font-semibold text-text-strong">
+          {t("modrinth.updateFailures", { count: failures.length })}
+        </p>
+        <Button onPress={onDismiss} className={textButton}>
+          {t("modrinth.dismiss")}
+        </Button>
+      </div>
+      <ul className="scroll-thin flex max-h-40 flex-col gap-2 overflow-auto">
+        {failures.map((f, i) => (
+          <li key={`${i}-${f.name}`} className="flex flex-col gap-1">
+            <span className="select-text text-sm text-text-strong">{f.name}</span>
+            <FailureNotice error={f.error} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

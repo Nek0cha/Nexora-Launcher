@@ -1,0 +1,31 @@
+{
+  "hits": [
+    {
+      "project_id": "AANobbMI",
+      "slug": "sodium",
+      "title": "Sodium",
+      "description": "The fastest rendering engine.",
+      "icon_url": "https://cdn.modrinth.com/data/AANobbMI/icon.png",
+      "downloads": 30000000000,
+      "categories": ["fabric", "optimization"],
+      "versions": ["1.20.1", "1.20.2"],
+      "client_side": "required",
+      "server_side": "unsupported"
+    },
+    {
+      "project_id": "ZZZZ0000",
+      "slug": "odd",
+      "title": "Odd",
+      "description": "",
+      "icon_url": null,
+      "downloads": 5,
+      "categories": [],
+      "versions": [],
+      "client_side": "unknown",
+      "server_side": "optional"
+    }
+  ],
+  "offset": 20,
+  "limit": 20,
+  "total_hits": 42
+}

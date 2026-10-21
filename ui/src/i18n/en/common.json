@@ -9,7 +9,6 @@
   },
   "empty": {
     "instances": "No instances yet. Pick a version to create one.",
-    "browse": "Browsing mods and resource packs will arrive in a future version.",
     "accounts": "Add a Microsoft account to play Minecraft."
   },
   "play": {
@@ -77,7 +76,8 @@
       "install": "Install",
       "launch": "Launch",
       "login": "Sign in",
-      "duplicate": "Duplicate"
+      "duplicate": "Duplicate",
+      "content": "Mods"
     },
     "state": {
       "queued": "Queued",
@@ -177,7 +177,8 @@
   },
   "instances": {
     "more": "More",
-    "details": "Details",
+    "content": "Content",
+    "settings": "Settings",
     "duplicate": "Duplicate",
     "delete": "Delete",
     "openFolder": "Open folder",
@@ -270,7 +271,8 @@
       "statusValue": {
         "enabled": "Enabled",
         "disabled": "Disabled",
-        "dependency": "Dependency"
+        "dependency": "Dependency",
+        "update": "Update available"
       }
     },
     "category": {
@@ -335,7 +337,8 @@
       "resourcepack": "Resource packs",
       "shader": "Shaders"
     },
-    "busy": "You can't change content while the instance is running, installing or being duplicated.",
+    "busy": "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
+    "busyShort": "Can't change content right now (running, installing, etc.)",
     "excluded": "Not covered by this filter: {{count}}",
     "excludedShow": "Show",
     "excludedHide": "Hide",
@@ -369,5 +372,77 @@
       "conflictBody": "These files are already installed. Replace them?",
       "replace": "Replace"
     }
+  },
+  "modrinth": {
+    "title": "Modrinth",
+    "browseTitle": "Browse mods",
+    "addFromModrinth": "Add from Modrinth",
+    "instanceTitle": "Add mods to {{name}}",
+    "search": "Search mods",
+    "mcVersion": "Minecraft version",
+    "anyVersion": "All versions",
+    "loader": "Loader",
+    "fixed": "Fixed: {{version}} / {{loader}}",
+    "fixedLabel": "Matches this instance",
+    "total": "{{value}} results",
+    "searching": "Searching...",
+    "noResults": "No mods match this search.",
+    "offline": "Can't reach Modrinth. Searching and adding mods work when you're online.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "downloads": "{{value}} downloads",
+    "results": "Search results",
+    "openPage": "Open on Modrinth",
+    "addTo": "Add to instance",
+    "addToLast": "Add to {{name}}",
+    "addToLastUnset": "Add to last used",
+    "install": "Add",
+    "installing": "Adding...",
+    "installed": "Installed",
+    "chooseInstance": "Target instance",
+    "noInstances": "No instance can use this mod",
+    "confirmTitle": "Add {{name}}?",
+    "confirmBody_one": "Version {{version}} will be installed with {{count}} required mod.",
+    "confirmBody_other": "Version {{version}} will be installed with {{count}} required mods.",
+    "incompatibleBody": "These installed mods declare they don't work together with this mod.",
+    "installAnyway": "Add anyway",
+    "cancel": "Cancel",
+    "added": "Added {{name}} to {{instance}}",
+    "enabled": "Enabled {{name}} in {{instance}}",
+    "dependenciesAdded_one": "Added {{count}} required mod",
+    "dependenciesAdded_other": "Added {{count}} required mods",
+    "cancelled": "Adding {{name}} was cancelled",
+    "noLoader": "This instance has no mod loader, so mods can't be added.",
+    "sort": "Sort by",
+    "sortValue": {
+      "relevance": "Relevance",
+      "downloads": "Downloads"
+    },
+    "update": "Update",
+    "updateTo": "Update to {{version}}",
+    "updateNamed": "Update {{name}} to {{version}}",
+    "updating": "Updating…",
+    "updateAll": "Update all ({{count}})",
+    "checkUpdates": "Check for updates",
+    "checking": "Checking…",
+    "checkLater": "Can't reach Modrinth right now. Updates will be checked later.",
+    "upToDate": "Everything is up to date",
+    "noCompatible": "No version for this instance was found on Modrinth",
+    "updated": "Mods updated: {{count}}",
+    "updateCancelled": "The update was cancelled",
+    "updateFailures": "Mods that couldn't be updated: {{count}}",
+    "dismiss": "Dismiss",
+    "changeVersion": "Change the version of {{name}} (now {{version}})",
+    "versions": "Versions of {{name}}",
+    "versionsLoading": "Loading versions…",
+    "pinned": "Fixed at this version, so updates aren't offered. Choose the newest release in the version list to unpin it.",
+    "currentVersion": "Current",
+    "versionType": {
+      "release": "Release",
+      "beta": "Beta",
+      "alpha": "Alpha"
+    },
+    "versionChanged": "Changed {{name}} to {{version}}",
+    "versionChangeCancelled": "Changing the version was cancelled"
   }
 }

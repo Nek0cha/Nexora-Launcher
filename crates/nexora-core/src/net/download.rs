@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
 use tokio::io::AsyncWriteExt;
@@ -155,19 +155,43 @@ where
     let done = AtomicU64::new(0);
     let parts = Parts::default();
     on_progress(0, total);
-    let result = futures::stream::iter(pending.iter().map(Ok::<_, CoreError>))
-        .try_for_each_concurrent(concurrency.clamp(1, 16), |item| {
+    // 最初の失敗で残りを止めるための子の token。途中の取得の future は落とさずに、取り消しを
+    // 見て終わるまで待つ（落とすと、別のスレッドで進むファイルの作成や書き込みが、返った後も
+    // 残りうる。呼び出し側がその直後に置き場所を消すと、消せなかったり作り直されたりする）
+    let stop = token.child_token();
+    let first_err: Mutex<Option<CoreError>> = Mutex::new(None);
+    futures::stream::iter(pending.iter())
+        .for_each_concurrent(concurrency.clamp(1, 16), |item| {
             let ctx = Ctx {
                 http,
-                token,
+                token: &stop,
                 depth,
                 done: &done,
                 total,
                 parts: &parts,
             };
-            download_one(ctx, item, &on_progress)
+            let (stop, first_err) = (&stop, &first_err);
+            let on_progress = &on_progress;
+            async move {
+                if let Err(err) = download_one(ctx, item, on_progress).await {
+                    let mut slot = first_err.lock().unwrap_or_else(PoisonError::into_inner);
+                    // 止めたことによる取り消しより、最初の失敗を返す
+                    if slot.is_none() {
+                        *slot = Some(err);
+                    }
+                    drop(slot);
+                    stop.cancel();
+                }
+            }
         })
         .await;
+    let result = match first_err
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+    {
+        Some(err) => Err(err),
+        None => Ok(()),
+    };
     if result.is_err() {
         // 途中で止められた取得の `.part` も、ここで消す（ほかのタスクの `.part` には触れない）
         for part in parts.take() {
@@ -279,8 +303,12 @@ where
         total,
         parts,
     } = ctx;
+    if token.is_cancelled() {
+        return Err(CoreError::Cancelled);
+    }
     // 同じファイルを書くほかのタスクが終わるまで待つ
     let _guard = tokio::select! {
+        biased;
         _ = token.cancelled() => return Err(CoreError::Cancelled),
         guard = lock_path(&item.path) => guard,
     };
@@ -304,10 +332,8 @@ where
         let mut written = 0u64;
         let part = part_path(&item.path);
         parts.add(&part);
-        let result = tokio::select! {
-            _ = token.cancelled() => Err(CoreError::Cancelled),
-            r = attempt_download(http, item, &part, &mut written, done, total, on_progress) => r,
-        };
+        // 取り消しは attempt_download の中で、ファイルの操作の合間にだけ見る（操作の途中で落とさない）
+        let result = attempt_download(ctx, item, &part, &mut written, on_progress).await;
         match result {
             Ok(()) => {
                 parts.forget(&part);
@@ -332,24 +358,37 @@ where
     }
 }
 
+/// 1 回の取得。取り消しは通信を待つ間にだけ見て、ファイルの操作は落とさずに終わらせる。
 async fn attempt_download<F>(
-    http: &Http,
+    ctx: Ctx<'_>,
     item: &DownloadItem,
     part: &Path,
     written: &mut u64,
-    done: &AtomicU64,
-    total: u64,
     on_progress: &F,
 ) -> Result<(), CoreError>
 where
     F: Fn(u64, u64) + Send + Sync,
 {
+    let Ctx {
+        http,
+        token,
+        done,
+        total,
+        ..
+    } = ctx;
+    if token.is_cancelled() {
+        return Err(CoreError::Cancelled);
+    }
     if let Some(parent) = item.path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|s| io_err(parent, s))?;
     }
-    let response = http.client().get(&item.url).send().await.map_err(offline)?;
+    let response = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(CoreError::Cancelled),
+        r = http.client().get(&item.url).send() => r.map_err(offline)?,
+    };
     let status = response.status();
     if !status.is_success() {
         return Err(CoreError::HttpStatus {
@@ -363,18 +402,32 @@ where
     let mut hasher = Sha1::new();
     let mut stream = response.bytes_stream();
     let mut size = 0u64;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(offline)?;
-        hasher.update(&chunk);
-        file.write_all(&chunk).await.map_err(|s| io_err(part, s))?;
-        let n = chunk.len() as u64;
-        size += n;
-        *written += n;
-        let now = done.fetch_add(n, Ordering::Relaxed) + n;
-        on_progress(now, total);
+    let streamed: Result<(), CoreError> = async {
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = token.cancelled() => return Err(CoreError::Cancelled),
+                next = stream.next() => next,
+            };
+            let Some(chunk) = next else {
+                return Ok(());
+            };
+            let chunk = chunk.map_err(offline)?;
+            hasher.update(&chunk);
+            file.write_all(&chunk).await.map_err(|s| io_err(part, s))?;
+            let n = chunk.len() as u64;
+            size += n;
+            *written += n;
+            let now = done.fetch_add(n, Ordering::Relaxed) + n;
+            on_progress(now, total);
+        }
     }
-    file.flush().await.map_err(|s| io_err(part, s))?;
+    .await;
+    // tokio の書き込みは別のスレッドで進む。失敗や取り消しでも、書き終わるのを待ってから閉じる
+    let flushed = file.flush().await.map_err(|s| io_err(part, s));
     drop(file);
+    streamed?;
+    flushed?;
     let actual = hex(&hasher.finalize());
     let size_ok = item.size.is_none_or(|s| s == size);
     let hash_ok = item

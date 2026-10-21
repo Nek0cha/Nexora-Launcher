@@ -103,6 +103,11 @@ pub fn run() {
                             tracing::warn!(code = %err.code(), "failed to load settings at startup");
                         }
                     }
+                    // コマンドを受け付ける前に、途中で止まった中身の操作を同期的に復旧する
+                    // （復旧が終わるまで走査で DB を更新させない。spec 0 の 3.7 節）
+                    if let Err(err) = services.launcher.recover_operations() {
+                        tracing::warn!(code = err.code(), "failed to recover content operations");
+                    }
                     // コマンドを受け付ける前に、実行中のゲームを一度だけ引き継ぐ。
                     // tokio の実行環境の中で動かすため block_on で待つ。
                     let launcher = services.launcher.clone();
@@ -160,6 +165,15 @@ pub fn run() {
             commands::remove_content,
             commands::add_content_files,
             commands::list_content_categories,
+            commands::search_modrinth,
+            commands::preview_content_install,
+            commands::install_content,
+            commands::check_content_updates,
+            commands::update_content,
+            commands::list_content_versions,
+            commands::change_content_version,
+            commands::content_task_report,
+            commands::open_modrinth_project,
             commands::get_content_icon,
             commands::duplicate_instance,
             commands::get_skin_variant,

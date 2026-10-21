@@ -5,6 +5,7 @@ import Accounts from "../routes/Accounts";
 import Browse from "../routes/Browse";
 import Home from "../routes/Home";
 import InstanceDetail from "../routes/InstanceDetail";
+import InstanceModrinth from "../routes/InstanceModrinth";
 import Instances from "../routes/Instances";
 import Settings from "../routes/Settings";
 
@@ -18,6 +19,7 @@ export const router = createHashRouter([
       { index: true, element: <Home /> },
       { path: "instances", element: <Instances /> },
       { path: "instances/:id", element: <InstanceDetail /> },
+      { path: "instances/:id/modrinth", element: <InstanceModrinth /> },
       { path: "browse", element: <Browse /> },
       { path: "accounts", element: <Accounts /> },
       { path: "settings", element: <Settings /> },
