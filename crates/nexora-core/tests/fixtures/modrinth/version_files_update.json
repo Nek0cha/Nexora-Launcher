@@ -1,0 +1,20 @@
+{
+  "1111111111111111111111111111111111111111": {
+    "id": "NEWV",
+    "project_id": "AANobbMI",
+    "version_number": "0.6.0",
+    "version_type": "release",
+    "game_versions": ["1.20.1"],
+    "loaders": ["fabric"],
+    "files": [
+      {
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/NEWV/c.jar",
+        "filename": "c.jar",
+        "hashes": { "sha1": "4444444444444444444444444444444444444444" },
+        "size": 10,
+        "primary": true
+      }
+    ],
+    "dependencies": []
+  }
+}

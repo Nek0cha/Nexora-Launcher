@@ -1,0 +1,53 @@
+[
+  {
+    "id": "VER2",
+    "project_id": "AANobbMI",
+    "version_number": "0.5.13-beta",
+    "version_type": "beta",
+    "game_versions": ["1.20.1"],
+    "loaders": ["fabric", "quilt"],
+    "files": [
+      {
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/VER2/a.jar",
+        "filename": "a.jar",
+        "hashes": { "sha1": "1111111111111111111111111111111111111111" },
+        "size": 100,
+        "primary": true
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "id": "VER1",
+    "project_id": "AANobbMI",
+    "version_number": "0.5.12",
+    "version_type": "release",
+    "game_versions": ["1.20.1"],
+    "loaders": ["fabric"],
+    "files": [
+      {
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/VER1/src.jar",
+        "filename": "src.jar",
+        "hashes": { "sha1": "2222222222222222222222222222222222222222" },
+        "size": 50,
+        "primary": false
+      },
+      {
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/VER1/b.jar",
+        "filename": "b.jar",
+        "hashes": {
+          "sha1": "3333333333333333333333333333333333333333",
+          "sha512": "abcd"
+        },
+        "size": 200,
+        "primary": true
+      }
+    ],
+    "dependencies": [
+      { "project_id": "P1", "version_id": null, "dependency_type": "required" },
+      { "project_id": "P2", "version_id": "V2", "dependency_type": "optional" },
+      { "project_id": "P3", "version_id": null, "dependency_type": "incompatible" },
+      { "project_id": null, "version_id": "V4", "dependency_type": "embedded" }
+    ]
+  }
+]
