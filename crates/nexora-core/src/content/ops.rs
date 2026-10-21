@@ -48,7 +48,7 @@ pub struct AddReport {
 ///
 /// `<kind.dir()>/<name>` の形で、`name` が 1 つの部分からなり、種類の拡張子
 /// （`.disabled` 付きを含む）を持つものに限る。保存先の外や別の種類の保存先を指すものは拒む。
-fn content_name(kind: ContentKind, rel_path: &str) -> Result<&str, CoreError> {
+pub(super) fn content_name(kind: ContentKind, rel_path: &str) -> Result<&str, CoreError> {
     let invalid = || CoreError::InvalidInstanceSetting {
         field: "rel_path".into(),
     };

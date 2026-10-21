@@ -1,8 +1,7 @@
 //! 複数のファイルと DB をまたぐ操作の記録（spec 0 の 3.7 節）と、起動時の復旧。
 //! 手順：`begin`（prepared）→ `staging/<id>/` に用意と退避 → 移動と DB の更新と
 //! `mark_committed` を 1 つのトランザクションで → `staging/<id>/` を消して `finish`。
-// 記録を書く側（begin、mark_committed、add_backup、prune_backups）は導入と更新のタスクで使う
-#![allow(dead_code)]
+//! 記録を書く側（begin、mark_committed、add_backup、prune_backups）は `apply` が使う。
 
 use std::path::{Path, PathBuf};
 
@@ -244,7 +243,7 @@ const CONTENT_DIRS: [&str; 3] = ["mods", "resourcepacks", "shaderpacks"];
 
 /// `/` 区切りの相対パスとして安全か。空の区切り、`.`、`..`、`\`、`:`（ドライブや代替ストリーム）、
 /// 先頭の `/` を含むものは断る。
-fn is_safe_relative(path: &str) -> bool {
+pub(super) fn is_safe_relative(path: &str) -> bool {
     !path.is_empty()
         && path.split('/').all(|seg| {
             !seg.is_empty() && seg != "." && seg != ".." && !seg.contains(['\\', ':', '\0'])

@@ -3,6 +3,7 @@
 pub(crate) mod journal;
 pub(crate) mod store;
 
+pub mod apply;
 pub mod identify;
 pub mod local_meta;
 pub mod modrinth;
