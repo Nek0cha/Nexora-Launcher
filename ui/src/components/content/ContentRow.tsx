@@ -92,7 +92,7 @@ const versionPopover = [
 
 const versionOption = [
   "flex h-9 cursor-default items-center gap-2 rounded-sm px-2 text-sm text-text outline-none",
-  "hover:bg-surface-3 focused:bg-surface-3 disabled:text-text-muted disabled:hover:bg-transparent",
+  "hover:bg-surface-3 focus:bg-surface-3 disabled:text-text-muted disabled:hover:bg-transparent",
 ].join(" ");
 
 // 版の種類の札。リリース以外は目に留まるよう色を付ける
