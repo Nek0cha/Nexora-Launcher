@@ -319,6 +319,28 @@ describe("ContentTab", () => {
     expect(addContentFiles).not.toHaveBeenCalled();
   });
 
+  it("the busy notice sits in the sub-tab row so the list does not move when it appears", async () => {
+    const view = mount(false);
+    await ready();
+    const tabs = screen.getByRole("tablist", { name: "Content type" });
+    const row = tabs.parentElement!;
+    const root = row.parentElement!;
+    const before = [...root.children];
+    view.setBusy(true);
+    const notice = await screen.findByText(
+      "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
+    );
+    // 表示の有無で、タブの上に行が増えたり減ったりしない（一覧の位置が変わらない）
+    expect([...root.children]).toEqual(before);
+    expect(row.contains(notice)).toBe(true);
+    // 長い文は 1 行に切り詰め、全体は title で読める
+    expect(notice.classList).toContain("truncate");
+    expect(notice.getAttribute("title")).toBe(notice.textContent);
+    view.setBusy(false);
+    await waitFor(() => expect(screen.queryByText(/You can't change content/)).toBeNull());
+    expect([...root.children]).toEqual(before);
+  });
+
   it("dropping files calls addContentFiles for the open sub-tab with overwrite=false", async () => {
     mount();
     await ready();

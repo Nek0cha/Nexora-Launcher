@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import IconUpdate from "~icons/ph/arrow-up";
 import IconCheck from "~icons/ph/arrows-clockwise";
 import IconDrop from "~icons/ph/download-simple";
+import IconInfo from "~icons/ph/info";
 import IconPlus from "~icons/ph/plus";
 import IconOffline from "~icons/ph/wifi-slash";
 import { onFilesDropped } from "../api/dragDrop";
@@ -21,7 +22,6 @@ import { ContentFilter, ContentSearchField } from "../components/content/Content
 import { ContentList, type RowUpdates } from "../components/content/ContentList";
 import { ROW_SIZE, rowId } from "../components/content/ContentRow";
 import { FailureNotice } from "../components/FailureNotice";
-import { Notice } from "../components/settingsLayout";
 import { useToast } from "../components/toast/useToast";
 import {
   applyFilter,
@@ -433,20 +433,32 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
 
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-4">
-      {locked && <Notice tone="info">{t("content.busy")}</Notice>}
       <Tabs
         selectedKey={kind}
         onSelectionChange={(key) => setKind(key as ContentKind)}
         className="flex min-h-0 flex-1 flex-col gap-4"
       >
-        <TabList aria-label={t("content.tabs.label")} className="flex gap-1">
-          {kinds.map((k) => (
-            <Tab key={k} id={k} className={subTabClass}>
-              <span>{t(`content.tabs.${k}`)}</span>
-              {lists[k].data && <span className="tabular text-xs text-text-muted">{lists[k].data.length}</span>}
-            </Tab>
-          ))}
-        </TabList>
+        {/* 変更できない間の知らせは、サブタブの行の右に 1 行で出す。タブの上に行を足すと、出るたびに一覧が動く */}
+        <div className="flex h-8 min-w-0 shrink-0 items-center gap-4">
+          <TabList aria-label={t("content.tabs.label")} className="flex shrink-0 gap-1">
+            {kinds.map((k) => (
+              <Tab key={k} id={k} className={subTabClass}>
+                <span>{t(`content.tabs.${k}`)}</span>
+                {lists[k].data && <span className="tabular text-xs text-text-muted">{lists[k].data.length}</span>}
+              </Tab>
+            ))}
+          </TabList>
+          <p role="status" className="ml-auto flex min-w-0 items-center gap-2 text-sm text-text-muted">
+            {locked && (
+              <>
+                <IconInfo aria-hidden className="size-4 shrink-0" />
+                <span className="truncate" title={t("content.busy")}>
+                  {t("content.busy")}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
         {kinds.map((k) => (
           <TabPanel key={k} id={k} className="flex min-h-0 flex-1 outline-none">
             <KindPanel
@@ -622,7 +634,10 @@ function UpdateBar({ updates }: { updates: UpdateControls }) {
           {quiet && (
             <>
               <IconOffline aria-hidden className="size-4 shrink-0" />
-              <span>{t("modrinth.checkLater")}</span>
+              {/* 折り返すと行の高さが変わって一覧が動くので、1 行に切り詰める */}
+              <span className="truncate" title={t("modrinth.checkLater")}>
+                {t("modrinth.checkLater")}
+              </span>
             </>
           )}
         </p>
