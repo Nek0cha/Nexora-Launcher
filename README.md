@@ -22,6 +22,7 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Players sign in with their own Microsoft account in the system browser. The launcher uses the authorization code flow with PKCE, and does not use a client secret.
 - There is no backend server. All authentication happens on the player's device.
 - When an instance's content tab is opened, the launcher sends the SHA-1 hashes of the installed mods, resource packs and shaders to api.modrinth.com to identify them. These are read-only lookups and include no account data.
+- When content is searched, installed or updated, the launcher also contacts Modrinth: the search text and filters (Minecraft version, loader, categories, environment) go to api.modrinth.com; version lookups for installs and their dependencies go to api.modrinth.com; update checks send the SHA-1 hashes of the installed mods together with the instance's Minecraft version and loader; and files are downloaded from cdn.modrinth.com. Nothing else is sent, and none of it includes account data.
 - The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
 - Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
 - Release builds require an account that owns Minecraft: Java Edition.
@@ -41,7 +42,8 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
   - 有効と無効を切り替えられます（ファイル名に `.disabled` を付け外しします）。ファイルのドラッグ＆ドロップで追加でき、削除もできます。
   - 名前、クライアント／サーバー、カテゴリ、状態で絞り込めます。MOD、リソースパック、シェーダーは、ファイルのハッシュから Modrinth 上の情報を調べて表示します。
   - コンテンツタブを開くと、入っている MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります（情報を読み取るだけで、アカウントの情報は送りません）。
-  - Modrinth での検索、インストール、更新は次のフェーズ（5-4）で追加します。
+  - Modrinth で MOD を検索し、依存する MOD とあわせて導入できます。更新の確認と適用もでき、更新の前には置き換える jar を退避します。
+  - MOD を検索、導入、更新するときは、Modrinth に次の内容を送ります。検索の文字列と絞り込みの条件（Minecraft のバージョン、ローダー、カテゴリ、環境）、導入と依存の解決のための版の問い合わせ、更新の確認のための MOD のファイルの SHA-1 ハッシュと、インスタンスの Minecraft のバージョンとローダーです。ファイルは cdn.modrinth.com からダウンロードします。これ以外は送りません。アカウントの情報も送りません。
 
 ## 開発環境
 
