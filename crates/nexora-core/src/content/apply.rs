@@ -29,7 +29,7 @@ use super::store::{self, Row};
 use super::{ContentKind, InstalledAs, Provider};
 use crate::db::Db;
 use crate::error::{CoreError, ErrorPayload};
-use crate::net::{Depth, DownloadItem, Http, fetch_all};
+use crate::net::{Depth, DownloadItem, Http, fetch_all, part_path};
 use crate::paths::AppPaths;
 
 /// 版のファイルを取ってよいオリジン（本番）。これ以外の `url` の版は導入しない。
@@ -573,22 +573,52 @@ fn place(
 /// ファイルを動かす。rename できなければ（別のドライブなど）コピーしてから元を消す。
 /// 元を消せなければコピーを消して `Err` を返し、元の場所だけに残す。
 fn move_file(from: &Path, to: &Path) -> Result<(), CoreError> {
+    move_file_with(from, to, |a, b| std::fs::rename(a, b))
+}
+
+/// `move_file` の本体。テストで rename の失敗を起こせるように、rename を受け取る。
+///
+/// コピーは `<to>.<uuid>.part` に書いてディスクまで同期し、書き終えてから `to` へ rename する。
+/// 途中で落ちても `to` の名前に書きかけが現れることはない（退避の書きかけを復旧が元の jar に
+/// 上書きするのを防ぐ）。残った `.part` は記録に無い名前で、種類の拡張子でもないので、
+/// 復旧にも走査にも拾われず、staging ごと消える。
+fn move_file_with(
+    from: &Path,
+    to: &Path,
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), CoreError> {
     if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent).map_err(|e| io_error(parent, e))?;
     }
-    let rename_err = match std::fs::rename(from, to) {
+    let rename_err = match rename(from, to) {
         Ok(()) => return Ok(()),
         Err(e) => e,
     };
     if !from.is_file() {
         return Err(io_error(from, rename_err));
     }
-    std::fs::copy(from, to).map_err(|e| io_error(to, e))?;
+    let part = part_path(to);
+    if let Err(err) = copy_synced(from, &part) {
+        let _ = std::fs::remove_file(&part);
+        return Err(err);
+    }
+    if let Err(e) = rename(&part, to) {
+        let _ = std::fs::remove_file(&part);
+        return Err(io_error(to, e));
+    }
     if let Err(e) = std::fs::remove_file(from) {
         let _ = std::fs::remove_file(to);
         return Err(io_error(from, e));
     }
     Ok(())
+}
+
+/// `from` を新しい `to` にコピーし、中身をディスクまで書き出す。
+fn copy_synced(from: &Path, to: &Path) -> Result<(), CoreError> {
+    let mut input = std::fs::File::open(from).map_err(|e| io_error(from, e))?;
+    let mut output = std::fs::File::create_new(to).map_err(|e| io_error(to, e))?;
+    std::io::copy(&mut input, &mut output).map_err(|e| io_error(to, e))?;
+    output.sync_all().map_err(|e| io_error(to, e))
 }
 
 fn remove_file_if_exists(path: &Path) -> Result<(), CoreError> {
@@ -845,6 +875,124 @@ mod tests {
     #[test]
     fn recorded_targets_let_recovery_undo_a_crash_after_placing() {
         crash_and_recover(true);
+    }
+
+    fn not_same_device() -> std::io::Error {
+        std::io::Error::other("simulated: not on the same device")
+    }
+
+    fn parts_in(dir: &Path) -> Vec<String> {
+        names_in(dir)
+            .into_iter()
+            .filter(|n| n.ends_with(".part"))
+            .collect()
+    }
+
+    #[test]
+    fn fallback_copy_appears_under_the_final_name_only_when_complete() {
+        let temp = tempfile::tempdir().unwrap();
+        let from = temp.path().join("mods").join("a.jar");
+        std::fs::create_dir_all(from.parent().unwrap()).unwrap();
+        let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&from, &body).unwrap();
+        let backup_dir = temp.path().join("backup");
+        let to = backup_dir.join("0-a.jar");
+        let calls = std::cell::Cell::new(0);
+
+        move_file_with(&from, &to, |a, b| {
+            calls.set(calls.get() + 1);
+            if a == from {
+                // 直接の rename は失敗させ、コピーに回す
+                return Err(not_same_device());
+            }
+            // 最終の名前に置く直前：まだ `to` は無く、`.part` は書き終えている
+            assert_eq!(b, to);
+            assert!(
+                !to.exists(),
+                "the final name appeared before the copy finished"
+            );
+            assert!(a.to_string_lossy().ends_with(".part"), "{}", a.display());
+            assert_eq!(std::fs::read(a).unwrap(), body);
+            std::fs::rename(a, b)
+        })
+        .unwrap();
+
+        assert_eq!(calls.get(), 2);
+        assert_eq!(std::fs::read(&to).unwrap(), body);
+        assert!(!from.exists());
+        assert!(parts_in(&backup_dir).is_empty());
+    }
+
+    #[test]
+    fn failed_fallback_leaves_no_partial_file_and_keeps_the_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let from = temp.path().join("a.jar");
+        std::fs::write(&from, b"original").unwrap();
+        let backup_dir = temp.path().join("backup");
+        let to = backup_dir.join("0-a.jar");
+
+        // コピーの後の rename も失敗する
+        let err = move_file_with(&from, &to, |_, _| Err(not_same_device())).unwrap_err();
+
+        assert!(matches!(err, CoreError::Io { .. }), "{err:?}");
+        assert_eq!(std::fs::read(&from).unwrap(), b"original");
+        assert!(!to.exists());
+        assert!(parts_in(&backup_dir).is_empty());
+    }
+
+    /// 退避のコピーの途中で落ちた（`staging/<id>/backup/` に `.part` だけが残った）ときと、
+    /// 退避を終えて新しいファイルを置いた後に `.part` の残りもあるときに、復旧が元の jar を守る。
+    #[test]
+    fn recovery_ignores_a_leftover_part_file() {
+        for backed_up in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let paths = AppPaths::from_root(temp.path());
+            paths.ensure_dirs().unwrap();
+            let db = Db::open_in_memory().unwrap();
+            let inst =
+                instance::create(&db, &paths, &NewInstance::vanilla("x", "1.99-test"), 0).unwrap();
+            let game = instance::game_dir(&paths, &inst);
+            let mods = game.join("mods");
+            std::fs::create_dir_all(&mods).unwrap();
+            std::fs::write(mods.join("a.jar"), b"original").unwrap();
+            let http = Http::new().unwrap();
+            let token = CancellationToken::new();
+            let cx = ApplyContext {
+                db: &db,
+                http: &http,
+                paths: &paths,
+                game_dir: &game,
+                instance_id: &inst.id,
+                token: &token,
+                cdn: MODRINTH_CDN,
+            };
+            let plan = InstallPlan {
+                files: vec![planned("a", "a.jar", Some("mods/a.jar"))],
+                ..InstallPlan::default()
+            };
+            let prepared = prepare(&cx, &plan).unwrap();
+            let op = journal::begin(&db, "update", &inst.id, &prepared.targets, 1).unwrap();
+            let backup_dir = paths.staging_dir().join(&op.id).join("backup");
+            std::fs::create_dir_all(&backup_dir).unwrap();
+            let backup = backup_dir.join(&prepared.replaced[0].backup_name);
+            // 書きかけのコピー
+            std::fs::write(part_path(&backup), b"orig").unwrap();
+            if backed_up {
+                std::fs::rename(mods.join("a.jar"), &backup).unwrap();
+                std::fs::write(mods.join("a.jar"), b"new").unwrap();
+            }
+
+            journal::recover(&db, &paths).unwrap();
+
+            assert_eq!(names_in(&mods), ["a.jar"], "backed_up = {backed_up}");
+            assert_eq!(
+                std::fs::read(mods.join("a.jar")).unwrap(),
+                b"original",
+                "backed_up = {backed_up}"
+            );
+            assert!(!paths.staging_dir().join(&op.id).exists());
+            assert!(journal::list(&db).unwrap().is_empty());
+        }
     }
 
     #[test]
