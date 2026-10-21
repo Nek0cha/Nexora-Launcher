@@ -6,6 +6,7 @@ import IconPlus from "~icons/ph/plus";
 import type { Instance } from "../../bindings/Instance";
 import type { SearchHit } from "../../bindings/SearchHit";
 import { compatibleInstances } from "../../features/modrinth/compatibleInstances";
+import { StableLabel } from "../StableLabel";
 import { actionButton } from "./HitCard";
 
 // メニューの開閉。ボタンの側から 4px 動きながら現れる（インスタンスの一覧の「その他」と同じ）
@@ -81,13 +82,14 @@ export function AddToInstanceMenu(props: {
         className={actionButton}
       >
         <IconPlus aria-hidden className="size-3.5 shrink-0" />
-        {props.pending ? (
-          <span>{t("modrinth.installing")}</span>
-        ) : lastAdded ? (
-          <span className="max-w-40 truncate">{t("modrinth.addToLast", { name: lastAdded.name })}</span>
-        ) : (
-          <span>{t("modrinth.addToLastUnset")}</span>
-        )}
+        <StableLabel
+          labels={[
+            t("modrinth.installing"),
+            lastAdded ? t("modrinth.addToLast", { name: lastAdded.name }) : t("modrinth.addToLastUnset"),
+          ]}
+          active={props.pending ? 0 : 1}
+          className="max-w-40 truncate"
+        />
       </Button>
     </>
   );

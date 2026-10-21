@@ -39,7 +39,15 @@ import { ChipGroup, ContentFilter, ContentSearchField } from "../content/Content
 import { FailureNotice } from "../FailureNotice";
 import { useToast } from "../toast/useToast";
 import { AddToInstanceMenu } from "./AddToInstanceMenu";
+import { StableLabel } from "../StableLabel";
 import { actionButton, HitCard } from "./HitCard";
+
+/** 追加ボタンの文字（追加、追加中、導入済み）。幅をそろえるために、すべてを重ねて置く */
+const installLabels = (t: (key: "modrinth.install" | "modrinth.installing" | "modrinth.installed") => string) => [
+  t("modrinth.install"),
+  t("modrinth.installing"),
+  t("modrinth.installed"),
+];
 
 /** 検索の入力が止まってから送るまでの時間（ミリ秒） */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -414,7 +422,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                         instance && installed.has(hit.projectId) ? (
                           <Button isDisabled className={actionButton}>
                             <IconCheck aria-hidden className="size-3.5 shrink-0" />
-                            <span>{t("modrinth.installed")}</span>
+                            <StableLabel labels={installLabels(t)} active={2} />
                           </Button>
                         ) : instance ? (
                           <Button
@@ -423,9 +431,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                             className={actionButton}
                           >
                             <IconPlus aria-hidden className="size-3.5 shrink-0" />
-                            <span>
-                              {pending.has(hit.projectId) ? t("modrinth.installing") : t("modrinth.install")}
-                            </span>
+                            <StableLabel labels={installLabels(t)} active={pending.has(hit.projectId) ? 1 : 0} />
                           </Button>
                         ) : (
                           <AddToInstanceMenu

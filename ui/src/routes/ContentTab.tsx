@@ -18,6 +18,7 @@ import type { ItemFailure } from "../bindings/ItemFailure";
 import type { RejectReason } from "../bindings/RejectReason";
 import type { VersionChoice } from "../bindings/VersionChoice";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { StableLabel } from "../components/StableLabel";
 import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
 import { ContentList, type RowUpdates } from "../components/content/ContentList";
 import { ROW_SIZE, rowId } from "../components/content/ContentRow";
@@ -649,7 +650,10 @@ function UpdateBar({ updates }: { updates: UpdateControls }) {
             className={barButton}
           >
             <IconCheck aria-hidden className="size-4 shrink-0" />
-            <span>{updates.checking ? t("modrinth.checking") : t("modrinth.checkUpdates")}</span>
+            <StableLabel
+              labels={[t("modrinth.checkUpdates"), t("modrinth.checking")]}
+              active={updates.checking ? 1 : 0}
+            />
           </Button>
           {updates.count > 0 && (
             <Button onPress={updates.onUpdateAll} isDisabled={updates.disabled} className={barButton}>

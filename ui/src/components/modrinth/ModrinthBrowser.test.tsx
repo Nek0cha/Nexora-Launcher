@@ -133,6 +133,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** ボタンに見えている文字。幅をそろえるために重ねて置いた、見えない文字は除く */
+function shownLabel(button: HTMLElement): string {
+  return Array.from(button.querySelectorAll("span.col-start-1:not([aria-hidden])"))
+    .map((el) => el.textContent ?? "")
+    .join("");
+}
+
 describe("ModrinthBrowser", () => {
   it("typing_sends_one_search_after_the_debounce", async () => {
     mount();
@@ -360,13 +367,13 @@ describe("ModrinthBrowser", () => {
     const labels: string[] = [];
     const seen = new MutationObserver(() => {
       const button = within(card("Sodium")).queryByRole("button", { name: action });
-      if (button) labels.push(button.textContent ?? "");
+      if (button) labels.push(shownLabel(button));
     });
     seen.observe(card("Sodium"), { subtree: true, childList: true, characterData: true, attributes: true });
     fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
     await waitFor(() => expect(vi.mocked(listContent).mock.calls.length).toBeGreaterThan(1));
     // タスクが終わっても、取り直しが終わるまでは「追加中」のまま
-    expect(within(card("Sodium")).getByRole("button", { name: action }).textContent).toBe("Adding...");
+    expect(shownLabel(within(card("Sodium")).getByRole("button", { name: action }))).toBe("Adding...");
     await act(async () => refetch.resolve([sodiumRow]));
     await within(toasts()).findAllByText("Added Sodium to Fabric 1.20.1");
     await within(card("Sodium")).findByRole("button", { name: "Installed" });
