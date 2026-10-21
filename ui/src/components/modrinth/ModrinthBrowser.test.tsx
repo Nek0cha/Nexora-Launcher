@@ -423,4 +423,22 @@ describe("ModrinthBrowser", () => {
     expect(within(sodium).getByText("12M downloads")).toBeTruthy();
     expect(within(sodium).getByText("Optimization")).toBeTruthy();
   });
+
+  it("the icon and the placeholder sit in a square frame that the grid column cannot clamp", async () => {
+    vi.mocked(searchModrinth).mockResolvedValue(
+      page([hit({ iconUrl: "https://cdn.modrinth.com/i.png" }), hit({ projectId: "li", slug: "lithium", title: "Lithium" })]),
+    );
+    mount();
+    const sodium = await screen.findByRole("article", { name: "Sodium" });
+    // 列の幅はアイコンに合わせる（rem の固定の幅だと、ルートの文字の大きさでアイコンより狭くなる）
+    expect(sodium.className).not.toMatch(/grid-cols-\[\d/);
+    for (const name of ["Sodium", "Lithium"]) {
+      const frame = within(card(name)).getByTestId("hit-icon");
+      for (const c of ["size-12", "aspect-square", "shrink-0", "overflow-hidden"]) expect(frame.classList).toContain(c);
+    }
+    const img = within(sodium).getByTestId("hit-icon").querySelector("img")!;
+    // 画像は枠いっぱいに広げ、img の max-width: 100% で縮まないようにする
+    for (const c of ["size-full", "max-w-none", "object-cover"]) expect(img.classList).toContain(c);
+    expect(within(card("Lithium")).getByTestId("hit-icon").querySelector("img")).toBeNull();
+  });
 });

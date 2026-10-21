@@ -30,22 +30,31 @@ const iconButton = [
 
 const loaderNames: LoaderKind[] = ["fabric", "quilt", "forge", "neoforge"];
 
-/** 結果のアイコン。読めない（オフラインなど）ときは既定の絵にする。 */
+/**
+ * 結果のアイコン。読めない（オフラインなど）ときは既定の絵にする。
+ * 枠が大きさを決める正方形で、画像は枠に重ねて広げる。img のままだと既定の `max-width: 100%` で
+ * 列の幅に縮み、正方形でなくなる（コンテンツの一覧の行のアイコンと同じ作り）。
+ */
 function HitIcon({ url }: { url: string | null }) {
   const [failed, setFailed] = useState(false);
-  if (url !== null && !failed)
-    return (
-      <img
-        src={url}
-        alt=""
-        loading="lazy"
-        onError={() => setFailed(true)}
-        className="size-12 shrink-0 rounded-md bg-surface-2 object-cover"
-      />
-    );
   return (
-    <span className="grid size-12 shrink-0 place-items-center rounded-md bg-surface-2 text-text-muted">
-      <IconMod aria-hidden className="size-5" />
+    <span
+      data-testid="hit-icon"
+      className="relative grid aspect-square size-12 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-2 text-text-muted"
+    >
+      {url !== null && !failed ? (
+        <img
+          src={url}
+          alt=""
+          width={48}
+          height={48}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="absolute inset-0 block size-full max-w-none object-cover"
+        />
+      ) : (
+        <IconMod aria-hidden className="size-5" />
+      )}
     </span>
   );
 }
@@ -69,8 +78,9 @@ export function HitCard(props: {
   const loaders = loaderNames.filter((l) => hit.categories.includes(l));
 
   return (
+    // 左の列の幅はアイコンに合わせる（auto）。rem の固定の幅は、ルートの文字の大きさによってアイコンより狭くなる。
     // 一覧（@container）が狭いときは、下の行（ダウンロード数と操作）をアイコンの下まで広げて、ボタンを 1 行に収める
-    <article aria-labelledby={titleId} className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-4 py-4">
+    <article aria-labelledby={titleId} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 py-4">
       <HitIcon url={hit.iconUrl} />
       <div className="col-start-2 flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 items-start gap-2">
