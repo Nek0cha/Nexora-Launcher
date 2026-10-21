@@ -58,7 +58,8 @@ function mount(
     running = [] as RunningSession[],
     totalMb = 8192 as number | null,
     tasks = [] as TaskSnapshot[],
-    state = null as unknown,
+    // 設定の入力を見るテストが多いので、既定では設定のタブを開いて始める（何も渡さないときの既定は別に確かめる）
+    state = { tab: "settings" } as unknown,
   } = {},
 ) {
   // null は物理メモリの取得に失敗する場合
@@ -101,6 +102,11 @@ async function press(el: HTMLElement) {
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
+  // コンテンツのタブは開いたときに一覧を読むので、空の一覧を返しておく
+  vi.mocked(listContent).mockResolvedValue([]);
+  vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+  vi.mocked(listContentCategories).mockResolvedValue([]);
+  vi.mocked(onFilesDropped).mockResolvedValue(() => {});
 });
 
 afterEach(() => {
@@ -300,18 +306,22 @@ describe("InstanceDetail", () => {
     expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
   });
 
-  it("has a content tab", async () => {
-    vi.mocked(listContent).mockResolvedValue([]);
-    vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
-    vi.mocked(listContentCategories).mockResolvedValue([]);
-    vi.mocked(onFilesDropped).mockResolvedValue(() => {});
-    mount([instance()]);
+  it("opens on the content tab, which comes before the settings tab", async () => {
+    mount([instance()], { state: null });
     const tab = await screen.findByRole("tab", { name: "Content" });
-    await press(tab);
     expect(tab.getAttribute("aria-selected")).toBe("true");
+    const detailTabs = within(screen.getByRole("tablist", { name: "Survival" })).getAllByRole("tab");
+    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Settings"]);
     expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
     await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
     expect(listContent).toHaveBeenCalledWith("i1", "mod");
+  });
+
+  it("opens the settings tab when asked through the location state", async () => {
+    mount([instance()], { state: { tab: "settings" } });
+    const tab = await screen.findByRole("tab", { name: "Settings" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Content" }).getAttribute("aria-selected")).toBe("false");
   });
 
   it("opens the content tab when coming back from the Modrinth page", async () => {

@@ -96,10 +96,10 @@ export default function InstanceDetail() {
   const tasks = useTasks();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
-  // Modrinth の追加の画面から戻ったときは、コンテンツのタブを開く
+  // 既定はコンテンツのタブ。一覧の「設定」から来たときなど、遷移の state で設定のタブを頼まれたらそれを開く
   const location = useLocation();
   const [tab, setTab] = useState<DetailTab>(() =>
-    (location.state as { tab?: unknown } | null)?.tab === "content" ? "content" : "settings",
+    (location.state as { tab?: unknown } | null)?.tab === "settings" ? "settings" : "content",
   );
 
   // 取り直しの失敗では、手元の一覧を使い続ける
@@ -176,21 +176,21 @@ export default function InstanceDetail() {
         className="flex min-h-0 flex-1 flex-col"
       >
         <TabList aria-label={instance.name} className="flex gap-6 border-b border-line">
-          <Tab id="settings" className={tabClass}>
-            {t("instances.detail.tabSettings")}
-          </Tab>
           <Tab id="content" className={tabClass}>
             {t("instances.detail.tabContent")}
           </Tab>
+          <Tab id="settings" className={tabClass}>
+            {t("instances.detail.tabSettings")}
+          </Tab>
         </TabList>
+        {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
+        <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
+          <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
+        </TabPanel>
         {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
         <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">
           {/* インスタンスが替わったら入力を作り直す */}
           <SettingsTab key={instance.id} instance={instance} running={isRunning} />
-        </TabPanel>
-        {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
-        <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
-          <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
         </TabPanel>
       </Tabs>
     </div>
