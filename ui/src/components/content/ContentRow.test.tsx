@@ -182,6 +182,22 @@ describe("ContentRow version picker", () => {
     expect(screen.queryByRole("dialog", { name: /Change|Confirm/ })).toBeNull();
   });
 
+  it("opening the version list with the mouse does not highlight the first option", async () => {
+    vi.mocked(listContentVersions).mockResolvedValue(choices);
+    mount([sodium], {});
+    const trigger = screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" });
+    // マウスで開く。先頭の項目へ自動で入る焦点は、キーボードの操作ではないので色を付けない
+    fireEvent.pointerDown(trigger, { pointerType: "mouse", button: 0 });
+    fireEvent.mouseDown(trigger, { detail: 1 });
+    fireEvent.click(trigger, { detail: 1 });
+    const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
+    const first = within(list).getAllByRole("option")[0] as HTMLElement;
+    expect(first.hasAttribute("data-focus-visible")).toBe(false);
+    // 色は、キーボードの焦点（focus-visible）のときだけ付ける。単なる焦点（focus:）で付けると、開いた直後に先頭が色づく
+    expect(first.className).toContain("data-focus-visible:bg-surface-3");
+    expect(first.className.split(" ")).not.toContain("focus:bg-surface-3");
+  });
+
   it("the version trigger is disabled while busy", () => {
     mount([sodium], {}, true);
     const trigger = screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" });
