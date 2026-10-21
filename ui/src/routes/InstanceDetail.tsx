@@ -12,7 +12,7 @@ import {
   TooltipTrigger,
 } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
 import IconGame from "~icons/ph/folder-open";
 import IconScreenshots from "~icons/ph/image";
@@ -92,7 +92,11 @@ export default function InstanceDetail() {
   const tasks = useTasks();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
-  const [tab, setTab] = useState<DetailTab>("settings");
+  // Modrinth の追加の画面から戻ったときは、コンテンツのタブを開く
+  const location = useLocation();
+  const [tab, setTab] = useState<DetailTab>(() =>
+    (location.state as { tab?: unknown } | null)?.tab === "content" ? "content" : "settings",
+  );
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)

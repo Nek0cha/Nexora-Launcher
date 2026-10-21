@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addContentFiles,
@@ -119,7 +120,12 @@ function mount(busy = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const tree = (b: boolean) => (
     <QueryClientProvider client={client}>
-      <ContentTab instance={instance} busy={b} />
+      <MemoryRouter initialEntries={["/instances/i1"]}>
+        <Routes>
+          <Route path="/instances/:id" element={<ContentTab instance={instance} busy={b} />} />
+          <Route path="/instances/:id/modrinth" element={<p>modrinth page</p>} />
+        </Routes>
+      </MemoryRouter>
       <ToastRegion />
     </QueryClientProvider>
   );
@@ -390,5 +396,19 @@ describe("ContentTab", () => {
     await ready();
     cleanup();
     await waitFor(() => expect(unlisten).toHaveBeenCalledTimes(1));
+  });
+
+  it("content_tab_shows_the_add_button_only_on_the_mod_tab", async () => {
+    mount();
+    await ready();
+    expect(screen.getByRole("link", { name: "Add from Modrinth" })).toBeTruthy();
+    fireEvent.click(subTab(/^Resource packs/));
+    await screen.findByRole("button", { name: "Enable Faithful" });
+    expect(screen.queryByRole("link", { name: "Add from Modrinth" })).toBeNull();
+    fireEvent.click(subTab(/^Shaders/));
+    expect(screen.queryByRole("link", { name: "Add from Modrinth" })).toBeNull();
+    fireEvent.click(subTab(/^Mods/));
+    fireEvent.click(await screen.findByRole("link", { name: "Add from Modrinth" }));
+    expect(await screen.findByText("modrinth page")).toBeTruthy();
   });
 });

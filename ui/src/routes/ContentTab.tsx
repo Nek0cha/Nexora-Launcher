@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import IconDrop from "~icons/ph/download-simple";
+import IconPlus from "~icons/ph/plus";
 import { onFilesDropped } from "../api/dragDrop";
 import { toErrorPayload } from "../api/ipc";
 import type { ContentItem } from "../bindings/ContentItem";
@@ -54,6 +56,14 @@ const subTabClass = [
 const textButton = [
   "rounded-sm text-sm text-text-muted underline underline-offset-2",
   "data-hovered:text-text data-pressed:text-text-strong",
+  ring,
+].join(" ");
+
+// 一覧の上の行のボタン（確認のダイアログの「キャンセル」と同じ、枠だけのボタン）。高さは名前の入力に揃える
+const addLink = [
+  "inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-line-control px-3 text-sm text-text",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 pressed:bg-surface-3",
   ring,
 ].join(" ");
 
@@ -272,6 +282,8 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
               onToggle={onToggle}
               onRemove={onRemove}
               busy={busy}
+              // ローダーの無いインスタンスには MOD を入れられないので出さない
+              addHref={k === "mod" && instance.loader !== "vanilla" ? `/instances/${instance.id}/modrinth` : undefined}
             />
           </TabPanel>
         ))}
@@ -311,6 +323,8 @@ function KindPanel(props: {
   onToggle: (item: ContentItem) => void;
   onRemove: (item: ContentItem) => void;
   busy: boolean;
+  /** 「Modrinth から追加」の行き先。無ければボタンを出さない */
+  addHref?: string;
 }) {
   const { t } = useTranslation();
   const { kind, query, filter } = props;
@@ -348,13 +362,19 @@ function KindPanel(props: {
         />
       </div>
       <div className="flex min-h-0 flex-col gap-2">
-        {/* 一覧の上の行。名前の入力を置く（5-4 で「Modrinth から追加」などのボタンもここに並べる） */}
+        {/* 一覧の上の行。名前の入力と、MOD のサブタブでは「Modrinth から追加」を置く */}
         <div className="flex shrink-0 items-center gap-2 pb-1">
           <ContentSearchField
             value={filter.query}
             onChange={(query) => props.onFilterChange({ ...filter, query })}
             className="min-w-0 flex-1"
           />
+          {props.addHref !== undefined && (
+            <Link to={props.addHref} className={addLink}>
+              <IconPlus aria-hidden className="size-4 shrink-0" />
+              <span>{t("modrinth.addFromModrinth")}</span>
+            </Link>
+          )}
         </div>
         {metadata && excluded.length > 0 && (
           <div className="flex items-center gap-3 px-3 text-sm text-text-muted">

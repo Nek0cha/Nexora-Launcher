@@ -13,6 +13,11 @@ type CategorySlug = keyof (typeof resources)["ja"]["common"]["content"]["categor
 const sides: Side[] = ["required", "optional", "unsupported"];
 const statuses: StatusKey[] = ["enabled", "disabled", "dependency"];
 
+/** 訳のあるカテゴリか。Modrinth の検索結果の categories には、ローダーの名前も混ざっている。 */
+export function isKnownCategory(slug: string): boolean {
+  return i18n.exists(`content.category.${slug}`);
+}
+
 // 選べる値の札。選んだ札は面を明るくし、色だけに頼らないようチェックの印も付ける
 const chipClass = [
   "inline-flex h-7 cursor-default items-center gap-1 rounded-full border border-line px-2.5 text-xs text-text-muted",
@@ -23,12 +28,13 @@ const chipClass = [
 ].join(" ");
 
 /** Modrinth のカテゴリの名前。訳の無い（新しく増えた）ものは slug のまま出す。 */
-function categoryLabel(slug: string): string {
+export function categoryLabel(slug: string): string {
   const key = `content.category.${slug}`;
   return i18n.exists(key) ? i18n.t(`content.category.${slug as CategorySlug}`) : slug;
 }
 
-function ChipGroup<T extends string>(props: {
+/** 札を並べた複数選択。Modrinth の検索のローダーの絞り込みでも使う。 */
+export function ChipGroup<T extends string>(props: {
   label: string;
   options: { id: T; label: string }[];
   selected: T[];
@@ -63,19 +69,28 @@ function ChipGroup<T extends string>(props: {
   );
 }
 
-/** 名前で絞り込む入力。絞り込みの部品の中にも、一覧の上の行にも置ける。 */
-export function ContentSearchField(props: { value: string; onChange: (query: string) => void; className?: string }) {
+/**
+ * 名前で絞り込む入力。絞り込みの部品の中にも、一覧の上の行にも置ける。
+ * `label` を渡すと名前と入力の案内を差し替える（Modrinth の検索で使う）。
+ */
+export function ContentSearchField(props: {
+  value: string;
+  onChange: (query: string) => void;
+  className?: string;
+  label?: string;
+}) {
   const { t } = useTranslation();
+  const label = props.label ?? t("content.filter.search");
   return (
     <SearchField
-      aria-label={t("content.filter.search")}
+      aria-label={label}
       value={props.value}
       onChange={props.onChange}
       className={`relative flex items-center ${props.className ?? ""}`}
     >
       <IconSearch aria-hidden className="pointer-events-none absolute left-3 size-4 text-text-muted" />
       <Input
-        placeholder={t("content.filter.search")}
+        placeholder={label}
         className={`${inputBase} w-full pl-9 [&::-webkit-search-cancel-button]:hidden`}
       />
     </SearchField>

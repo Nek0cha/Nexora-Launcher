@@ -53,7 +53,13 @@ const instance = (patch: Partial<Instance> = {}): Instance => ({
 
 function mount(
   list: Instance[],
-  { id = "i1", running = [] as RunningSession[], totalMb = 8192 as number | null, tasks = [] as TaskSnapshot[] } = {},
+  {
+    id = "i1",
+    running = [] as RunningSession[],
+    totalMb = 8192 as number | null,
+    tasks = [] as TaskSnapshot[],
+    state = null as unknown,
+  } = {},
 ) {
   // null は物理メモリの取得に失敗する場合
   if (totalMb === null) vi.mocked(systemMemoryMb).mockRejectedValue(new Error("no memory"));
@@ -65,7 +71,7 @@ function mount(
   client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/instances/${id}`]}>
+      <MemoryRouter initialEntries={[{ pathname: `/instances/${id}`, state }]}>
         <Routes>
           <Route path="/instances/:id" element={<InstanceDetail />} />
           <Route path="/instances" element={<p>list page</p>} />
@@ -306,6 +312,17 @@ describe("InstanceDetail", () => {
     expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
     await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
     expect(listContent).toHaveBeenCalledWith("i1", "mod");
+  });
+
+  it("opens the content tab when coming back from the Modrinth page", async () => {
+    vi.mocked(listContent).mockResolvedValue([]);
+    vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
+    vi.mocked(listContentCategories).mockResolvedValue([]);
+    vi.mocked(onFilesDropped).mockResolvedValue(() => {});
+    mount([instance()], { state: { tab: "content" } });
+    const tab = await screen.findByRole("tab", { name: "Content" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
   });
 
   it("keeps unsaved settings when switching to the content tab and back", async () => {
