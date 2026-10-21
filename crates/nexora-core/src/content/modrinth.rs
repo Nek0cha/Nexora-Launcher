@@ -263,6 +263,8 @@ pub struct FullVersion {
     pub project_id: String,
     pub version_number: String,
     pub version_type: String,
+    /// 公開日（ISO 8601）。分からなければ空。
+    pub date_published: String,
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
     pub files: Vec<FileInfo>,
@@ -306,6 +308,8 @@ struct RawFullVersion {
     #[serde(default)]
     version_type: String,
     #[serde(default)]
+    date_published: String,
+    #[serde(default)]
     game_versions: Vec<String>,
     #[serde(default)]
     loaders: Vec<String>,
@@ -341,6 +345,7 @@ impl From<RawFullVersion> for FullVersion {
             project_id: v.project_id,
             version_number: v.version_number,
             version_type: v.version_type,
+            date_published: v.date_published,
             game_versions: v.game_versions,
             loaders: v.loaders,
             files: v

@@ -231,6 +231,7 @@ impl Env {
             project_id: p.to_string(),
             version_number: format!("{id}-number"),
             version_type: "release".into(),
+            date_published: String::new(),
             game_versions: vec!["1.99-test".into()],
             loaders: vec!["fabric".into()],
             files: vec![FileInfo {
@@ -264,6 +265,7 @@ fn planned(version: FullVersion, as_dependency: bool, replaces: Option<&str>) ->
         file,
         as_dependency,
         replaces: replaces.map(str::to_string),
+        pin: None,
     }
 }
 

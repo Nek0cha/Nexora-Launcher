@@ -116,6 +116,10 @@ pub enum CoreError {
     /// ローダーの無い（バニラの）インスタンスには MOD を入れられない。
     #[error("the instance has no mod loader")]
     ContentNoLoader,
+    /// 版を切り替えられない。Modrinth で特定されていない行か、選んだ版がその project の
+    /// このインスタンスに合う版ではない。
+    #[error("the version of {name} cannot be changed to the chosen one")]
+    ContentVersionUnavailable { name: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
@@ -220,6 +224,7 @@ impl CoreError {
             CoreError::ContentAlreadyInstalled { .. } => "content.already_installed",
             CoreError::ContentNotFound { .. } => "content.not_found",
             CoreError::ContentNoLoader => "content.no_loader",
+            CoreError::ContentVersionUnavailable { .. } => "content.version_unavailable",
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -299,7 +304,8 @@ impl CoreError {
                 let shown = name.clone().unwrap_or_else(|| project_id.clone());
                 params.insert("name".into(), ParamValue::Str(shown));
             }
-            CoreError::ContentAlreadyInstalled { name } => {
+            CoreError::ContentAlreadyInstalled { name }
+            | CoreError::ContentVersionUnavailable { name } => {
                 params.insert("name".into(), ParamValue::Str(name.clone()));
             }
             CoreError::ContentNotFound { path } => {
@@ -789,6 +795,14 @@ mod tests {
             Some(&ParamValue::Str("mods/a.jar".into()))
         );
         assert_eq!(CoreError::ContentNoLoader.code(), "content.no_loader");
+        let err = CoreError::ContentVersionUnavailable {
+            name: "Sodium".into(),
+        };
+        assert_eq!(err.code(), "content.version_unavailable");
+        assert_eq!(
+            err.to_payload().params.get("name"),
+            Some(&ParamValue::Str("Sodium".into()))
+        );
     }
 
     #[test]

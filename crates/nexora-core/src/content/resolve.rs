@@ -73,6 +73,8 @@ pub struct PlannedFile {
     pub as_dependency: bool,
     /// 更新で置き換える導入済みの `rel_path`。
     pub replaces: Option<String>,
+    /// 置き換えた行の固定（`pinned`）を変えるとき。`None` なら元の行の値を引き継ぐ。
+    pub pin: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -186,6 +188,7 @@ impl<'a, S: VersionSource> State<'a, S> {
                 file,
                 as_dependency,
                 replaces: None,
+                pin: None,
             });
             Ok(())
         })
@@ -304,6 +307,7 @@ mod tests {
             project_id: p.to_string(),
             version_number: "1.0.0".into(),
             version_type: "release".into(),
+            date_published: String::new(),
             game_versions: vec!["1.20.1".into()],
             loaders: vec!["fabric".into()],
             files: vec![file(&format!("{p}.jar"))],

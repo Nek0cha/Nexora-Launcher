@@ -2,7 +2,7 @@
 
 mod content;
 
-pub use content::InstallPreview;
+pub use content::{InstallPreview, VersionChoice};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

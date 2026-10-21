@@ -343,6 +343,7 @@ fn fv(id: &str, ty: &str) -> FullVersion {
         project_id: "p".into(),
         version_number: id.into(),
         version_type: ty.into(),
+        date_published: String::new(),
         game_versions: vec![],
         loaders: vec![],
         files: vec![],

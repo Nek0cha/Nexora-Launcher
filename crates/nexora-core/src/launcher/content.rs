@@ -3,6 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::*;
+use crate::content::Provider;
 use crate::content::apply::{
     ApplyContext, ApplyOutcome, ContentTaskReport, ItemFailure, apply_plan,
 };
@@ -31,6 +32,21 @@ pub struct InstallPreview {
     pub incompatible: Vec<String>,
     /// 同じ project の MOD が無効で入っていて、ダウンロードせずにそれを有効にするだけか。
     pub enables_installed: bool,
+}
+
+/// 版の切り替えで選べる 1 件。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct VersionChoice {
+    pub version_id: String,
+    pub version_number: String,
+    /// `release`、`beta`、`alpha` のどれか（Modrinth の値のまま）。
+    pub version_type: String,
+    /// 公開日（ISO 8601）。分からなければ空。
+    pub date_published: String,
+    /// いま入っている版か。
+    pub current: bool,
 }
 
 /// タスクの結果。古いものから捨てて、一定数だけ持つ。
@@ -551,6 +567,170 @@ impl Launcher {
         }
         self.apply(t, id, handle, &plan, |_, _| {}).await
     }
+}
+
+/// 版を切り替える行の project と、いまの版。Modrinth で特定された MOD の行だけを受け付ける。
+fn switchable(row: &Row) -> Result<(&str, &str), CoreError> {
+    match (
+        row.item.provider,
+        row.item.project_id.as_deref(),
+        row.item.version_id.as_deref(),
+    ) {
+        (Provider::Modrinth, Some(project), Some(version)) => Ok((project, version)),
+        _ => Err(CoreError::ContentVersionUnavailable {
+            name: display_name(row),
+        }),
+    }
+}
+
+impl Launcher {
+    /// 行の project の、このインスタンスに合う版（新しい順）。
+    async fn compatible_versions(
+        &self,
+        t: &Target,
+        project_id: &str,
+    ) -> Result<Vec<FullVersion>, CoreError> {
+        let mut versions = modrinth::project_versions(
+            &self.env.http,
+            &self.env.urls.modrinth_api,
+            project_id,
+            &t.inst.mc_version,
+            &t.loaders,
+        )
+        .await?;
+        // API も新しい順で返すが、公開日で並べ直して確かにする（日付の無い版は後ろ）
+        versions.sort_by(|a, b| b.date_published.cmp(&a.date_published));
+        Ok(versions)
+    }
+
+    /// MOD の行の、切り替えられる版の一覧（新しい順）。いまの版には `current` を付ける。
+    /// Modrinth で特定されていない行は `ContentVersionUnavailable` で断る。
+    pub async fn list_content_versions(
+        &self,
+        instance_id: &str,
+        rel_path: &str,
+    ) -> Result<Vec<VersionChoice>, CoreError> {
+        let t = self.install_target(instance_id)?;
+        let rows = self.mod_rows(instance_id).await?;
+        let row = find_row(&rows, rel_path)?;
+        let (project_id, current) = switchable(row)?;
+        let versions = self.compatible_versions(&t, project_id).await?;
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionChoice {
+                current: v.id == current,
+                version_id: v.id,
+                version_number: v.version_number,
+                version_type: v.version_type,
+                date_published: v.date_published,
+            })
+            .collect())
+    }
+
+    /// MOD を選んだ版に入れ替えるタスクを始める。更新と同じ手順（依存の解決、退避、戻し）で行い、
+    /// 無効の MOD は無効のまま入れ替える。このインスタンスに合う最新のリリース以外を選んだら行を固定し
+    /// （更新の確認が選択を戻さないように）、最新のリリースを選んだら固定を外す。
+    pub fn change_content_version(
+        &self,
+        instance_id: &str,
+        rel_path: &str,
+        version_id: &str,
+    ) -> Result<String, CoreError> {
+        self.install_target(instance_id)?;
+        self.ensure_idle(instance_id)?;
+        self.ensure_no_pending_operation(instance_id)?;
+        let this = self.clone();
+        let (id, rel, version_id) = (
+            instance_id.to_string(),
+            rel_path.to_string(),
+            version_id.to_string(),
+        );
+        Ok(self
+            .tasks
+            .spawn(CONTENT_KIND, Some(id.clone()), move |handle| async move {
+                let _guard = this.locks.lock(&id).await;
+                let result = this.run_change(&id, &rel, &version_id, &handle).await;
+                this.updates.invalidate(&id);
+                result
+            }))
+    }
+
+    async fn run_change(
+        &self,
+        id: &str,
+        rel: &str,
+        version_id: &str,
+        handle: &TaskHandle,
+    ) -> Result<(), CoreError> {
+        self.ensure_content_task_may_run(id)?;
+        handle.set_phase(TaskPhase::Resolving);
+        let t = self.install_target(id)?;
+        let rows = self.mod_rows(id).await?;
+        let row = find_row(&rows, rel)?;
+        let (project_id, current) = switchable(row)?;
+        if current == version_id {
+            // いまの版を選んだときは何もしない
+            self.store_report(handle, ContentTaskReport::default());
+            return Ok(());
+        }
+        let versions = self.compatible_versions(&t, project_id).await?;
+        // 選べるのは、その project のこのインスタンスに合う版だけ
+        let chosen = versions
+            .iter()
+            .find(|v| v.id == version_id)
+            .cloned()
+            .ok_or_else(|| CoreError::ContentVersionUnavailable {
+                name: display_name(row),
+            })?;
+        let newest_release = modrinth::pick_version(&versions).map(|v| v.id.as_str());
+        let pin = newest_release != Some(version_id);
+        let mut plan = match resolve(
+            &self.api_source(&t),
+            chosen,
+            &installed_of(&rows),
+            Some(rel),
+        )
+        .await
+        {
+            Ok(plan) => plan,
+            Err(err) => return Err(self.with_dependency_name(err).await),
+        };
+        if let Some(root) = plan.files.last_mut() {
+            root.pin = Some(pin);
+        }
+        let names = incompatible_names(&plan, &rows);
+        if !names.is_empty() {
+            // 更新と同じく、確認を取らないので非互換の MOD がある版は入れない
+            return Err(CoreError::ContentIncompatible {
+                names: names.join(", "),
+            });
+        }
+        handle.set_phase(TaskPhase::Downloading);
+        let progress = handle.clone();
+        let outcome = self
+            .apply(&t, id, handle, &plan, move |done, total| {
+                progress.set_progress(clamp_u32(done / 1024), clamp_u32(total / 1024));
+            })
+            .await?;
+        self.store_report(
+            handle,
+            ContentTaskReport {
+                installed: 0,
+                dependencies_added: outcome.dependencies_added,
+                updated: outcome.replaced,
+                failures: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+}
+
+fn find_row<'r>(rows: &'r [Row], rel: &str) -> Result<&'r Row, CoreError> {
+    rows.iter()
+        .find(|r| r.item.rel_path == rel)
+        .ok_or_else(|| CoreError::ContentNotFound {
+            path: rel.to_string(),
+        })
 }
 
 #[cfg(test)]

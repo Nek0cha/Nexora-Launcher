@@ -540,10 +540,11 @@ fn new_row(
     row.item.version_id = Some(v.id.clone());
     row.item.version_number = Some(v.version_number.clone());
     match &p.old {
-        // 入れた経緯と固定は、利用者の意図として元の行から引き継ぐ
+        // 入れた経緯と固定は、利用者の意図として元の行から引き継ぐ。
+        // 版の切り替えでは、選んだ版に合わせて固定を付け外しする
         Some(old) => {
             row.item.installed_as = old.item.installed_as;
-            row.item.pinned = old.item.pinned;
+            row.item.pinned = p.planned.pin.unwrap_or(old.item.pinned);
         }
         None if p.planned.as_dependency => row.item.installed_as = InstalledAs::Dependency,
         None => {}
@@ -775,6 +776,7 @@ mod tests {
                 project_id: project.to_string(),
                 version_number: "1".into(),
                 version_type: "release".into(),
+                date_published: String::new(),
                 game_versions: Vec::new(),
                 loaders: Vec::new(),
                 files: vec![file.clone()],
@@ -783,6 +785,7 @@ mod tests {
             file,
             as_dependency: replaces.is_none(),
             replaces: replaces.map(str::to_string),
+            pin: None,
         }
     }
 
