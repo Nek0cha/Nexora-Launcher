@@ -14,7 +14,12 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-const base: Settings = { theme: "dark", language: "en", maxConcurrentDownloads: 8 };
+const base: Settings = {
+  theme: "dark",
+  language: "en",
+  maxConcurrentDownloads: 8,
+  lastAddedInstance: null,
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

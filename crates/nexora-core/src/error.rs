@@ -102,6 +102,9 @@ pub enum CoreError {
         project_id: String,
         cause: DependencyCause,
     },
+    /// 新しい版が非互換と宣言している MOD が導入済みで、確認なしでは入れない。
+    #[error("installed mods are declared incompatible: {names}")]
+    ContentIncompatible { names: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
@@ -202,6 +205,7 @@ impl CoreError {
             CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
             CoreError::ContentExists { .. } => "content.exists",
             CoreError::ContentDependency { .. } => "content.dependency",
+            CoreError::ContentIncompatible { .. } => "content.incompatible",
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -274,6 +278,9 @@ impl CoreError {
             CoreError::ContentDependency { project_id, cause } => {
                 params.insert("projectId".into(), ParamValue::Str(project_id.clone()));
                 params.insert("cause".into(), ParamValue::Str(cause.as_str().into()));
+            }
+            CoreError::ContentIncompatible { names } => {
+                params.insert("names".into(), ParamValue::Str(names.clone()));
             }
             CoreError::InvalidSkin { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));

@@ -165,25 +165,37 @@ pub async fn categories(
 
 // ---- 検索、版の詳細、更新の確認 ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
 pub enum SearchSort {
     #[default]
     Relevance,
     Downloads,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 検索の条件。UI から受け取る。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct SearchQuery {
     pub query: String,
+    #[serde(default)]
     pub mc_version: Option<String>,
+    #[serde(default)]
     pub loaders: Vec<String>,
+    #[serde(default)]
     pub categories: Vec<String>,
+    #[serde(default)]
     pub client_sides: Vec<Side>,
+    #[serde(default)]
     pub server_sides: Vec<Side>,
+    #[serde(default)]
     pub sort: SearchSort,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchHit {
     pub project_id: String,
@@ -200,6 +212,7 @@ pub struct SearchHit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchPage {
     pub hits: Vec<SearchHit>,

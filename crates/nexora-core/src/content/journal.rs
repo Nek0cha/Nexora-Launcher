@@ -153,6 +153,18 @@ pub(crate) fn list(db: &Db) -> Result<Vec<Operation>, CoreError> {
     Ok(out)
 }
 
+/// そのインスタンスに、戻しきれずに残っている prepared の操作があるか。
+/// あるうちに中身を変えると、次の起動の復旧が新しい変更を上書きしうる。
+pub(crate) fn has_prepared(db: &Db, instance_id: &str) -> Result<bool, CoreError> {
+    db.with_conn(|conn| {
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM operations WHERE instance_id = ?1 AND state = ?2)",
+            params![instance_id, OpState::Prepared.as_str()],
+            |r| r.get::<_, i64>(0),
+        )? != 0)
+    })
+}
+
 /// バックアップを記録する。`path` はファイルの置き場所。
 pub(crate) fn add_backup(
     db: &Db,

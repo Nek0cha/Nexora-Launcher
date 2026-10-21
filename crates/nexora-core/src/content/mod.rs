@@ -10,6 +10,7 @@ pub mod modrinth;
 pub mod ops;
 pub mod resolve;
 pub mod scan;
+pub mod updates;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

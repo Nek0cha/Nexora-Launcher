@@ -1,8 +1,12 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
+mod content;
+
+pub use content::InstallPreview;
+
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
@@ -17,6 +21,7 @@ use crate::content::modrinth::categories;
 use crate::content::ops::{self, AddReport};
 use crate::content::scan::scan;
 use crate::content::store;
+use crate::content::updates::UpdateCache;
 use crate::content::{ContentItem, ContentKind};
 use crate::db::Db;
 use crate::error::CoreError;
@@ -50,6 +55,8 @@ use crate::task::{TaskHandle, TaskManager, TaskPhase};
 pub const INSTALL_KIND: &str = "install";
 pub const LAUNCH_KIND: &str = "launch";
 pub const DUPLICATE_KIND: &str = "duplicate";
+/// Modrinth からの導入と更新のタスク。
+pub const CONTENT_KIND: &str = "content";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -81,6 +88,10 @@ pub struct Launcher {
     auth: AuthService,
     /// reattach を一度だけ行うための印。二度目以降は監視を重ねないよう何もしない。
     reattached: Arc<AtomicBool>,
+    /// 更新の確認の結果（インスタンスごと、15 分）。
+    updates: Arc<UpdateCache>,
+    /// 導入と更新のタスクの結果（新しい順に一定数だけ）。
+    reports: Arc<Mutex<content::ReportStore>>,
 }
 
 fn already_running(instance_id: &str) -> CoreError {
@@ -157,7 +168,17 @@ impl Launcher {
             locks: InstanceLocks::default(),
             auth,
             reattached: Arc::new(AtomicBool::new(false)),
+            updates: Arc::new(UpdateCache::default()),
+            reports: Arc::default(),
         }
+    }
+
+    /// 結合テスト用。更新の確認のキャッシュが使う時計を差し替える。
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_update_clock(mut self, clock: crate::content::updates::Clock) -> Self {
+        self.updates = Arc::new(UpdateCache::with_clock(clock));
+        self
     }
 
     pub fn db(&self) -> &Db {
@@ -333,13 +354,21 @@ impl Launcher {
         self.ensure_idle(id)?;
         let _guard = self.locks.lock(id).await;
         self.ensure_idle(id)?;
+        self.ensure_no_pending_operation(id)?;
         let inst = instance::get(&self.env.db, id)?;
         let (db, game_dir, id) = (
             self.env.db.clone(),
             instance::game_dir(&self.env.paths, &inst),
             id.to_string(),
         );
-        blocking(move || f(&db, &game_dir, &id)).await
+        let result = blocking({
+            let id = id.clone();
+            move || f(&db, &game_dir, &id)
+        })
+        .await;
+        // 中身が変わったので、更新の確認の結果は古い
+        self.updates.invalidate(&id);
+        result
     }
 
     /// Modrinth のカテゴリー名のうち、種類に合うもの。
@@ -488,7 +517,13 @@ impl Launcher {
         if self.processes.is_running(instance_id)? {
             return Err(already_running(instance_id));
         }
-        if let Some(active) = self.active_task(instance_id) {
+        if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
+            // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
+            if kind == CONTENT_KIND {
+                return Err(CoreError::InstanceBusy {
+                    instance_id: instance_id.to_string(),
+                });
+            }
             return Ok(active);
         }
         Ok(match inst.state {
@@ -551,17 +586,31 @@ impl Launcher {
         result
     }
 
-    /// このインスタンスの、終了していないインストールか起動のタスク。
+    /// このインスタンスの、終了していないインストール、起動、中身のタスク。
     fn active_task(&self, instance_id: &str) -> Option<String> {
+        self.active_task_with_kind(instance_id).map(|(id, _)| id)
+    }
+
+    fn active_task_with_kind(&self, instance_id: &str) -> Option<(String, String)> {
         self.tasks
             .list()
             .into_iter()
             .find(|t| {
                 t.instance_id.as_deref() == Some(instance_id)
-                    && (t.kind == INSTALL_KIND || t.kind == LAUNCH_KIND)
+                    && (t.kind == INSTALL_KIND || t.kind == LAUNCH_KIND || t.kind == CONTENT_KIND)
                     && !t.state.is_terminal()
             })
-            .map(|t| t.id)
+            .map(|t| (t.id, t.kind))
+    }
+
+    /// 戻しきれなかった操作の記録が残っていれば `InstanceBusy`（次の起動の復旧まで中身を変えない）。
+    fn ensure_no_pending_operation(&self, id: &str) -> Result<(), CoreError> {
+        if journal::has_prepared(&self.env.db, id)? {
+            return Err(CoreError::InstanceBusy {
+                instance_id: id.to_string(),
+            });
+        }
+        Ok(())
     }
 
     fn start_install(&self, instance_id: &str) -> String {

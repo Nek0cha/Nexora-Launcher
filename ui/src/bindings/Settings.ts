@@ -2,4 +2,8 @@
 import type { Language } from "./Language";
 import type { Theme } from "./Theme";
 
-export type Settings = { theme: Theme, language: Language | null, maxConcurrentDownloads: number, };
+export type Settings = { theme: Theme, language: Language | null, maxConcurrentDownloads: number, 
+/**
+ * 最後に MOD を追加したインスタンスの ID。読み取り専用で、`record_last_added_instance` だけが書く。
+ */
+lastAddedInstance: string | null, };
