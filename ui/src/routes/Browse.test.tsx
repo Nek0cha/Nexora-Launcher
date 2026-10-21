@@ -7,6 +7,7 @@ import i18n from "../i18n";
 import Browse from "./Browse";
 
 vi.mock("../api/commands", () => ({
+  identifyContent: vi.fn(),
   searchModrinth: vi.fn(),
   listInstances: vi.fn(),
   getSettings: vi.fn(),

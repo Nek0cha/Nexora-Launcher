@@ -680,6 +680,37 @@ describe("ContentTab", () => {
       expect(within(summary).getByText("Mod Menu")).toBeTruthy();
     });
 
+    it("identifies the new rows once after an update or a version change finishes", async () => {
+      vi.mocked(checkContentUpdates).mockResolvedValue(withUpdates);
+      vi.mocked(listContentVersions).mockResolvedValue([
+        { versionId: "v2", versionNumber: "0.6.1", versionType: "release", datePublished: "", current: false },
+        { versionId: "v1", versionNumber: "0.6.0", versionType: "release", datePublished: "", current: true },
+      ]);
+      vi.mocked(changeContentVersion).mockResolvedValue("t2");
+      mount();
+      await ready();
+      expect(identifyContent).toHaveBeenCalledTimes(1);
+      await press(await screen.findByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findAllByText("Mods updated: 1");
+      await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(2));
+      // 特定のあとに一覧を取り直す
+      await waitFor(() =>
+        expect(Math.max(...vi.mocked(listContent).mock.invocationCallOrder)).toBeGreaterThan(
+          vi.mocked(identifyContent).mock.invocationCallOrder[1]!,
+        ));
+
+      await press(screen.getByRole("button", { name: "Change the version of Mod Menu (now 0.6.0)" }));
+      await press(within(await screen.findByRole("listbox")).getByRole("option", { name: /0\.6\.1/ }));
+      await within(toasts()).findAllByText("Changed Mod Menu to 0.6.1");
+      await waitFor(() => expect(identifyContent).toHaveBeenCalledTimes(3));
+
+      // 失敗したタスクのあとは特定しない
+      vi.mocked(getTask).mockResolvedValue(snapshot("failed", { code: "net.offline", params: {}, detail: null }));
+      await press(screen.getByRole("button", { name: "Update Sodium to 0.6.1" }));
+      await within(toasts()).findByText("Can't connect to the internet");
+      expect(identifyContent).toHaveBeenCalledTimes(3);
+    });
+
     it("toggling, removing or adding a mod checks updates again", async () => {
       mount();
       await ready();

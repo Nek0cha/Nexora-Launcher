@@ -5,6 +5,7 @@ import {
   checkContentUpdates,
   contentTaskReport,
   getTask,
+  identifyContent,
   installContent,
   listContentVersions,
   previewContentInstall,
@@ -99,6 +100,18 @@ async function runContentTask(client: QueryClient, taskId: string): Promise<Cont
   return { taskId, state: task.state, error: task.error, report };
 }
 
+/**
+ * 導入、更新、版の切り替えのタスクが終わったあとに、まだ特定されていない行（新しく入った依存など）を
+ * 1 回だけ特定し、一覧を取り直す。特定の失敗（オフラインなど）は黙って無視する（次にタブを開いたときに特定する）。
+ */
+function identifyAfter(client: QueryClient, instanceId: string, outcome: ContentTaskOutcome | undefined) {
+  if (outcome?.state !== "succeeded") return;
+  void Promise.resolve()
+    .then(() => identifyContent(instanceId))
+    .catch(() => null)
+    .then(() => client.invalidateQueries({ queryKey: ["content", instanceId] }));
+}
+
 /** 導入の前に見せる内容を調べる。 */
 export function usePreviewInstall() {
   return useMutation({
@@ -118,9 +131,10 @@ export function useInstallContent() {
       const taskId = await installContent(v.instanceId, v.projectId, v.acceptIncompatible);
       return runContentTask(client, taskId);
     },
-    onSettled: (_data, _error, v) => {
+    onSettled: (data, _error, v) => {
       void client.invalidateQueries({ queryKey: ["content", v.instanceId] });
       void client.invalidateQueries({ queryKey: updatesKey(v.instanceId) });
+      identifyAfter(client, v.instanceId, data);
     },
   });
 }
@@ -156,9 +170,10 @@ export function useUpdateContent(instanceId: string) {
       const taskId = await updateContent(instanceId, relPaths);
       return runContentTask(client, taskId);
     },
-    onSettled: () => {
+    onSettled: (data) => {
       void client.invalidateQueries({ queryKey: ["content", instanceId] });
       void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
+      identifyAfter(client, instanceId, data);
     },
   });
 }
@@ -190,10 +205,11 @@ export function useChangeContentVersion(instanceId: string) {
       const taskId = await changeContentVersion(instanceId, relPath, versionId);
       return runContentTask(client, taskId);
     },
-    onSettled: () => {
+    onSettled: (data) => {
       void client.invalidateQueries({ queryKey: ["content", instanceId] });
       void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
       void client.invalidateQueries({ queryKey: versionsKey(instanceId) });
+      identifyAfter(client, instanceId, data);
     },
   });
 }

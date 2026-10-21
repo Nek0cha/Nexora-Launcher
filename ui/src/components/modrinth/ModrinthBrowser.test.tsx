@@ -26,6 +26,7 @@ import { clearToasts } from "../toast/useToast";
 import { ModrinthBrowser, SEARCH_DEBOUNCE_MS } from "./ModrinthBrowser";
 
 vi.mock("../../api/commands", () => ({
+  identifyContent: vi.fn(),
   searchModrinth: vi.fn(),
   previewContentInstall: vi.fn(),
   installContent: vi.fn(),

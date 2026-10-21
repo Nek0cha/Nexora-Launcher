@@ -9,7 +9,7 @@ import type { TaskTable } from "../tasks/taskTable";
 import { TASKS_KEY } from "../tasks/useTasks";
 import { useChangeContentVersion, WAIT_MAX_FAILURES, WAIT_POLL_MS, waitForTask } from "./useModrinth";
 
-vi.mock("../../api/commands", () => ({ getTask: vi.fn(), changeContentVersion: vi.fn(), contentTaskReport: vi.fn() }));
+vi.mock("../../api/commands", () => ({ identifyContent: vi.fn(), getTask: vi.fn(), changeContentVersion: vi.fn(), contentTaskReport: vi.fn() }));
 
 function snapshot(state: TaskSnapshot["state"]): TaskSnapshot {
   return {
