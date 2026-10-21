@@ -338,6 +338,7 @@
       "shader": "Shaders"
     },
     "busy": "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
+    "busyShort": "Can't change content right now (running, installing, etc.)",
     "excluded": "Not covered by this filter: {{count}}",
     "excludedShow": "Show",
     "excludedHide": "Hide",

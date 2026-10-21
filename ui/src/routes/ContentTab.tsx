@@ -452,8 +452,9 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
             {locked && (
               <>
                 <IconInfo aria-hidden className="size-4 shrink-0" />
+                {/* 行に収まるよう短い文にし、理由の全体は title で見せる */}
                 <span className="truncate" title={t("content.busy")}>
-                  {t("content.busy")}
+                  {t("content.busyShort")}
                 </span>
               </>
             )}

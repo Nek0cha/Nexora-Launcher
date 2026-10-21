@@ -310,7 +310,7 @@ describe("ContentTab", () => {
   it("controls and drops are disabled while the instance is busy", async () => {
     mount(true);
     await ready();
-    expect(screen.getByText("You can't change content while the instance is running, installing, being duplicated or adding or updating mods.")).toBeTruthy();
+    expect(screen.getByText("Can't change content right now (running, installing, etc.)")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
     act(() => handlers!.enter());
@@ -327,17 +327,17 @@ describe("ContentTab", () => {
     const root = row.parentElement!;
     const before = [...root.children];
     view.setBusy(true);
-    const notice = await screen.findByText(
-      "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
-    );
+    const notice = await screen.findByText("Can't change content right now (running, installing, etc.)");
     // 表示の有無で、タブの上に行が増えたり減ったりしない（一覧の位置が変わらない）
     expect([...root.children]).toEqual(before);
     expect(row.contains(notice)).toBe(true);
-    // 長い文は 1 行に切り詰め、全体は title で読める
+    // 1 行に収め、理由の全体は title で読める
     expect(notice.classList).toContain("truncate");
-    expect(notice.getAttribute("title")).toBe(notice.textContent);
+    expect(notice.getAttribute("title")).toBe(
+      "You can't change content while the instance is running, installing, being duplicated or adding or updating mods.",
+    );
     view.setBusy(false);
-    await waitFor(() => expect(screen.queryByText(/You can't change content/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/Can't change content right now/)).toBeNull());
     expect([...root.children]).toEqual(before);
   });
 

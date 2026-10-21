@@ -377,7 +377,7 @@ describe("InstanceDetail", () => {
     }
 
     async function expectLocked(handlers: DragDropHandlers) {
-      expect(screen.getByText(/You can't change content while/)).toBeTruthy();
+      expect(screen.getByText(/Can't change content right now/)).toBeTruthy();
       expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
       expect(screen.getByRole("button", { name: "Remove Sodium" }).hasAttribute("disabled")).toBe(true);
       await act(async () => handlers.drop(["C:\\Downloads\\a.jar"]));
@@ -402,12 +402,12 @@ describe("InstanceDetail", () => {
 
     it("but not for a content task of another instance", async () => {
       await openContent({ tasks: [{ ...duplicateTask, id: "c2", kind: "content", instanceId: "other" }] });
-      expect(screen.queryByText(/You can't change content while/)).toBeNull();
+      expect(screen.queryByText(/Can't change content right now/)).toBeNull();
     });
 
     it("but not after the duplicate task finished", async () => {
       await openContent({ tasks: [{ ...duplicateTask, state: "succeeded" }] });
-      expect(screen.queryByText(/You can't change content while/)).toBeNull();
+      expect(screen.queryByText(/Can't change content right now/)).toBeNull();
       expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(false);
     });
   });
