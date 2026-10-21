@@ -344,6 +344,40 @@ pub(crate) fn recover(db: &Db, paths: &AppPaths) -> Result<(), CoreError> {
             tracing::warn!(op_id = %op.id, kind = %op.kind, code = err.code(), "could not recover an operation");
         }
     }
+    sweep_orphan_staging(db, paths)
+}
+
+/// 操作の ID の形（uuid の simple 形式、小文字の 16 進 32 文字）か。
+fn is_operation_id(name: &str) -> bool {
+    name.len() == 32 && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// 記録の無い操作の `staging/<id>/` を消す（戻しの後に消せなかった残りや、操作の途中でインスタンスが
+/// 消されたもの）。記録は読めない行も含めて数え、ほかの用途のフォルダー（`forge-…`）には触れない。
+fn sweep_orphan_staging(db: &Db, paths: &AppPaths) -> Result<(), CoreError> {
+    let known: std::collections::HashSet<String> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare("SELECT id FROM operations")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    })?;
+    let root = paths.staging_dir();
+    let entries = match std::fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(io_err(&root, e)),
+    };
+    for entry in entries.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
+        if !is_dir || !is_operation_id(&name) || known.contains(&name) {
+            continue;
+        }
+        if let Err(err) = remove_dir_if_exists(&entry.path()) {
+            tracing::warn!(path = %name, code = err.code(), "could not remove a leftover staging folder");
+        }
+    }
     Ok(())
 }
 
@@ -553,6 +587,40 @@ mod tests {
         assert_eq!(read(&f.game_dir.join("mods").join("a.jar")), b"old");
         assert!(staging.exists());
         assert_eq!(list(&f.db).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recover_removes_staging_folders_without_an_operation_record() {
+        let f = fixture();
+        let staging_root = f.paths.staging_dir();
+        // 記録の無い操作のフォルダー（戻しの後に消せなかった残りや、インスタンスごと消えたもの）
+        let orphan = staging_root.join("0123456789abcdef0123456789abcdef");
+        std::fs::create_dir_all(orphan.join("new")).unwrap();
+        std::fs::write(orphan.join("new").join("0-a.jar"), b"x").unwrap();
+        // 読めない記録の操作のフォルダーは、退避を失わないように残す
+        let unreadable = "fedcba9876543210fedcba9876543210";
+        f.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO operations (id, kind, instance_id, state, targets, created_at)
+                 VALUES (?1, 'update', ?2, 'prepared', 'not json', 1)",
+                params![unreadable, f.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        let kept = put_backup(&f, unreadable, "a.jar", b"old");
+        // ほかの用途の staging（Forge の導入）と、フォルダーでないものには触れない
+        let forge = staging_root.join("forge-0123");
+        std::fs::create_dir_all(&forge).unwrap();
+        let file = staging_root.join("abcdefabcdefabcdefabcdefabcdefab");
+        std::fs::write(&file, b"keep").unwrap();
+
+        recover(&f.db, &f.paths).unwrap();
+
+        assert!(!orphan.exists());
+        assert!(kept.join("backup").join("a.jar").is_file());
+        assert!(forge.exists());
+        assert_eq!(read(&file), b"keep");
     }
 
     #[test]

@@ -630,7 +630,7 @@ fn remove_file_if_exists(path: &Path) -> Result<(), CoreError> {
 }
 
 /// 確定の前の失敗で、行ったことを逆の順に戻す。戻しきれたら staging と記録を消す。
-/// 戻しきれなければ両方を残し、次の起動の復旧に任せる。
+/// 戻しきれないか staging を消せなければ両方を残し、次の起動の復旧に任せる。
 fn abort(cx: &ApplyContext<'_>, op: &Operation, staging: &Path, done: &[Done]) {
     let mut ok = true;
     for d in done.iter().rev() {
@@ -646,10 +646,14 @@ fn abort(cx: &ApplyContext<'_>, op: &Operation, staging: &Path, done: &[Done]) {
     if !ok {
         return;
     }
-    if let Err(e) = std::fs::remove_dir_all(staging)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(op_id = %op.id, error = %e, "could not remove the staging folder");
+    match std::fs::remove_dir_all(staging) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            // 記録を消すと staging が誰にも消されずに残る。記録を残し、次の起動の復旧に消させる
+            tracing::warn!(op_id = %op.id, error = %e, "could not remove the staging folder");
+            return;
+        }
     }
     if let Err(err) = journal::finish(cx.db, &op.id) {
         tracing::warn!(op_id = %op.id, code = err.code(), "could not remove an operation record");
@@ -993,6 +997,44 @@ mod tests {
             assert!(!paths.staging_dir().join(&op.id).exists());
             assert!(journal::list(&db).unwrap().is_empty());
         }
+    }
+
+    /// 戻しは済んだが staging を消せなかったときは、記録を残して次の起動の復旧に staging を消させる。
+    #[test]
+    fn abort_keeps_the_record_when_staging_cannot_be_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path());
+        paths.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let inst =
+            instance::create(&db, &paths, &NewInstance::vanilla("x", "1.99-test"), 0).unwrap();
+        let game = instance::game_dir(&paths, &inst);
+        let http = Http::new().unwrap();
+        let token = CancellationToken::new();
+        let cx = ApplyContext {
+            db: &db,
+            http: &http,
+            paths: &paths,
+            game_dir: &game,
+            instance_id: &inst.id,
+            token: &token,
+            cdn: MODRINTH_CDN,
+        };
+        let op = journal::begin(&db, "install", &inst.id, &[], 1).unwrap();
+        // フォルダーでないものを置き、remove_dir_all を失敗させる
+        let staging = paths.staging_dir().join(&op.id);
+        std::fs::write(&staging, b"in the way").unwrap();
+
+        abort(&cx, &op, &staging, &[]);
+
+        assert_eq!(journal::list(&db).unwrap().len(), 1);
+
+        // 消せたときは記録も消す
+        std::fs::remove_file(&staging).unwrap();
+        std::fs::create_dir_all(staging.join("new")).unwrap();
+        abort(&cx, &op, &staging, &[]);
+        assert!(!staging.exists());
+        assert!(journal::list(&db).unwrap().is_empty());
     }
 
     #[test]
