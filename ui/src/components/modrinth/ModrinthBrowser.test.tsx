@@ -343,6 +343,38 @@ describe("ModrinthBrowser", () => {
     expect(listContent).toHaveBeenCalledWith("f120", "mod");
   });
 
+  it("the add button goes straight from adding to installed without showing add again", async () => {
+    const sodiumRow = {
+      kind: "mod" as const, relPath: "mods/sodium.jar", fileName: "sodium.jar", enabled: true, size: 1, sha1: "",
+      provider: "modrinth" as const, projectId: "AANobbMI", versionId: "v1", pinned: false, installedAs: "explicit" as const,
+      name: "Sodium", versionNumber: "0.5.3", description: null, iconUrl: null, hasLocalIcon: false,
+      clientSide: null, serverSide: null, categories: [], dependencies: [], identified: true,
+    };
+    const refetch = deferred<typeof sodiumRow[]>();
+    const action = /^(Add|Adding\.\.\.|Installed)$/;
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    await waitFor(() => expect(listContent).toHaveBeenCalledTimes(1));
+    // 導入のあとの取り直しは、こちらが返すまで終わらない
+    vi.mocked(listContent).mockReturnValue(refetch.promise);
+    const labels: string[] = [];
+    const seen = new MutationObserver(() => {
+      const button = within(card("Sodium")).queryByRole("button", { name: action });
+      if (button) labels.push(button.textContent ?? "");
+    });
+    seen.observe(card("Sodium"), { subtree: true, childList: true, characterData: true, attributes: true });
+    fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(vi.mocked(listContent).mock.calls.length).toBeGreaterThan(1));
+    // タスクが終わっても、取り直しが終わるまでは「追加中」のまま
+    expect(within(card("Sodium")).getByRole("button", { name: action }).textContent).toBe("Adding...");
+    await act(async () => refetch.resolve([sodiumRow]));
+    await within(toasts()).findAllByText("Added Sodium to Fabric 1.20.1");
+    await within(card("Sodium")).findByRole("button", { name: "Installed" });
+    seen.disconnect();
+    expect(labels).toContain("Adding...");
+    expect(labels.slice(labels.indexOf("Adding...")).filter((l) => l === "Add")).toEqual([]);
+  });
+
   it("an_already_installed_error_is_shown_by_name", async () => {
     vi.mocked(previewContentInstall).mockRejectedValue(
       new IpcError({ code: "content.already_installed", params: { name: "Sodium" }, detail: null }),

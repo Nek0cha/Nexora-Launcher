@@ -122,7 +122,8 @@ export function usePreviewInstall() {
 
 /**
  * 導入。タスクを始め、終わるまで待ち、レポートを返す（プレビューと確認は呼び出し側が先に行う）。
- * 完了後は導入済みの一覧と更新の確認を取り直す。
+ * 完了後は導入済みの一覧と更新の確認を取り直す。一覧の取り直しが終わるまで終わったことにしない
+ * （先に終えると、検索の結果のボタンが一瞬「追加」に戻ってから「導入済み」になる）。
  */
 export function useInstallContent() {
   const client = useQueryClient();
@@ -132,9 +133,9 @@ export function useInstallContent() {
       return runContentTask(client, taskId);
     },
     onSettled: (data, _error, v) => {
-      void client.invalidateQueries({ queryKey: ["content", v.instanceId] });
       void client.invalidateQueries({ queryKey: updatesKey(v.instanceId) });
       identifyAfter(client, v.instanceId, data);
+      return client.invalidateQueries({ queryKey: ["content", v.instanceId] });
     },
   });
 }
