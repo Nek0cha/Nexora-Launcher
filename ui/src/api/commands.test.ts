@@ -7,7 +7,14 @@ import {
   deleteInstance,
   duplicateInstance,
   getSkinVariant,
+  addContentFiles,
+  getContentIcon,
+  identifyContent,
   launchInstance,
+  listContent,
+  listContentCategories,
+  removeContent,
+  setContentEnabled,
   listLoaderGameVersions,
   listLoaderVersions,
   openInstanceFolder,
@@ -94,5 +101,34 @@ describe("instance and skin commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("get_skin_variant", { accountId: "a1" });
     await changeSkin("a1", "slim", [1, 2]);
     expect(invoke).toHaveBeenLastCalledWith("change_skin", { accountId: "a1", variant: "slim", png: [1, 2] });
+  });
+});
+
+describe("content commands", () => {
+  it("passes the camelCase argument names", async () => {
+    await listContent("i1", "mod");
+    expect(invoke).toHaveBeenLastCalledWith("list_content", { instanceId: "i1", kind: "mod" });
+    await identifyContent("i1");
+    expect(invoke).toHaveBeenLastCalledWith("identify_content", { instanceId: "i1" });
+    await setContentEnabled("i1", "shader", "a.zip", false);
+    expect(invoke).toHaveBeenLastCalledWith("set_content_enabled", {
+      instanceId: "i1",
+      kind: "shader",
+      relPath: "a.zip",
+      enabled: false,
+    });
+    await removeContent("i1", "resourcepack", "a.zip");
+    expect(invoke).toHaveBeenLastCalledWith("remove_content", { instanceId: "i1", kind: "resourcepack", relPath: "a.zip" });
+    await addContentFiles("i1", "mod", ["C:\a.jar"], true);
+    expect(invoke).toHaveBeenLastCalledWith("add_content_files", {
+      instanceId: "i1",
+      kind: "mod",
+      paths: ["C:\a.jar"],
+      overwrite: true,
+    });
+    await listContentCategories("mod");
+    expect(invoke).toHaveBeenLastCalledWith("list_content_categories", { kind: "mod" });
+    await getContentIcon("k");
+    expect(invoke).toHaveBeenLastCalledWith("get_content_icon", { key: "k" });
   });
 });

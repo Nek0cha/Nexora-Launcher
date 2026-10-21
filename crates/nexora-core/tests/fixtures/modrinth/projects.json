@@ -1,0 +1,43 @@
+[
+  {
+    "id": "P7dR8mSH",
+    "slug": "fabric-api",
+    "project_type": "mod",
+    "team": "BZoBsPo6",
+    "title": "Fabric API",
+    "description": "Core API module providing key hooks and interoperability for Fabric mods.",
+    "categories": ["fabric", "library"],
+    "additional_categories": ["utility"],
+    "client_side": "required",
+    "server_side": "required",
+    "icon_url": "https://cdn.modrinth.com/data/P7dR8mSH/icon.png",
+    "downloads": 100000
+  },
+  {
+    "id": "YL57xq9U",
+    "slug": "iris",
+    "project_type": "mod",
+    "team": "x",
+    "title": "Iris Shaders",
+    "description": "A modern shaders mod compatible with existing OptiFine shaders.",
+    "categories": ["optimization"],
+    "additional_categories": [],
+    "client_side": "required",
+    "server_side": "unsupported",
+    "icon_url": null,
+    "downloads": 5
+  },
+  {
+    "id": "unk00001",
+    "slug": "mystery",
+    "project_type": "mod",
+    "team": "x",
+    "title": "Mystery",
+    "description": "Sides are not declared.",
+    "categories": [],
+    "client_side": "unknown",
+    "server_side": "optional",
+    "icon_url": null,
+    "downloads": 0
+  }
+]

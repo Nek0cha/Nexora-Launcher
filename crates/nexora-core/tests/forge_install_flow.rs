@@ -271,6 +271,7 @@ async fn harness_with(profile: impl FnOnce(&str) -> (Option<String>, Option<Stri
         forge_maven: format!("{u}/forge"),
         forge_promotions: "http://127.0.0.1:1".into(),
         neoforge_maven: "http://127.0.0.1:1".into(),
+        modrinth_api: "http://127.0.0.1:1".into(),
     };
     let db = Db::open_in_memory().unwrap();
     let auth_server = MockServer::start().await;

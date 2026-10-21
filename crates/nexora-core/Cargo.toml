@@ -39,6 +39,7 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.42"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 regex = "1"
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 
 sha2 = "0.11"
 base64 = "0.23"

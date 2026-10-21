@@ -34,6 +34,7 @@ fn harness(fake: &FakeMojang) -> Harness {
         forge_maven: "http://127.0.0.1:1".into(),
         forge_promotions: "http://127.0.0.1:1".into(),
         neoforge_maven: "http://127.0.0.1:1".into(),
+        modrinth_api: "http://127.0.0.1:1".into(),
     };
     let env = InstallEnv::new(
         paths,

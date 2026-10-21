@@ -15,6 +15,10 @@ import type { LoginMethod } from "../bindings/LoginMethod";
 import type { LoaderKind } from "../bindings/LoaderKind";
 import type { LoaderVersionEntry } from "../bindings/LoaderVersionEntry";
 import type { NewInstance } from "../bindings/NewInstance";
+import type { ContentKind } from "../bindings/ContentKind";
+import type { ContentItem } from "../bindings/ContentItem";
+import type { IdentifyReport } from "../bindings/IdentifyReport";
+import type { AddReport } from "../bindings/AddReport";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -56,3 +60,16 @@ export const getSkin = (accountId: string) => call<string | null>("get_skin", { 
 export const getSkinVariant = (accountId: string) => call<SkinVariant>("get_skin_variant", { accountId });
 export const changeSkin = (accountId: string, variant: SkinVariant, png: number[]) =>
   call<null>("change_skin", { accountId, variant, png });
+
+export const listContent = (instanceId: string, kind: ContentKind) =>
+  call<ContentItem[]>("list_content", { instanceId, kind });
+export const identifyContent = (instanceId: string) => call<IdentifyReport>("identify_content", { instanceId });
+export const setContentEnabled = (instanceId: string, kind: ContentKind, relPath: string, enabled: boolean) =>
+  call<null>("set_content_enabled", { instanceId, kind, relPath, enabled });
+export const removeContent = (instanceId: string, kind: ContentKind, relPath: string) =>
+  call<null>("remove_content", { instanceId, kind, relPath });
+export const addContentFiles = (instanceId: string, kind: ContentKind, paths: string[], overwrite: boolean) =>
+  call<AddReport>("add_content_files", { instanceId, kind, paths, overwrite });
+export const listContentCategories = (kind: ContentKind) =>
+  call<string[]>("list_content_categories", { kind });
+export const getContentIcon = (key: string) => call<string | null>("get_content_icon", { key });

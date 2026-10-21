@@ -8,6 +8,9 @@ use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
 use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
+use nexora_core::content::identify::IdentifyReport;
+use nexora_core::content::ops::AddReport;
+use nexora_core::content::{ContentItem, ContentKind};
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
@@ -204,6 +207,116 @@ pub async fn delete_instance(state: State<'_, AppState>, instance_id: String) ->
         .delete_instance(&instance_id)
         .await
         .map_err(ErrorPayload::from)
+}
+
+/// 中身（mod、リソースパック、シェーダー）の一覧。ディスクを走査してから返す。
+#[tauri::command]
+pub async fn list_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+    kind: ContentKind,
+) -> CmdResult<Vec<ContentItem>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_content(&instance_id, kind)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 未特定の中身を Modrinth で特定する。
+#[tauri::command]
+pub async fn identify_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<IdentifyReport> {
+    let services = state.services()?;
+    services
+        .launcher
+        .identify_content(&instance_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 中身を有効または無効にする。起動中なら `instance.busy`。
+#[tauri::command]
+pub async fn set_content_enabled(
+    state: State<'_, AppState>,
+    instance_id: String,
+    kind: ContentKind,
+    rel_path: String,
+    enabled: bool,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .set_content_enabled(&instance_id, kind, &rel_path, enabled)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 中身を削除する。起動中なら `instance.busy`。
+#[tauri::command]
+pub async fn remove_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+    kind: ContentKind,
+    rel_path: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .remove_content(&instance_id, kind, &rel_path)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// ファイルを中身として追加する。起動中なら `instance.busy`。
+#[tauri::command]
+pub async fn add_content_files(
+    state: State<'_, AppState>,
+    instance_id: String,
+    kind: ContentKind,
+    paths: Vec<String>,
+    overwrite: bool,
+) -> CmdResult<AddReport> {
+    let services = state.services()?;
+    let paths = paths.into_iter().map(std::path::PathBuf::from).collect();
+    services
+        .launcher
+        .add_content_files(&instance_id, kind, paths, overwrite)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// Modrinth のカテゴリー名のうち、種類に合うもの。
+#[tauri::command]
+pub async fn list_content_categories(
+    state: State<'_, AppState>,
+    kind: ContentKind,
+) -> CmdResult<Vec<String>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .content_categories(kind)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 中身のアイコンを `data:image/png;base64,...` で返す。無ければ `None`。
+#[tauri::command]
+pub async fn get_content_icon(
+    state: State<'_, AppState>,
+    key: String,
+) -> CmdResult<Option<String>> {
+    let services = state.services()?;
+    blocking(move || {
+        Ok(services
+            .launcher
+            .content_icon(&key)?
+            .map(|bytes| format!("data:image/png;base64,{}", STANDARD.encode(bytes))))
+    })
+    .await
 }
 
 /// 複製のタスクを始め、その ID を返す。

@@ -94,6 +94,8 @@ pub enum CoreError {
     InstanceBusy { instance_id: String },
     #[error("invalid instance setting: {field}")]
     InvalidInstanceSetting { field: String },
+    #[error("a content file already exists: {path}")]
+    ContentExists { path: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
@@ -160,6 +162,7 @@ impl CoreError {
             CoreError::InstanceNotFound { .. } => "instance.not_found",
             CoreError::InstanceBusy { .. } => "instance.busy",
             CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
+            CoreError::ContentExists { .. } => "content.exists",
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -225,6 +228,9 @@ impl CoreError {
             }
             CoreError::InvalidInstanceSetting { field } => {
                 params.insert("field".into(), ParamValue::Str(field.clone()));
+            }
+            CoreError::ContentExists { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
             }
             CoreError::InvalidSkin { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
@@ -635,6 +641,18 @@ mod tests {
         assert_eq!(
             err.to_payload().params.get("reason"),
             Some(&ParamValue::Str("dimensions".into()))
+        );
+    }
+
+    #[test]
+    fn phase5_content_exists() {
+        let err = CoreError::ContentExists {
+            path: "mods/a.jar.disabled".into(),
+        };
+        assert_eq!(err.code(), "content.exists");
+        assert_eq!(
+            err.to_payload().params.get("path"),
+            Some(&ParamValue::Str("mods/a.jar.disabled".into()))
         );
     }
 

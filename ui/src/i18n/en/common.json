@@ -197,6 +197,7 @@
     "deletePartial": "The folder may have been partly removed. Try deleting it again.",
     "detail": {
       "tabSettings": "Settings",
+      "tabContent": "Content",
       "name": "Name",
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
@@ -253,5 +254,120 @@
     "body": "Force stopping may lose any progress since the last save.",
     "wait": "Wait",
     "confirm": "Force stop"
+  },
+  "content": {
+    "filter": {
+      "search": "Filter by name",
+      "client": "Client side",
+      "server": "Server side",
+      "side": {
+        "required": "Required",
+        "optional": "Optional",
+        "unsupported": "Unsupported"
+      },
+      "categories": "Categories",
+      "status": "Status",
+      "statusValue": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "dependency": "Dependency"
+      }
+    },
+    "category": {
+      "adventure": "Adventure",
+      "cursed": "Cursed",
+      "decoration": "Decoration",
+      "economy": "Economy",
+      "equipment": "Equipment",
+      "food": "Food",
+      "game-mechanics": "Game Mechanics",
+      "library": "Library",
+      "magic": "Magic",
+      "management": "Management",
+      "minigame": "Minigame",
+      "mobs": "Mobs",
+      "optimization": "Optimization",
+      "social": "Social",
+      "storage": "Storage",
+      "technology": "Technology",
+      "transportation": "Transportation",
+      "utility": "Utility",
+      "worldgen": "World Generation",
+      "audio": "Audio",
+      "blocks": "Blocks",
+      "combat": "Combat",
+      "core-shaders": "Core Shaders",
+      "entities": "Entities",
+      "environment": "Environment",
+      "fonts": "Fonts",
+      "gui": "GUI",
+      "items": "Items",
+      "locale": "Locale",
+      "modded": "Modded",
+      "models": "Models",
+      "realistic": "Realistic",
+      "simplistic": "Simplistic",
+      "themed": "Themed",
+      "tweaks": "Tweaks",
+      "vanilla-like": "Vanilla-like",
+      "atmosphere": "Atmosphere",
+      "bloom": "Bloom",
+      "cartoon": "Cartoon",
+      "colored-lighting": "Colored Lighting",
+      "fantasy": "Fantasy",
+      "foliage": "Foliage",
+      "path-tracing": "Path Tracing",
+      "pbr": "PBR",
+      "reflections": "Reflections",
+      "semi-realistic": "Semi-realistic",
+      "shadows": "Shadows"
+    },
+    "row": {
+      "list": "Installed content",
+      "enable": "Enable {{name}}",
+      "remove": "Remove {{name}}",
+      "removeShort": "Remove",
+      "dependency": "Dependency"
+    },
+    "tabs": {
+      "label": "Content type",
+      "mod": "Mods",
+      "resourcepack": "Resource packs",
+      "shader": "Shaders"
+    },
+    "busy": "You can't change content while the instance is running, installing or being duplicated.",
+    "excluded": "Not covered by this filter: {{count}}",
+    "excludedShow": "Show",
+    "excludedHide": "Hide",
+    "excludedList": "Content not covered by this filter",
+    "noMatch": "Nothing matches this filter.",
+    "empty": {
+      "mod": "No mods yet. Drop .jar files on this screen to add them.",
+      "resourcepack": "No resource packs yet. Drop .zip files on this screen to add them.",
+      "shader": "No shaders yet. Drop .zip files on this screen to add them."
+    },
+    "drop": {
+      "target": "Drop here to add",
+      "accepts": "{{ext}} files"
+    },
+    "reject": {
+      "message": "Couldn't add {{name}}. {{reason}}",
+      "notAFile": "It isn't a file.",
+      "wrongExtension": "Only {{ext}} files can be added here.",
+      "unreadable": "The file couldn't be read."
+    },
+    "confirm": {
+      "cancel": "Cancel",
+      "disableTitle": "Disable {{name}}?",
+      "disableBody": "These mods depend on it and may stop working if you disable it.",
+      "disable": "Disable",
+      "removeTitle": "Remove {{name}}?",
+      "removeBody": "The file will be deleted. This can't be undone.",
+      "removeDependents": "These mods depend on it and may stop working if you remove it.",
+      "remove": "Remove",
+      "conflictTitle": "Some files already exist",
+      "conflictBody": "These files are already installed. Replace them?",
+      "replace": "Replace"
+    }
   }
 }

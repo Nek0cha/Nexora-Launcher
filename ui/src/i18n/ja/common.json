@@ -197,6 +197,7 @@
     "deletePartial": "フォルダの一部が削除された可能性があります。もう一度削除してください。",
     "detail": {
       "tabSettings": "設定",
+      "tabContent": "コンテンツ",
       "name": "名前",
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
@@ -253,5 +254,120 @@
     "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
     "wait": "待つ",
     "confirm": "強制終了"
+  },
+  "content": {
+    "filter": {
+      "search": "名前で絞り込む",
+      "client": "クライアント側",
+      "server": "サーバー側",
+      "side": {
+        "required": "必須",
+        "optional": "任意",
+        "unsupported": "非対応"
+      },
+      "categories": "カテゴリ",
+      "status": "状態",
+      "statusValue": {
+        "enabled": "有効",
+        "disabled": "無効",
+        "dependency": "依存"
+      }
+    },
+    "category": {
+      "adventure": "冒険",
+      "cursed": "呪われた",
+      "decoration": "装飾",
+      "economy": "経済",
+      "equipment": "装備",
+      "food": "食べ物",
+      "game-mechanics": "ゲームの仕組み",
+      "library": "ライブラリ",
+      "magic": "魔法",
+      "management": "管理",
+      "minigame": "ミニゲーム",
+      "mobs": "モブ",
+      "optimization": "最適化",
+      "social": "交流",
+      "storage": "収納",
+      "technology": "技術",
+      "transportation": "移動手段",
+      "utility": "便利",
+      "worldgen": "ワールド生成",
+      "audio": "音声",
+      "blocks": "ブロック",
+      "combat": "戦闘",
+      "core-shaders": "コアシェーダー",
+      "entities": "エンティティ",
+      "environment": "環境",
+      "fonts": "フォント",
+      "gui": "GUI",
+      "items": "アイテム",
+      "locale": "言語",
+      "modded": "MOD 向け",
+      "models": "モデル",
+      "realistic": "写実的",
+      "simplistic": "簡素",
+      "themed": "テーマ",
+      "tweaks": "調整",
+      "vanilla-like": "バニラ風",
+      "atmosphere": "大気",
+      "bloom": "ブルーム",
+      "cartoon": "カートゥーン",
+      "colored-lighting": "色付きの光",
+      "fantasy": "ファンタジー",
+      "foliage": "草木",
+      "path-tracing": "パストレーシング",
+      "pbr": "PBR",
+      "reflections": "反射",
+      "semi-realistic": "半写実的",
+      "shadows": "影"
+    },
+    "row": {
+      "list": "導入済みのコンテンツ",
+      "enable": "{{name}} を有効にする",
+      "remove": "{{name}} を削除",
+      "removeShort": "削除",
+      "dependency": "依存"
+    },
+    "tabs": {
+      "label": "コンテンツの種類",
+      "mod": "MOD",
+      "resourcepack": "リソースパック",
+      "shader": "シェーダー"
+    },
+    "busy": "起動中、インストール中、複製中のインスタンスは変更できません。",
+    "excluded": "絞り込みの対象外 {{count}} 件",
+    "excludedShow": "表示",
+    "excludedHide": "隠す",
+    "excludedList": "絞り込みの対象外のコンテンツ",
+    "noMatch": "条件に合うものはありません。",
+    "empty": {
+      "mod": "MOD はまだありません。.jar のファイルをこの画面に落とすと追加できます。",
+      "resourcepack": "リソースパックはまだありません。.zip のファイルをこの画面に落とすと追加できます。",
+      "shader": "シェーダーはまだありません。.zip のファイルをこの画面に落とすと追加できます。"
+    },
+    "drop": {
+      "target": "ここに落として追加",
+      "accepts": "{{ext}} のファイル"
+    },
+    "reject": {
+      "message": "{{name}} を追加できませんでした。{{reason}}",
+      "notAFile": "ファイルではありません。",
+      "wrongExtension": "ここに追加できるのは {{ext}} のファイルだけです。",
+      "unreadable": "ファイルを読み込めませんでした。"
+    },
+    "confirm": {
+      "cancel": "キャンセル",
+      "disableTitle": "{{name}} を無効にしますか？",
+      "disableBody": "次の MOD がこの MOD に依存しています。無効にすると、これらが動かなくなることがあります。",
+      "disable": "無効にする",
+      "removeTitle": "{{name}} を削除しますか？",
+      "removeBody": "ファイルを削除します。元に戻せません。",
+      "removeDependents": "次の MOD がこの MOD に依存しています。削除すると、これらが動かなくなることがあります。",
+      "remove": "削除",
+      "conflictTitle": "同じ名前のファイルがあります",
+      "conflictBody": "次のファイルはすでにあります。置き換えますか？",
+      "replace": "置き換える"
+    }
   }
 }
