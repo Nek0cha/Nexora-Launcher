@@ -39,6 +39,7 @@ impl VersionSource for ApiSource {
             .ok_or_else(|| CoreError::ContentDependency {
                 project_id: id.to_string(),
                 cause: DependencyCause::NoVersion,
+                name: None,
             })
     }
 
@@ -158,6 +159,7 @@ impl<'a, S: VersionSource> State<'a, S> {
                             CoreError::ContentDependency {
                                 project_id: p.clone(),
                                 cause: DependencyCause::NoVersion,
+                                name: None,
                             }
                         })?
                     }
@@ -176,6 +178,7 @@ impl<'a, S: VersionSource> State<'a, S> {
                     .ok_or_else(|| CoreError::ContentDependency {
                         project_id: version.project_id.clone(),
                         cause: DependencyCause::NoFile,
+                        name: None,
                     })?;
             self.planned.insert(version.project_id.clone());
             self.plan.files.push(PlannedFile {
@@ -195,6 +198,7 @@ impl<'a, S: VersionSource> State<'a, S> {
             return Err(CoreError::ContentDependency {
                 project_id: project_id.to_string(),
                 cause: DependencyCause::Cycle,
+                name: None,
             });
         }
         if self.planned.contains(project_id) {
@@ -331,6 +335,7 @@ mod tests {
             CoreError::ContentDependency {
                 project_id,
                 cause: got,
+                ..
             } => {
                 assert_eq!(project_id, project);
                 assert_eq!(got, cause);

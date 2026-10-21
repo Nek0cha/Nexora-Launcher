@@ -11,4 +11,8 @@ dependencyCount: number,
 /**
  * 新しい版が非互換と宣言している導入済みの MOD の表示名。
  */
-incompatible: Array<string>, };
+incompatible: Array<string>, 
+/**
+ * 同じ project の MOD が無効で入っていて、ダウンロードせずにそれを有効にするだけか。
+ */
+enablesInstalled: boolean, };

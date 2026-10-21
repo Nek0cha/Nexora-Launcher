@@ -118,7 +118,12 @@ pub(crate) async fn check(
     for r in targets {
         match found.get(&r.item.sha1) {
             Some(v) => {
-                if r.item.version_id.as_deref() != Some(v.id.as_str()) {
+                // 特定の前の行は version_id が無いので、応答の版に同じハッシュのファイルがあれば同じ版とみなす
+                let same_version = r.item.version_id.as_deref() == Some(v.id.as_str())
+                    || v.files
+                        .iter()
+                        .any(|f| f.sha1.eq_ignore_ascii_case(&r.item.sha1));
+                if !same_version {
                     out.updates.push(AvailableUpdate {
                         rel_path: r.item.rel_path.clone(),
                         version_id: v.id.clone(),

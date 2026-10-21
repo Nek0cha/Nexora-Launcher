@@ -164,3 +164,50 @@ async fn removing_a_mod_drops_the_cached_check() {
         .unwrap();
     assert!(check.updates.is_empty(), "{check:?}");
 }
+
+#[tokio::test]
+async fn local_row_whose_file_is_the_latest_version_is_not_an_update() {
+    let h = Harness::new().await;
+    // 特定の前（version_id が無い）でも、応答の版のファイルが同じハッシュなら同じ版
+    h.seed_local("same.jar", b"s1");
+    h.seed_local("old.jar", b"o1");
+    h.serve_updates(vec![
+        (sha1_hex(b"s1"), h.version_json("ps", "s1", "s1.jar", b"s1")),
+        (sha1_hex(b"o1"), h.version_json("po", "o2", "o2.jar", b"o2")),
+    ])
+    .await;
+
+    let check = h
+        .launcher
+        .check_content_updates(&h.id, false)
+        .await
+        .unwrap();
+
+    let paths: Vec<&str> = check.updates.iter().map(|u| u.rel_path.as_str()).collect();
+    assert_eq!(paths, ["mods/old.jar"], "{check:?}");
+}
+
+#[tokio::test]
+async fn identifying_content_drops_the_cached_check() {
+    let h = Harness::new().await;
+    h.seed("a.jar", b"a1", "pa", "a1");
+    h.serve_updates(vec![(
+        sha1_hex(b"a1"),
+        h.version_json("pa", "a2", "a2.jar", b"a2"),
+    )])
+    .await;
+    h.launcher
+        .check_content_updates(&h.id, false)
+        .await
+        .unwrap();
+    assert_eq!(h.hits(CHECK_ROUTE).await, 1);
+
+    // 特定の成否にかかわらず、行が変わりうるので結果を捨てる
+    let _ = h.launcher.identify_content(&h.id).await;
+
+    h.launcher
+        .check_content_updates(&h.id, false)
+        .await
+        .unwrap();
+    assert_eq!(h.hits(CHECK_ROUTE).await, 2);
+}

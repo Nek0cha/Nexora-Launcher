@@ -468,6 +468,21 @@ pub async fn search(
     })
 }
 
+/// URL のパスに入れてよい project の ID か（Modrinth の ID とスラッグは英数字、`_`、`-` だけ）。
+pub fn check_project_id(project_id: &str) -> Result<(), CoreError> {
+    let ok = !project_id.is_empty()
+        && project_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if ok {
+        Ok(())
+    } else {
+        Err(CoreError::InvalidMetadata {
+            message: format!("invalid modrinth project id: {project_id:?}"),
+        })
+    }
+}
+
 /// プロジェクトの版を、指定の Minecraft とローダーで絞って新しい順に取る。
 pub async fn project_versions(
     http: &Http,
@@ -476,6 +491,8 @@ pub async fn project_versions(
     mc_version: &str,
     loaders: &[String],
 ) -> Result<Vec<FullVersion>, CoreError> {
+    // ID はパスに入るので、区切りや問い合わせの記号を含むものは送らない
+    check_project_id(project_id)?;
     let mut params = vec![("game_versions", json_array(&[mc_version.to_string()])?)];
     if !loaders.is_empty() {
         params.push(("loaders", json_array(loaders)?));

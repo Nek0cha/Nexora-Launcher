@@ -29,6 +29,8 @@ pub struct InstallPreview {
     pub dependency_count: u32,
     /// 新しい版が非互換と宣言している導入済みの MOD の表示名。
     pub incompatible: Vec<String>,
+    /// 同じ project の MOD が無効で入っていて、ダウンロードせずにそれを有効にするだけか。
+    pub enables_installed: bool,
 }
 
 /// タスクの結果。古いものから捨てて、一定数だけ持つ。
@@ -92,7 +94,43 @@ fn no_version(project_id: &str) -> CoreError {
     CoreError::ContentDependency {
         project_id: project_id.to_string(),
         cause: DependencyCause::NoVersion,
+        name: None,
     }
+}
+
+/// 導入の計画。同じ project の無効の jar があれば、ダウンロードせずにそれを有効にする。
+enum Planned<'r> {
+    Download(InstallPlan),
+    Enable(&'r Row),
+}
+
+impl Planned<'_> {
+    fn into_plan(self) -> InstallPlan {
+        match self {
+            Planned::Download(plan) => plan,
+            Planned::Enable(row) => InstallPlan {
+                enable: vec![row.item.rel_path.clone()],
+                ..InstallPlan::default()
+            },
+        }
+    }
+}
+
+/// 導入しようとする project がすでに入っているか。有効なものがあれば断り、無効なものだけならそれを返す。
+fn installed_root<'r>(rows: &'r [Row], project_id: &str) -> Result<Option<&'r Row>, CoreError> {
+    let mut disabled = None;
+    for row in rows
+        .iter()
+        .filter(|r| r.item.project_id.as_deref() == Some(project_id))
+    {
+        if row.item.enabled {
+            return Err(CoreError::ContentAlreadyInstalled {
+                name: display_name(row),
+            });
+        }
+        disabled.get_or_insert(row);
+    }
+    Ok(disabled)
 }
 
 impl Launcher {
@@ -103,6 +141,42 @@ impl Launcher {
             loaders: loader_slugs(Some(inst.loader.as_str())),
             inst,
         })
+    }
+
+    /// MOD を入れる先。ローダーの無い（バニラの）インスタンスは断る。
+    fn install_target(&self, id: &str) -> Result<Target, CoreError> {
+        let t = self.content_target(id)?;
+        if t.loaders.is_empty() {
+            return Err(CoreError::ContentNoLoader);
+        }
+        Ok(t)
+    }
+
+    /// 依存のエラーに、分かれば project の表示名を足す。引けなければそのまま返す。
+    async fn with_dependency_name(&self, err: CoreError) -> CoreError {
+        match err {
+            CoreError::ContentDependency {
+                project_id,
+                cause,
+                name: None,
+            } => {
+                let name = modrinth::projects(
+                    &self.env.http,
+                    &self.env.urls.modrinth_api,
+                    std::slice::from_ref(&project_id),
+                )
+                .await
+                .ok()
+                .and_then(|found| found.into_iter().find(|p| p.project_id == project_id))
+                .map(|p| p.name);
+                CoreError::ContentDependency {
+                    project_id,
+                    cause,
+                    name,
+                }
+            }
+            other => other,
+        }
     }
 
     fn api_source(&self, t: &Target) -> ApiSource {
@@ -141,26 +215,37 @@ impl Launcher {
         .await
     }
 
-    /// 導入の計画を立てる。ファイルには触らない。
-    async fn plan_install(
+    /// 導入の計画を立てる。ファイルには触らない。同じ project がすでに有効で入っていれば断る。
+    async fn plan_install<'r>(
         &self,
         t: &Target,
-        rows: &[Row],
+        rows: &'r [Row],
         project_id: &str,
-    ) -> Result<InstallPlan, CoreError> {
+    ) -> Result<Planned<'r>, CoreError> {
+        modrinth::check_project_id(project_id)?;
+        if let Some(row) = installed_root(rows, project_id)? {
+            return Ok(Planned::Enable(row));
+        }
         let source = self.api_source(t);
-        let versions = modrinth::project_versions(
-            &source.http,
-            &source.api,
-            project_id,
-            &source.mc_version,
-            &source.loaders,
-        )
-        .await?;
-        let root = modrinth::pick_version(&versions)
-            .cloned()
-            .ok_or_else(|| no_version(project_id))?;
-        resolve(&source, root, &installed_of(rows), None).await
+        let planned = async {
+            let versions = modrinth::project_versions(
+                &source.http,
+                &source.api,
+                project_id,
+                &source.mc_version,
+                &source.loaders,
+            )
+            .await?;
+            let root = modrinth::pick_version(&versions)
+                .cloned()
+                .ok_or_else(|| no_version(project_id))?;
+            resolve(&source, root, &installed_of(rows), None).await
+        }
+        .await;
+        match planned {
+            Ok(plan) => Ok(Planned::Download(plan)),
+            Err(err) => Err(self.with_dependency_name(err).await),
+        }
     }
 
     /// 導入の前に、入る版と依存の数、非互換の導入済みの MOD を調べる。
@@ -169,25 +254,38 @@ impl Launcher {
         instance_id: &str,
         project_id: &str,
     ) -> Result<InstallPreview, CoreError> {
-        let t = self.content_target(instance_id)?;
+        let t = self.install_target(instance_id)?;
         let rows = self.mod_rows(instance_id).await?;
-        let plan = self.plan_install(&t, &rows, project_id).await?;
+        let plan = match self.plan_install(&t, &rows, project_id).await? {
+            Planned::Download(plan) => plan,
+            Planned::Enable(row) => {
+                return Ok(InstallPreview {
+                    version_number: row.item.version_number.clone().unwrap_or_default(),
+                    dependency_count: 0,
+                    incompatible: Vec::new(),
+                    enables_installed: true,
+                });
+            }
+        };
         let root = plan.files.last().ok_or_else(|| no_version(project_id))?;
         Ok(InstallPreview {
             version_number: root.version.version_number.clone(),
             dependency_count: clamp_u32(plan.files.len().saturating_sub(1) as u64),
             incompatible: incompatible_names(&plan, &rows),
+            enables_installed: false,
         })
     }
 
     /// MOD と必須の依存を導入するタスクを始める。非互換の導入済みの MOD があって
-    /// `accept_incompatible` が偽なら、何も入れずに失敗する。
+    /// `accept_incompatible` が偽なら、何も入れずに失敗する。同じ project が有効で入っていれば
+    /// `ContentAlreadyInstalled` で失敗し、無効で入っていればそれを有効にするだけにする。
     pub fn install_content(
         &self,
         instance_id: &str,
         project_id: &str,
         accept_incompatible: bool,
     ) -> Result<String, CoreError> {
+        self.install_target(instance_id)?;
         self.ensure_idle(instance_id)?;
         self.ensure_no_pending_operation(instance_id)?;
         let this = self.clone();
@@ -223,9 +321,11 @@ impl Launcher {
     ) -> Result<(), CoreError> {
         self.ensure_content_task_may_run(id)?;
         handle.set_phase(TaskPhase::Resolving);
-        let t = self.content_target(id)?;
+        let t = self.install_target(id)?;
         let rows = self.mod_rows(id).await?;
-        let plan = self.plan_install(&t, &rows, project_id).await?;
+        let planned = self.plan_install(&t, &rows, project_id).await?;
+        let enables_installed = matches!(planned, Planned::Enable(_));
+        let plan = planned.into_plan();
         let names = incompatible_names(&plan, &rows);
         if !names.is_empty() && !accept_incompatible {
             return Err(CoreError::ContentIncompatible {
@@ -242,7 +342,8 @@ impl Launcher {
         self.store_report(
             handle,
             ContentTaskReport {
-                installed: outcome.installed,
+                // 無効の jar を有効にしただけのときも、頼まれた MOD が入ったことにする
+                installed: outcome.installed + u32::from(enables_installed),
                 dependencies_added: outcome.dependencies_added,
                 updated: 0,
                 failures: Vec::new(),
@@ -414,20 +515,33 @@ impl Launcher {
         let row = rows
             .iter()
             .find(|r| r.item.rel_path == rel)
-            .ok_or_else(|| CoreError::InvalidInstanceSetting {
-                field: "rel_path".into(),
+            .ok_or_else(|| CoreError::ContentNotFound {
+                path: rel.to_string(),
             })?;
-        let version = latest
-            .get(&row.item.sha1)
-            .cloned()
-            .ok_or_else(|| no_version(row.item.project_id.as_deref().unwrap_or(rel)))?;
-        let plan = resolve(
+        let version =
+            latest
+                .get(&row.item.sha1)
+                .cloned()
+                .ok_or_else(|| CoreError::ContentDependency {
+                    project_id: row
+                        .item
+                        .project_id
+                        .clone()
+                        .unwrap_or_else(|| rel.to_string()),
+                    cause: DependencyCause::NoVersion,
+                    name: Some(display_name(row)),
+                })?;
+        let plan = match resolve(
             &self.api_source(t),
             version,
             &installed_of(&rows),
             Some(rel),
         )
-        .await?;
+        .await
+        {
+            Ok(plan) => plan,
+            Err(err) => return Err(self.with_dependency_name(err).await),
+        };
         let names = incompatible_names(&plan, &rows);
         if !names.is_empty() {
             // 更新では確認を取れないので、非互換の MOD がある更新は入れない

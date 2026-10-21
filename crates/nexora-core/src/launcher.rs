@@ -290,7 +290,7 @@ impl Launcher {
     pub async fn identify_content(&self, id: &str) -> Result<IdentifyReport, CoreError> {
         let inst = instance::get(&self.env.db, id)?;
         let game_dir = instance::game_dir(&self.env.paths, &inst);
-        identify(
+        let result = identify(
             &self.env.db,
             &self.env.http,
             &self.env.urls.modrinth_api,
@@ -299,7 +299,10 @@ impl Launcher {
             id,
             now_ms(),
         )
-        .await
+        .await;
+        // 版や入手元が埋まると更新の判定が変わるので、成否にかかわらず確認の結果を捨てる
+        self.updates.invalidate(id);
+        result
     }
 
     /// 中身を有効または無効にする。起動中とタスク中は `InstanceBusy`（削除と同じ順で確認する）。

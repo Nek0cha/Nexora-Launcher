@@ -96,15 +96,26 @@ pub enum CoreError {
     InvalidInstanceSetting { field: String },
     #[error("a content file already exists: {path}")]
     ContentExists { path: String },
-    /// 必須の依存を解決できなかった。何も導入しない。
+    /// 必須の依存を解決できなかった。何も導入、更新しない。
+    /// `name` は分かれば project の表示名（UI の `name` には、無ければ project_id を渡す）。
     #[error("dependency {project_id} could not be resolved: {cause}")]
     ContentDependency {
         project_id: String,
         cause: DependencyCause,
+        name: Option<String>,
     },
-    /// 新しい版が非互換と宣言している MOD が導入済みで、確認なしでは入れない。
+    /// 新しい版が非互換と宣言している MOD が導入済み。導入は確認なしでは、更新はいつも入れない。
     #[error("installed mods are declared incompatible: {names}")]
     ContentIncompatible { names: String },
+    /// 同じ project の MOD が有効で導入済み。2 つ目は入れない。
+    #[error("the mod is already installed: {name}")]
+    ContentAlreadyInstalled { name: String },
+    /// 指定の中身の行が無い（一覧が古いなど）。
+    #[error("the content was not found: {path}")]
+    ContentNotFound { path: String },
+    /// ローダーの無い（バニラの）インスタンスには MOD を入れられない。
+    #[error("the instance has no mod loader")]
+    ContentNoLoader,
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
@@ -206,6 +217,9 @@ impl CoreError {
             CoreError::ContentExists { .. } => "content.exists",
             CoreError::ContentDependency { .. } => "content.dependency",
             CoreError::ContentIncompatible { .. } => "content.incompatible",
+            CoreError::ContentAlreadyInstalled { .. } => "content.already_installed",
+            CoreError::ContentNotFound { .. } => "content.not_found",
+            CoreError::ContentNoLoader => "content.no_loader",
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -275,9 +289,21 @@ impl CoreError {
             CoreError::ContentExists { path } => {
                 params.insert("path".into(), ParamValue::Str(path.clone()));
             }
-            CoreError::ContentDependency { project_id, cause } => {
+            CoreError::ContentDependency {
+                project_id,
+                cause,
+                name,
+            } => {
                 params.insert("projectId".into(), ParamValue::Str(project_id.clone()));
                 params.insert("cause".into(), ParamValue::Str(cause.as_str().into()));
+                let shown = name.clone().unwrap_or_else(|| project_id.clone());
+                params.insert("name".into(), ParamValue::Str(shown));
+            }
+            CoreError::ContentAlreadyInstalled { name } => {
+                params.insert("name".into(), ParamValue::Str(name.clone()));
+            }
+            CoreError::ContentNotFound { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
             }
             CoreError::ContentIncompatible { names } => {
                 params.insert("names".into(), ParamValue::Str(names.clone()));
@@ -711,6 +737,7 @@ mod tests {
         let err = CoreError::ContentDependency {
             project_id: "P7dR8mSH".into(),
             cause: DependencyCause::Cycle,
+            name: None,
         };
         assert_eq!(err.code(), "content.dependency");
         let p = err.to_payload();
@@ -726,6 +753,42 @@ mod tests {
             p.detail.as_deref(),
             Some("dependency P7dR8mSH could not be resolved: the dependencies form a cycle")
         );
+        // 表示名が分からなければ、name には project_id を入れる
+        assert_eq!(
+            p.params.get("name"),
+            Some(&ParamValue::Str("P7dR8mSH".into()))
+        );
+        let p = CoreError::ContentDependency {
+            project_id: "P7dR8mSH".into(),
+            cause: DependencyCause::NoVersion,
+            name: Some("Fabric API".into()),
+        }
+        .to_payload();
+        assert_eq!(
+            p.params.get("name"),
+            Some(&ParamValue::Str("Fabric API".into()))
+        );
+    }
+
+    #[test]
+    fn phase5_content_install_refusals() {
+        let err = CoreError::ContentAlreadyInstalled {
+            name: "Sodium".into(),
+        };
+        assert_eq!(err.code(), "content.already_installed");
+        assert_eq!(
+            err.to_payload().params.get("name"),
+            Some(&ParamValue::Str("Sodium".into()))
+        );
+        let err = CoreError::ContentNotFound {
+            path: "mods/a.jar".into(),
+        };
+        assert_eq!(err.code(), "content.not_found");
+        assert_eq!(
+            err.to_payload().params.get("path"),
+            Some(&ParamValue::Str("mods/a.jar".into()))
+        );
+        assert_eq!(CoreError::ContentNoLoader.code(), "content.no_loader");
     }
 
     #[test]

@@ -8,6 +8,8 @@ use nexora_core::content::ContentKind;
 use nexora_core::net::hash::sha1_hex;
 use nexora_core::task::TaskState;
 use serde_json::json;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, ResponseTemplate};
 
 /// project `p` を導入できる状態にする（版 `p-v1`、ファイル `p.jar`）。
 async fn publish(h: &Harness, project: &str, body: &[u8], delay: Option<Duration>) {
@@ -240,4 +242,142 @@ async fn update_all_reports_partial_failures() {
         .await
         .unwrap();
     assert_eq!(h.hits("/version_files/update").await, hits + 1);
+}
+
+#[tokio::test]
+async fn adding_an_enabled_installed_project_is_refused() {
+    let h = Harness::new().await;
+    h.seed("pa.jar", b"a0", "pa", "pa-v0");
+    publish(&h, "pa", b"a", None).await;
+
+    // 確認の段階で断る
+    let err = h
+        .launcher
+        .preview_content_install(&h.id, "pa")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "content.already_installed");
+    let payload = err.to_payload();
+    assert_eq!(
+        payload.params.get("name"),
+        Some(&nexora_core::error::ParamValue::Str("pa.jar".into()))
+    );
+
+    // タスクでも断り、2 つ目は入らない
+    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let snap = h.wait(&task).await;
+    assert_eq!(snap.state, TaskState::Failed);
+    assert_eq!(snap.error.unwrap().code, "content.already_installed");
+    assert_eq!(h.mods(), ["pa.jar"]);
+    assert_eq!(h.hits("/data/pa/pa-v1/pa.jar").await, 0);
+}
+
+#[tokio::test]
+async fn adding_a_disabled_installed_project_enables_it() {
+    let h = Harness::new().await;
+    h.seed("pa.jar.disabled", b"a0", "pa", "pa-v0");
+    publish(&h, "pa", b"a", None).await;
+
+    let preview = h
+        .launcher
+        .preview_content_install(&h.id, "pa")
+        .await
+        .unwrap();
+    assert!(preview.enables_installed, "{preview:?}");
+    assert_eq!(preview.dependency_count, 0);
+    assert!(preview.incompatible.is_empty());
+
+    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let snap = h.wait(&task).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    // ダウンロードせず、無効の jar を有効にするだけ
+    assert_eq!(h.mods(), ["pa.jar"]);
+    assert_eq!(std::fs::read(h.mods_dir().join("pa.jar")).unwrap(), b"a0");
+    assert_eq!(h.hits("/data/pa/pa-v1/pa.jar").await, 0);
+    let report = h.launcher.content_task_report(&task).unwrap();
+    assert_eq!(report.installed, 1);
+}
+
+#[tokio::test]
+async fn install_into_an_instance_without_a_loader_is_refused() {
+    let h = Harness::new().await;
+    publish(&h, "pa", b"a", None).await;
+    let vanilla = nexora_core::instance::create(
+        h.launcher.db(),
+        &h.paths,
+        &nexora_core::instance::NewInstance::vanilla("v", "1.99-test"),
+        0,
+    )
+    .unwrap();
+
+    let err = h
+        .launcher
+        .preview_content_install(&vanilla.id, "pa")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "content.no_loader");
+    let err = h
+        .launcher
+        .install_content(&vanilla.id, "pa", false)
+        .unwrap_err();
+    assert_eq!(err.code(), "content.no_loader");
+    assert_eq!(h.hits("/project/pa/version").await, 0);
+}
+
+#[tokio::test]
+async fn invalid_project_id_is_refused_before_any_request() {
+    let h = Harness::new().await;
+    let err = h
+        .launcher
+        .preview_content_install(&h.id, "../pa")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "meta.invalid");
+}
+
+#[tokio::test]
+async fn update_of_a_missing_row_reports_not_found() {
+    let h = Harness::new().await;
+    h.serve_updates(Vec::new()).await;
+
+    let task = h
+        .launcher
+        .update_content(&h.id, vec!["mods/missing.jar".into()])
+        .unwrap();
+    let snap = h.wait(&task).await;
+
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    let report = h.launcher.content_task_report(&task).unwrap();
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].name, "missing.jar");
+    assert_eq!(report.failures[0].error.code, "content.not_found");
+}
+
+#[tokio::test]
+async fn unresolved_dependency_error_names_the_project() {
+    let h = Harness::new().await;
+    let mut version = h.version_json("pa", "pa-v1", "pa.jar", b"a");
+    version["dependencies"] = json!([{ "project_id": "lib", "dependency_type": "required" }]);
+    h.serve_project_versions("pa", vec![version]).await;
+    // 依存には合う版が無い
+    h.serve_project_versions("lib", Vec::new()).await;
+    Mock::given(method("GET"))
+        .and(path("/projects"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!([{ "id": "lib", "title": "Lib Name" }])),
+        )
+        .mount(&h.server)
+        .await;
+
+    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let snap = h.wait(&task).await;
+
+    assert_eq!(snap.state, TaskState::Failed);
+    let error = snap.error.unwrap();
+    assert_eq!(error.code, "content.dependency");
+    assert_eq!(
+        error.params.get("name"),
+        Some(&nexora_core::error::ParamValue::Str("Lib Name".into()))
+    );
+    assert!(h.mods().is_empty());
 }

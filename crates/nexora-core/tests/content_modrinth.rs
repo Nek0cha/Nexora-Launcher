@@ -367,3 +367,15 @@ fn loader_slugs_for_quilt_includes_fabric() {
     assert!(loader_slugs(Some("vanilla")).is_empty());
     assert!(loader_slugs(None).is_empty());
 }
+
+#[tokio::test]
+async fn project_versions_refuses_an_id_that_is_not_a_plain_slug() {
+    let server = MockServer::start().await;
+    for bad in ["../x", "a/b", "a?b", "", "a b", "a%2F"] {
+        let err = project_versions(&http(), &server.uri(), bad, "1.20.1", &[])
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "meta.invalid", "{bad}");
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
