@@ -25,6 +25,8 @@ import {
   installContent,
   checkContentUpdates,
   updateContent,
+  listContentVersions,
+  changeContentVersion,
   contentTaskReport,
   openModrinthProject,
 } from "./commands";
@@ -156,6 +158,14 @@ describe("modrinth commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("check_content_updates", { instanceId: "i1", force: true });
     await updateContent("i1", ["mods/a.jar"]);
     expect(invoke).toHaveBeenLastCalledWith("update_content", { instanceId: "i1", relPaths: ["mods/a.jar"] });
+    await listContentVersions("i1", "mods/a.jar");
+    expect(invoke).toHaveBeenLastCalledWith("list_content_versions", { instanceId: "i1", relPath: "mods/a.jar" });
+    await changeContentVersion("i1", "mods/a.jar", "v2");
+    expect(invoke).toHaveBeenLastCalledWith("change_content_version", {
+      instanceId: "i1",
+      relPath: "mods/a.jar",
+      versionId: "v2",
+    });
     await contentTaskReport("t1");
     expect(invoke).toHaveBeenLastCalledWith("content_task_report", { taskId: "t1" });
     await openModrinthProject("sodium");

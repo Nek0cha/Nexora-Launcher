@@ -1,13 +1,15 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTask } from "../../api/commands";
+import { changeContentVersion, contentTaskReport, getTask } from "../../api/commands";
 import { IpcError } from "../../api/ipc";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
 import type { TaskTable } from "../tasks/taskTable";
 import { TASKS_KEY } from "../tasks/useTasks";
-import { WAIT_MAX_FAILURES, WAIT_POLL_MS, waitForTask } from "./useModrinth";
+import { useChangeContentVersion, WAIT_MAX_FAILURES, WAIT_POLL_MS, waitForTask } from "./useModrinth";
 
-vi.mock("../../api/commands", () => ({ getTask: vi.fn() }));
+vi.mock("../../api/commands", () => ({ getTask: vi.fn(), changeContentVersion: vi.fn(), contentTaskReport: vi.fn() }));
 
 function snapshot(state: TaskSnapshot["state"]): TaskSnapshot {
   return {
@@ -61,5 +63,33 @@ describe("waitForTask", () => {
     client.setQueryData<TaskTable>(TASKS_KEY, { t1: snapshot("failed") });
     await vi.advanceTimersByTimeAsync(0);
     expect((await result).state).toBe("failed");
+  });
+});
+
+describe("useChangeContentVersion", () => {
+  it("runs the change as a task and refreshes the list, the update check and the version lists", async () => {
+    vi.useRealTimers();
+    vi.mocked(changeContentVersion).mockResolvedValue("t1");
+    vi.mocked(getTask).mockResolvedValue(snapshot("succeeded"));
+    const report = { installed: 0, dependenciesAdded: 0, updated: 1, failures: [] };
+    vi.mocked(contentTaskReport).mockResolvedValue(report);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useChangeContentVersion("i1"), { wrapper });
+
+    const outcome = await result.current.mutateAsync({ relPath: "mods/a.jar", versionId: "v2" });
+
+    expect(changeContentVersion).toHaveBeenCalledWith("i1", "mods/a.jar", "v2");
+    expect(outcome.state).toBe("succeeded");
+    expect(outcome.report).toEqual(report);
+    await waitFor(() => {
+      const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
+      expect(keys).toEqual(
+        expect.arrayContaining([["content", "i1"], ["content-updates", "i1"], ["content-versions", "i1"]]),
+      );
+    });
   });
 });

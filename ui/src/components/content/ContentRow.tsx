@@ -1,18 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Button, Focusable, GridListItem, Tooltip, TooltipTrigger } from "react-aria-components";
+import { useMemo, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogTrigger,
+  Focusable,
+  GridListItem,
+  ListBox,
+  ListBoxItem,
+  Popover,
+  Tooltip,
+  TooltipTrigger,
+} from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconResourcePack from "~icons/ph/image";
 import IconShader from "~icons/ph/package";
 import IconMod from "~icons/ph/puzzle-piece";
 import IconUpdate from "~icons/ph/arrow-up";
+import IconCaret from "~icons/ph/caret-down";
 import IconSpinner from "~icons/ph/circle-notch";
 import IconTrash from "~icons/ph/trash";
 import IconWarning from "~icons/ph/warning";
 import { getContentIcon } from "../../api/commands";
+import { toErrorPayload } from "../../api/ipc";
 import type { AvailableUpdate } from "../../bindings/AvailableUpdate";
 import type { ContentItem } from "../../bindings/ContentItem";
 import type { ContentKind } from "../../bindings/ContentKind";
+import type { VersionChoice } from "../../bindings/VersionChoice";
+import { useContentVersions } from "../../features/modrinth/useModrinth";
+import { FailureNotice } from "../FailureNotice";
 import { tooltipClass } from "../tooltip";
 
 /** 1 行の高さ（px）。ListLayout の rowSize と行の h-14 を揃える。 */
@@ -55,6 +71,122 @@ const knobClass = [
   "transition-[translate,background-color] duration-(--duration-fast) ease-out-quint",
   "group-aria-pressed:translate-x-3 group-aria-pressed:bg-accent-ink motion-reduce:transition-colors",
 ].join(" ");
+
+// 版の番号のボタン。文字のように見せ、乗せたときだけ面を出す
+const versionButton = [
+  "-mx-1 inline-flex h-5 shrink-0 items-center gap-0.5 self-center rounded-sm px-1 text-xs text-text-muted",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "hover:bg-surface-2 hover:text-text pressed:bg-surface-3 disabled:opacity-50 disabled:hover:bg-transparent",
+  ring,
+].join(" ");
+
+// 版の一覧の開閉。ボタンの側から 4px 動きながら現れる（インスタンスの一覧のメニューと同じ動き）
+const versionPopover = [
+  "w-80 rounded-lg border border-line bg-surface-2 p-1 shadow-float",
+  "transition-[opacity,translate] duration-(--duration-base) ease-out-quint",
+  "entering:opacity-0 exiting:opacity-0 exiting:duration-(--duration-fast)",
+  "motion-safe:placement-bottom:entering:-translate-y-1 motion-safe:placement-bottom:exiting:-translate-y-1",
+  "motion-safe:placement-top:entering:translate-y-1 motion-safe:placement-top:exiting:translate-y-1",
+  "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
+].join(" ");
+
+const versionOption = [
+  "flex h-9 cursor-default items-center gap-2 rounded-sm px-2 text-sm text-text outline-none",
+  "hover:bg-surface-3 focused:bg-surface-3 disabled:text-text-muted disabled:hover:bg-transparent",
+].join(" ");
+
+// 版の種類の札。リリース以外は目に留まるよう色を付ける
+const typeBadge: Record<string, string> = {
+  release: "border-line text-text-muted",
+  beta: "border-warning/50 text-warning",
+  alpha: "border-danger/50 text-danger",
+};
+
+/** 版を切り替えるときに要るもの。Modrinth で特定された MOD の行にだけ使う。 */
+export type VersionPickerProps = {
+  instanceId: string;
+  onChange: (item: ContentItem, choice: VersionChoice) => void;
+};
+
+/**
+ * 版の番号のボタンと、このインスタンスに合う版の一覧（新しい順）。一覧は開いたときに読む。
+ * いまの版は選べない。選んだらすぐに閉じて切り替えを始める（確認は取らない）。
+ */
+function VersionPicker(
+  props: VersionPickerProps & { item: ContentItem; name: string; version: string; busy: boolean },
+) {
+  const { t, i18n } = useTranslation();
+  const { item, name } = props;
+  const [open, setOpen] = useState(false);
+  const versions = useContentVersions(props.instanceId, item.relPath, open);
+  const date = useMemo(() => new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }), [i18n.language]);
+  const data = versions.data;
+  const current = useMemo(() => (data ?? []).filter((v) => v.current).map((v) => v.versionId), [data]);
+  const items = useMemo(() => (data ?? []).map((v) => ({ id: v.versionId, v })), [data]);
+
+  let body;
+  if (versions.error && !data)
+    body = (
+      <div role="alert" className="px-2 py-1.5 text-sm">
+        <FailureNotice error={toErrorPayload(versions.error)} />
+      </div>
+    );
+  else if (!data) body = <p className="px-2 py-1.5 text-sm text-text-muted">{t("modrinth.versionsLoading")}</p>;
+  else if (data.length === 0) body = <p className="px-2 py-1.5 text-sm text-text-muted">{t("modrinth.noCompatible")}</p>;
+  else
+    body = (
+      <ListBox
+        aria-label={t("modrinth.versions", { name })}
+        items={items}
+        disabledKeys={current}
+        autoFocus="first"
+        onAction={(key) => {
+          const choice = data.find((v) => v.versionId === key);
+          if (!choice || choice.current) return;
+          setOpen(false);
+          props.onChange(item, choice);
+        }}
+        className="scroll-thin max-h-72 overflow-auto outline-none"
+      >
+        {({ v }) => (
+          <ListBoxItem id={v.versionId} textValue={v.versionNumber} className={versionOption}>
+            <span className="tabular min-w-0 flex-1 truncate">{v.versionNumber}</span>
+            {v.current && <span className="shrink-0 text-xs text-accent">{t("modrinth.currentVersion")}</span>}
+            <span
+              className={`shrink-0 rounded-sm border px-1.5 text-xs leading-4 ${typeBadge[v.versionType] ?? typeBadge.release}`}
+            >
+              {i18n.exists(`modrinth.versionType.${v.versionType}`)
+                ? t(`modrinth.versionType.${v.versionType}` as never)
+                : v.versionType}
+            </span>
+            {v.datePublished !== "" && (
+              <time dateTime={v.datePublished} className="tabular w-24 shrink-0 text-right text-xs text-text-muted">
+                {date.format(new Date(v.datePublished))}
+              </time>
+            )}
+          </ListBoxItem>
+        )}
+      </ListBox>
+    );
+
+  return (
+    <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+      <Button
+        aria-label={t("modrinth.changeVersion", { name, version: props.version })}
+        isDisabled={props.busy}
+        className={versionButton}
+      >
+        <span className="tabular">{props.version}</span>
+        <IconCaret aria-hidden className="size-3 shrink-0" />
+      </Button>
+      <Popover placement="bottom start" offset={4} className={versionPopover}>
+        <Dialog aria-label={t("modrinth.versions", { name })} className="outline-none">
+          {body}
+        </Dialog>
+      </Popover>
+    </DialogTrigger>
+  );
+}
 
 /** 行のアイコン。Modrinth の URL、jar の中のアイコン、既定の絵の順に使う。 */
 function RowIcon({ item }: { item: ContentItem }) {
@@ -100,10 +232,17 @@ export function ContentRow(props: {
   /** 更新している最中。ボタンの代わりに「更新中…」を出す */
   updating?: boolean;
   onUpdate?: (item: ContentItem) => void;
+  /** 版の切り替え。渡したときだけ、Modrinth で特定された MOD の版の番号をボタンにする */
+  versionPicker?: VersionPickerProps;
 }) {
   const { t } = useTranslation();
   const { item } = props;
   const name = item.name ?? item.fileName;
+  // 版を切り替えられるのは、Modrinth で特定された MOD の行だけ
+  const picker =
+    item.kind === "mod" && item.provider === "modrinth" && item.projectId !== null && item.versionId !== null
+      ? props.versionPicker
+      : undefined;
 
   return (
     <GridListItem
@@ -117,9 +256,18 @@ export function ContentRow(props: {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-w-0 items-baseline gap-2">
             <span className="truncate text-text">{name}</span>
-            {item.versionNumber !== null && (
-              <span className="tabular shrink-0 text-xs text-text-muted">{item.versionNumber}</span>
-            )}
+            {item.versionNumber !== null &&
+              (picker ? (
+                <VersionPicker
+                  {...picker}
+                  item={item}
+                  name={name}
+                  version={item.versionNumber}
+                  busy={props.busy || (props.updating ?? false)}
+                />
+              ) : (
+                <span className="tabular shrink-0 text-xs text-text-muted">{item.versionNumber}</span>
+              ))}
             {props.noCompatible && (
               <TooltipTrigger delay={300}>
                 <Focusable>

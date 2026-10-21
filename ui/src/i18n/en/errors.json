@@ -80,7 +80,8 @@
     "incompatible": "This version is declared incompatible with installed mods ({{names}}), so it was not applied.",
     "already_installed": "{{name}} is already installed in this instance.",
     "not_found": "The mod was not found ({{path}}). Reopen the list and try again.",
-    "no_loader": "This instance has no mod loader, so mods cannot be installed."
+    "no_loader": "This instance has no mod loader, so mods cannot be installed.",
+    "version_unavailable": "{{name}} can't be changed to that version. Only versions of this mod that match this instance can be chosen. Reopen the list and try again."
   },
   "skin": {
     "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"

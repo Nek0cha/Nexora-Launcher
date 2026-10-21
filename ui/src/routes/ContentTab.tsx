@@ -15,6 +15,7 @@ import type { ErrorPayload } from "../bindings/ErrorPayload";
 import type { Instance } from "../bindings/Instance";
 import type { ItemFailure } from "../bindings/ItemFailure";
 import type { RejectReason } from "../bindings/RejectReason";
+import type { VersionChoice } from "../bindings/VersionChoice";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
 import { ContentList, type RowUpdates } from "../components/content/ContentList";
@@ -40,6 +41,7 @@ import {
   useSetEnabled,
 } from "../features/content/useContent";
 import {
+  useChangeContentVersion,
   useContentUpdates,
   useRecheckUpdates,
   useUpdateContent,
@@ -165,6 +167,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   const updates = useContentUpdates(instance.id, canUpdate && modOpened);
   const recheck = useRecheckUpdates(instance.id);
   const update = useUpdateContent(instance.id);
+  const change = useChangeContentVersion(instance.id);
   // 更新している行と、直前の更新で失敗した MOD
   const [updating, setUpdating] = useState<ReadonlySet<string>>(noRows);
   // 失敗の一覧はタブを開き直しても残す
@@ -192,8 +195,8 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   });
   useLayoutEffect(() => {
     latest.current = {
-      // 更新の最中は、インスタンスが他のコンテンツの変更を受け付けない
-      locked: locked || update.isPending,
+      // 更新と版の切り替えの最中は、インスタンスが他のコンテンツの変更を受け付けない
+      locked: locked || update.isPending || change.isPending,
       kind,
       dialogOpen,
       mods: lists.mod.data ?? [],
@@ -297,12 +300,36 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
 
   const onUpdate = useCallback((item: ContentItem) => void runUpdate([item.relPath]), [runUpdate]);
 
+  // 版の切り替え。更新と同じく 1 つのタスクで行い、その間は行を「更新中…」にする
+  const onChangeVersion = useCallback(
+    async (item: ContentItem, choice: VersionChoice) => {
+      if (latest.current.locked) return;
+      latest.current.locked = true;
+      const { t, toast } = latest.current;
+      const name = displayName(item);
+      setUpdating(new Set([item.relPath]));
+      try {
+        const outcome = await change.mutateAsync({ relPath: item.relPath, versionId: choice.versionId });
+        if (outcome.state === "succeeded")
+          toast.show({ kind: "success", message: t("modrinth.versionChanged", { name, version: choice.versionNumber }) });
+        else if (outcome.state === "cancelled") toast.show({ kind: "info", message: t("modrinth.versionChangeCancelled") });
+        else toast.showError(outcome.error ?? new Error("version change task failed"));
+      } catch (error) {
+        toast.showError(error);
+      } finally {
+        setUpdating(noRows);
+      }
+    },
+    [change.mutateAsync],
+  );
+
   const check = updates.data;
   const available = useMemo(() => new Map((check?.updates ?? []).map((u) => [u.relPath, u])), [check]);
   const noCompatible = useMemo(() => new Set(check?.noCompatible ?? []), [check]);
+  const instanceId = instance.id;
   const rowUpdates = useMemo<RowUpdates>(
-    () => ({ available, noCompatible, updating, onUpdate }),
-    [available, noCompatible, updating, onUpdate],
+    () => ({ available, noCompatible, updating, onUpdate, instanceId, onChangeVersion }),
+    [available, noCompatible, updating, onUpdate, instanceId, onChangeVersion],
   );
   const updatable = useMemo(() => new Set(available.keys()), [available]);
 
@@ -372,7 +399,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     }
   };
 
-  const busy = locked || setEnabled.isPending || remove.isPending || update.isPending;
+  const busy = locked || setEnabled.isPending || remove.isPending || update.isPending || change.isPending;
 
   const updateControls: UpdateControls | undefined = canUpdate
     ? {

@@ -1,10 +1,12 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import {
+  changeContentVersion,
   checkContentUpdates,
   contentTaskReport,
   getTask,
   installContent,
+  listContentVersions,
   previewContentInstall,
   searchModrinth,
   updateContent,
@@ -157,6 +159,41 @@ export function useUpdateContent(instanceId: string) {
     onSettled: () => {
       void client.invalidateQueries({ queryKey: ["content", instanceId] });
       void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
+    },
+  });
+}
+
+const versionsKey = (instanceId: string) => ["content-versions", instanceId] as const;
+
+/**
+ * MOD の行の、切り替えられる版の一覧。版の一覧を開いたとき（`enabled`）だけ読む。
+ * 切り替えたあとは useChangeContentVersion が読み直させる。
+ */
+export function useContentVersions(instanceId: string, relPath: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...versionsKey(instanceId), relPath],
+    queryFn: () => listContentVersions(instanceId, relPath),
+    staleTime: 5 * 60_000,
+    retry: false,
+    enabled,
+  });
+}
+
+/**
+ * MOD を選んだ版に入れ替え、終わるまで待ってレポートを返す。
+ * 完了後は一覧、更新の確認、版の一覧を取り直す（入れ替えでファイル名と固定が変わる）。
+ */
+export function useChangeContentVersion(instanceId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ relPath, versionId }: { relPath: string; versionId: string }) => {
+      const taskId = await changeContentVersion(instanceId, relPath, versionId);
+      return runContentTask(client, taskId);
+    },
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: ["content", instanceId] });
+      void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
+      void client.invalidateQueries({ queryKey: versionsKey(instanceId) });
     },
   });
 }

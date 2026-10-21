@@ -24,6 +24,7 @@ import type { SearchPage } from "../bindings/SearchPage";
 import type { InstallPreview } from "../bindings/InstallPreview";
 import type { UpdateCheck } from "../bindings/UpdateCheck";
 import type { ContentTaskReport } from "../bindings/ContentTaskReport";
+import type { VersionChoice } from "../bindings/VersionChoice";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -89,6 +90,10 @@ export const checkContentUpdates = (instanceId: string, force: boolean) =>
   call<UpdateCheck>("check_content_updates", { instanceId, force });
 export const updateContent = (instanceId: string, relPaths: string[]) =>
   call<string>("update_content", { instanceId, relPaths });
+export const listContentVersions = (instanceId: string, relPath: string) =>
+  call<VersionChoice[]>("list_content_versions", { instanceId, relPath });
+export const changeContentVersion = (instanceId: string, relPath: string, versionId: string) =>
+  call<string>("change_content_version", { instanceId, relPath, versionId });
 export const contentTaskReport = (taskId: string) =>
   call<ContentTaskReport | null>("content_task_report", { taskId });
 export const openModrinthProject = (slug: string) => call<null>("open_modrinth_project", { slug });

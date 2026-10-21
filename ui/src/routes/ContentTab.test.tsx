@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addContentFiles,
+  changeContentVersion,
   checkContentUpdates,
   contentTaskReport,
   getContentIcon,
@@ -11,6 +12,7 @@ import {
   identifyContent,
   listContent,
   listContentCategories,
+  listContentVersions,
   removeContent,
   setContentEnabled,
   updateContent,
@@ -38,6 +40,8 @@ vi.mock("../api/commands", () => ({
   getContentIcon: vi.fn(),
   checkContentUpdates: vi.fn(),
   updateContent: vi.fn(),
+  listContentVersions: vi.fn(),
+  changeContentVersion: vi.fn(),
   getTask: vi.fn(),
   contentTaskReport: vi.fn(),
 }));
@@ -453,6 +457,61 @@ describe("ContentTab", () => {
     fireEvent.click(await screen.findByRole("link", { name: "Add from Modrinth" }));
     expect(await screen.findByText("modrinth page")).toBeTruthy();
   });
+  describe("version change", () => {
+    const versions = [
+      { versionId: "v2", versionNumber: "0.6.1", versionType: "release", datePublished: "2024-06-01T00:00:00Z", current: false },
+      { versionId: "v1", versionNumber: "0.6.0", versionType: "release", datePublished: "2024-05-01T00:00:00Z", current: true },
+    ];
+
+    it("choosing a version runs the change, shows the row as updating and refreshes the list and the update check", async () => {
+      vi.mocked(listContentVersions).mockResolvedValue(versions);
+      vi.mocked(changeContentVersion).mockResolvedValue("t1");
+      const task = deferred<TaskSnapshot>();
+      vi.mocked(getTask).mockReturnValue(task.promise);
+      mount();
+      await ready();
+      await waitFor(() => expect(checkContentUpdates).toHaveBeenCalledTimes(1));
+
+      await press(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+      const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
+      expect(listContentVersions).toHaveBeenCalledWith("i1", "sodium.jar");
+      await press(within(list).getByRole("option", { name: /0\.6\.1/ }));
+
+      await waitFor(() => expect(changeContentVersion).toHaveBeenCalledWith("i1", "sodium.jar", "v2"));
+      // 更新と同じく、行は「更新中…」になり、ほかの操作は止まる
+      expect(await screen.findByText("Updating…")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Enable Sodium" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Change the version of Mod Menu (now 0.6.0)" }).hasAttribute("disabled")).toBe(true);
+
+      await act(async () => task.resolve(snapshot("succeeded")));
+      await within(toasts()).findAllByText("Changed Sodium to 0.6.1");
+      await waitFor(() => expect(vi.mocked(listContent).mock.calls.filter(([, k]) => k === "mod").length).toBeGreaterThan(1));
+      await waitFor(() => expect(vi.mocked(checkContentUpdates).mock.calls.length).toBeGreaterThan(1));
+      expect(screen.queryByText("Updating…")).toBeNull();
+    });
+
+    it("a failed change shows the error", async () => {
+      vi.mocked(listContentVersions).mockResolvedValue(versions);
+      vi.mocked(changeContentVersion).mockResolvedValue("t1");
+      vi.mocked(getTask).mockResolvedValue(
+        snapshot("failed", { code: "content.version_unavailable", params: { name: "Sodium" }, detail: null }),
+      );
+      mount();
+      await ready();
+      await press(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+      await press(within(await screen.findByRole("listbox")).getByRole("option", { name: /0\.6\.1/ }));
+      await within(toasts()).findAllByText(/Sodium can't be changed to that version/);
+    });
+
+    it("version buttons are disabled while the instance is busy", async () => {
+      mount(true);
+      await ready();
+      expect(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }).hasAttribute("disabled")).toBe(true);
+      // Modrinth で特定されていない MOD には出さない
+      expect(screen.queryByRole("button", { name: /Change the version of Mystery/ })).toBeNull();
+    });
+  });
+
   describe("updates", () => {
     const withUpdates: UpdateCheck = {
       updates: [

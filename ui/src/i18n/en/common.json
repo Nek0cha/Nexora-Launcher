@@ -429,6 +429,17 @@
     "updated": "Mods updated: {{count}}",
     "updateCancelled": "The update was cancelled",
     "updateFailures": "Mods that couldn't be updated: {{count}}",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "changeVersion": "Change the version of {{name}} (now {{version}})",
+    "versions": "Versions of {{name}}",
+    "versionsLoading": "Loading versions…",
+    "currentVersion": "Current",
+    "versionType": {
+      "release": "Release",
+      "beta": "Beta",
+      "alpha": "Alpha"
+    },
+    "versionChanged": "Changed {{name}} to {{version}}",
+    "versionChangeCancelled": "Changing the version was cancelled"
   }
 }

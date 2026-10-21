@@ -1,13 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AvailableUpdate } from "../../bindings/AvailableUpdate";
 import type { ContentItem } from "../../bindings/ContentItem";
+import type { VersionChoice } from "../../bindings/VersionChoice";
+import { listContentVersions } from "../../api/commands";
 import i18n from "../../i18n";
 import { ContentList, type RowUpdates } from "./ContentList";
 
 vi.mock("../../api/commands", () => ({
   getContentIcon: vi.fn().mockResolvedValue(null),
+  listContentVersions: vi.fn(),
 }));
 
 function item(over: Partial<ContentItem> = {}): ContentItem {
@@ -50,15 +53,19 @@ afterAll(() => {
 
 afterEach(() => {
   cleanup();
+  vi.mocked(listContentVersions).mockReset();
 });
 
 function mount(items: ContentItem[], updates: Partial<RowUpdates>, busy = false) {
   const onUpdate = vi.fn<(item: ContentItem) => void>();
+  const onChangeVersion = vi.fn<(item: ContentItem, choice: VersionChoice) => void>();
   const rowUpdates: RowUpdates = {
     available: new Map(),
     noCompatible: new Set(),
     updating: new Set(),
     onUpdate,
+    instanceId: "i1",
+    onChangeVersion,
     ...updates,
   };
   render(
@@ -66,7 +73,7 @@ function mount(items: ContentItem[], updates: Partial<RowUpdates>, busy = false)
       <ContentList items={items} onToggle={vi.fn()} onRemove={vi.fn()} busy={busy} updates={rowUpdates} />
     </QueryClientProvider>,
   );
-  return { onUpdate };
+  return { onUpdate, onChangeVersion };
 }
 
 const row = (name: string) =>
@@ -130,5 +137,81 @@ describe("ContentRow updates", () => {
       </QueryClientProvider>,
     );
     expect(screen.queryByRole("button", { name: /^Update/ })).toBeNull();
+  });
+});
+
+const choice = (versionId: string, versionNumber: string, versionType: string, current = false): VersionChoice => ({
+  versionId, versionNumber, versionType, datePublished: "2024-05-01T00:00:00Z", current,
+});
+
+describe("ContentRow version picker", () => {
+  const choices = [
+    choice("v3", "0.7.0-beta", "beta"),
+    choice("v2", "0.6.1", "release"),
+    choice("v1", "0.6.0", "release", true),
+  ];
+
+  it("the version of a Modrinth mod opens the compatible versions and choosing one changes it", async () => {
+    vi.mocked(listContentVersions).mockResolvedValue(choices);
+    const { onChangeVersion } = mount([sodium], {});
+    const trigger = screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" });
+    expect(trigger.textContent).toContain("0.6.0");
+
+    fireEvent.click(trigger);
+    const list = await screen.findByRole("listbox", { name: "Versions of Sodium" });
+    expect(listContentVersions).toHaveBeenCalledWith("i1", "sodium.jar");
+    const [newest, release, current] = within(list).getAllByRole("option") as [HTMLElement, HTMLElement, HTMLElement];
+    const options = [newest, release, current];
+    // 新しい順。種類の札と、いまの版の印を出す
+    expect(options.map((o) => o.textContent)).toEqual([
+      expect.stringContaining("0.7.0-beta"),
+      expect.stringContaining("0.6.1"),
+      expect.stringContaining("0.6.0"),
+    ]);
+    expect(newest.textContent).toContain("Beta");
+    expect(current.textContent).toContain("Current");
+    // いまの版は選べない
+    expect(current.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(current);
+    expect(onChangeVersion).not.toHaveBeenCalled();
+
+    fireEvent.click(release);
+    expect(onChangeVersion).toHaveBeenCalledWith(sodium, choices[1]);
+    // 選んだら閉じる（確認のダイアログは出さない）
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(screen.queryByRole("dialog", { name: /Change|Confirm/ })).toBeNull();
+  });
+
+  it("the version trigger is disabled while busy", () => {
+    mount([sodium], {}, true);
+    const trigger = screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" });
+    expect(trigger.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(listContentVersions).not.toHaveBeenCalled();
+  });
+
+  it("a mod that Modrinth did not identify shows its version as plain text", () => {
+    const local = item({ provider: "local", projectId: null, versionId: null, versionNumber: "1.2.3" });
+    mount([local], {});
+    expect(screen.getByText("1.2.3")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Change the version/ })).toBeNull();
+  });
+
+  it("shows no version picker without update state", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ContentList items={[sodium]} onToggle={vi.fn()} onRemove={vi.fn()} busy={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("button", { name: /Change the version/ })).toBeNull();
+    expect(screen.getByText("0.6.0")).toBeTruthy();
+  });
+
+  it("a failed version list shows the reason in the popover", async () => {
+    vi.mocked(listContentVersions).mockRejectedValue({ code: "net.offline", params: {}, detail: null });
+    mount([sodium], {});
+    fireEvent.click(screen.getByRole("button", { name: "Change the version of Sodium (now 0.6.0)" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
   });
 });

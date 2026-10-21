@@ -3,6 +3,7 @@ import { GridList, ListLayout, Virtualizer } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import type { AvailableUpdate } from "../../bindings/AvailableUpdate";
 import type { ContentItem } from "../../bindings/ContentItem";
+import type { VersionChoice } from "../../bindings/VersionChoice";
 import { ContentRow, ROW_SIZE } from "./ContentRow";
 
 /** 行に出す更新の状態。キーはどれも行の `relPath`。 */
@@ -14,6 +15,9 @@ export type RowUpdates = {
   /** いま更新している行 */
   updating: ReadonlySet<string>;
   onUpdate: (item: ContentItem) => void;
+  /** 版の切り替えに使うインスタンス。onChangeVersion と一緒に渡すと、版の番号をボタンにする */
+  instanceId?: string;
+  onChangeVersion?: (item: ContentItem, choice: VersionChoice) => void;
 };
 
 /**
@@ -35,6 +39,13 @@ export function ContentList(props: {
   // 行はデータの id で識別される。id が無いと位置で識別され、切り替えや更新でファイル名（= relPath）が
   // 変わったときに「id を変えられない」で落ちる。relPath を id にして、行ごとに別の項目として扱わせる
   const rows = useMemo(() => props.items.map((item) => ({ id: item.relPath, item })), [props.items]);
+  const instanceId = updates?.instanceId;
+  const onChangeVersion = updates?.onChangeVersion;
+  const versionPicker = useMemo(
+    () =>
+      instanceId !== undefined && onChangeVersion !== undefined ? { instanceId, onChange: onChangeVersion } : undefined,
+    [instanceId, onChangeVersion],
+  );
   return (
     <Virtualizer layout={ListLayout} layoutOptions={{ rowSize: ROW_SIZE }}>
       <GridList
@@ -55,6 +66,7 @@ export function ContentList(props: {
             noCompatible={updates?.noCompatible.has(item.relPath) ?? false}
             updating={updates?.updating.has(item.relPath) ?? false}
             onUpdate={updates?.onUpdate}
+            versionPicker={versionPicker}
           />
         )}
       </GridList>

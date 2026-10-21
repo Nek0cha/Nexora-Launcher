@@ -429,6 +429,17 @@
     "updated": "{{count}} 件を更新しました",
     "updateCancelled": "更新をキャンセルしました",
     "updateFailures": "{{count}} 件を更新できませんでした",
-    "dismiss": "閉じる"
+    "dismiss": "閉じる",
+    "changeVersion": "{{name}} の版を変える（いまは {{version}}）",
+    "versions": "{{name}} の版",
+    "versionsLoading": "版を読み込んでいます…",
+    "currentVersion": "使用中",
+    "versionType": {
+      "release": "リリース",
+      "beta": "ベータ",
+      "alpha": "アルファ"
+    },
+    "versionChanged": "{{name}} を {{version}} に切り替えました",
+    "versionChangeCancelled": "版の切り替えをキャンセルしました"
   }
 }
