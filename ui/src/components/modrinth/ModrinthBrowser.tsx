@@ -27,7 +27,7 @@ import type { SearchHit } from "../../bindings/SearchHit";
 import type { SearchQuery } from "../../bindings/SearchQuery";
 import type { SearchSort } from "../../bindings/SearchSort";
 import { emptyFilter, type FilterState } from "../../features/content/contentFilter";
-import { useCategories } from "../../features/content/useContent";
+import { useCategories, useContentList } from "../../features/content/useContent";
 import { useVersions } from "../../features/instances/useCreateInstance";
 import { useInstances } from "../../features/instances/useInstances";
 import { loaderSlugs } from "../../features/modrinth/compatibleInstances";
@@ -180,7 +180,7 @@ function useAddFlow() {
   }, []);
 
   const runInstall = useCallback(
-    async (hit: SearchHit, target: Instance, acceptIncompatible: boolean) => {
+    async (hit: SearchHit, target: Instance, acceptIncompatible: boolean, enables: boolean) => {
       mark(hit.projectId, true);
       try {
         const outcome = await install.mutateAsync({
@@ -189,7 +189,9 @@ function useAddFlow() {
           acceptIncompatible,
         });
         if (outcome.state === "succeeded") {
-          toast.show({ kind: "success", message: t("modrinth.added", { name: hit.title, instance: target.name }) });
+          // 無効で入っていた同じ MOD を有効にしただけのときは、そう知らせる
+          const key = enables ? "modrinth.enabled" : "modrinth.added";
+          toast.show({ kind: "success", message: t(key, { name: hit.title, instance: target.name }) });
           const deps = outcome.report?.dependenciesAdded ?? 0;
           if (deps > 0) toast.show({ kind: "success", message: t("modrinth.dependenciesAdded", { count: deps }) });
           // 「最後に追加したインスタンス」が変わる
@@ -227,7 +229,7 @@ function useAddFlow() {
         setConfirmOpen(true);
         return;
       }
-      await runInstall(hit, target, false);
+      await runInstall(hit, target, false, result.enablesInstalled);
     },
     [mark, pending, preview.mutateAsync, runInstall, toast],
   );
@@ -235,7 +237,7 @@ function useAddFlow() {
   const confirm = () => {
     if (!confirming) return;
     setConfirmOpen(false);
-    void runInstall(confirming.hit, confirming.target, true);
+    void runInstall(confirming.hit, confirming.target, true, confirming.preview.enablesInstalled);
   };
 
   const dialog = confirming && (
@@ -284,6 +286,15 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
   const instances = useInstances();
   const settings = useSettings();
   const { add, pending, dialog } = useAddFlow();
+  // インスタンスの画面では、有効で導入済みの MOD は「導入済み」にして追加を押せなくする
+  const content = useContentList(instance?.id ?? "", "mod", instance !== undefined);
+  const installed = useMemo(
+    () =>
+      new Set(
+        (content.data ?? []).filter((c) => c.enabled && c.projectId !== null).map((c) => c.projectId as string),
+      ),
+    [content.data],
+  );
 
   // 文字の入力だけ止まるのを待つ。札や選択は押したときにすぐ送る
   const text = useDebouncedValue(filter.query.trim(), SEARCH_DEBOUNCE_MS);
@@ -400,7 +411,12 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                       onOpen={open}
                       showLoaders={!instance}
                       actions={
-                        instance ? (
+                        instance && installed.has(hit.projectId) ? (
+                          <Button isDisabled className={actionButton}>
+                            <IconCheck aria-hidden className="size-3.5 shrink-0" />
+                            <span>{t("modrinth.installed")}</span>
+                          </Button>
+                        ) : instance ? (
                           <Button
                             isDisabled={pending.has(hit.projectId)}
                             onPress={() => void add(hit, instance)}

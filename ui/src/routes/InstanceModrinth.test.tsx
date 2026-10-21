@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getSettings, listContentCategories, listInstances, searchModrinth } from "../api/commands";
+import { getSettings, listContent, listContentCategories, listInstances, searchModrinth } from "../api/commands";
 import type { Instance } from "../bindings/Instance";
 import i18n from "../i18n";
 import InstanceModrinth from "./InstanceModrinth";
@@ -12,6 +12,7 @@ vi.mock("../api/commands", () => ({
   listInstances: vi.fn(),
   getSettings: vi.fn(),
   listContentCategories: vi.fn(),
+  listContent: vi.fn(),
   listVersions: vi.fn(),
   previewContentInstall: vi.fn(),
   installContent: vi.fn(),
@@ -38,6 +39,7 @@ beforeEach(() => {
     theme: "system", language: null, maxConcurrentDownloads: 8, lastAddedInstance: null,
   });
   vi.mocked(listContentCategories).mockResolvedValue([]);
+  vi.mocked(listContent).mockResolvedValue([]);
 });
 
 afterEach(() => {

@@ -84,6 +84,15 @@ describe("TaskList", () => {
     expect(screen.getByRole("progressbar", { name: "ログイン" })).toBeTruthy();
   });
 
+  it("labels a content task in both languages instead of the raw kind", async () => {
+    mount([{ ...running, kind: "content" }]);
+    expect(screen.getByRole("progressbar", { name: "Mods" })).toBeTruthy();
+    await act(async () => {
+      await i18n.changeLanguage("ja");
+    });
+    expect(screen.getByRole("progressbar", { name: "MOD" })).toBeTruthy();
+  });
+
   it("cancels a task by id", async () => {
     vi.mocked(cancelTask).mockResolvedValue(null);
     mount([running]);

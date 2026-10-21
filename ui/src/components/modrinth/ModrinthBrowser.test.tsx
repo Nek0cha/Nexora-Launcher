@@ -6,6 +6,7 @@ import {
   getSettings,
   getTask,
   installContent,
+  listContent,
   listContentCategories,
   listInstances,
   listVersions,
@@ -34,6 +35,7 @@ vi.mock("../../api/commands", () => ({
   listInstances: vi.fn(),
   getSettings: vi.fn(),
   listContentCategories: vi.fn(),
+  listContent: vi.fn(),
   listVersions: vi.fn(),
 }));
 
@@ -89,7 +91,10 @@ beforeEach(() => {
     { id: "1.21", releaseTime: "2024-06-13T00:00:00Z" },
     { id: "1.20.1", releaseTime: "2023-06-12T00:00:00Z" },
   ]);
-  vi.mocked(previewContentInstall).mockResolvedValue({ versionNumber: "0.5.3", dependencyCount: 0, incompatible: [] });
+  vi.mocked(previewContentInstall).mockResolvedValue({
+    versionNumber: "0.5.3", dependencyCount: 0, incompatible: [], enablesInstalled: false,
+  });
+  vi.mocked(listContent).mockResolvedValue([]);
   vi.mocked(installContent).mockResolvedValue("t1");
   vi.mocked(getTask).mockResolvedValue(snapshot("succeeded"));
   vi.mocked(contentTaskReport).mockResolvedValue({ installed: 1, dependenciesAdded: 0, updated: 0, failures: [] });
@@ -253,13 +258,15 @@ describe("ModrinthBrowser", () => {
 
   it("incompatible_installed_asks_for_confirmation_before_installing", async () => {
     vi.mocked(previewContentInstall).mockResolvedValue({
-      versionNumber: "0.5.3", dependencyCount: 1, incompatible: ["OptiFabric"],
+      versionNumber: "0.5.3", dependencyCount: 1, incompatible: ["OptiFabric"], enablesInstalled: false,
     });
     mount(fabric120);
     await screen.findByRole("article", { name: "Sodium" });
     fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Add Sodium?" });
     expect(within(dialog).getByText("OptiFabric")).toBeTruthy();
+    // 依存が 1 件なら単数で書く
+    expect(within(dialog).getByText("Version 0.5.3 will be installed with 1 required mod.")).toBeTruthy();
     // 拒否すると何も入れない
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
@@ -290,13 +297,60 @@ describe("ModrinthBrowser", () => {
 
   it("a_failed_install_shows_the_error", async () => {
     vi.mocked(getTask).mockResolvedValue(
-      snapshot("failed", { code: "content.dependency", params: { projectId: "P7" }, detail: null }),
+      snapshot("failed", { code: "content.dependency", params: { projectId: "P7", name: "Lib Seven" }, detail: null }),
     );
     mount(fabric120);
     await screen.findByRole("article", { name: "Sodium" });
     fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
-    await within(toasts()).findByText(/P7/);
+    // project の ID ではなく表示名で知らせる
+    await within(toasts()).findByText(/Lib Seven/);
     expect(within(toasts()).queryByText(/Added Sodium/)).toBeNull();
+  });
+
+  it("one_dependency_is_written_in_the_singular", async () => {
+    vi.mocked(contentTaskReport).mockResolvedValue({ installed: 1, dependenciesAdded: 1, updated: 0, failures: [] });
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
+    await within(toasts()).findByText("Added 1 required mod");
+  });
+
+  it("a_disabled_installed_copy_is_enabled_instead_of_added", async () => {
+    vi.mocked(previewContentInstall).mockResolvedValue({
+      versionNumber: "0.5.3", dependencyCount: 0, incompatible: [], enablesInstalled: true,
+    });
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
+    await within(toasts()).findByText("Enabled Sodium in Fabric 1.20.1");
+    expect(within(toasts()).queryByText(/Added Sodium/)).toBeNull();
+  });
+
+  it("an_enabled_installed_mod_shows_installed_instead_of_add", async () => {
+    vi.mocked(listContent).mockResolvedValue([
+      {
+        kind: "mod", relPath: "mods/sodium.jar", fileName: "sodium.jar", enabled: true, size: 1, sha1: "",
+        provider: "modrinth", projectId: "AANobbMI", versionId: "v1", pinned: false, installedAs: "explicit",
+        name: "Sodium", versionNumber: "0.5.3", description: null, iconUrl: null, hasLocalIcon: false,
+        clientSide: null, serverSide: null, categories: [], dependencies: [], identified: true,
+      },
+    ]);
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    const installed = await within(card("Sodium")).findByRole("button", { name: "Installed" });
+    expect(installed.hasAttribute("disabled")).toBe(true);
+    expect(listContent).toHaveBeenCalledWith("f120", "mod");
+  });
+
+  it("an_already_installed_error_is_shown_by_name", async () => {
+    vi.mocked(previewContentInstall).mockRejectedValue(
+      new IpcError({ code: "content.already_installed", params: { name: "Sodium" }, detail: null }),
+    );
+    mount(fabric120);
+    await screen.findByRole("article", { name: "Sodium" });
+    fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
+    await within(toasts()).findByText("Sodium is already installed in this instance.");
+    expect(installContent).not.toHaveBeenCalled();
   });
 
   it("open_in_browser_calls_open_modrinth_project_with_the_slug", async () => {
