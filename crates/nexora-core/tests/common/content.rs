@@ -206,6 +206,29 @@ impl Harness {
             .unwrap();
     }
 
+    /// `mods/<name>` の行に、特定で書かれるプロジェクトの情報（名前、説明、アイコン、環境、カテゴリー）を書く。
+    pub fn describe(&self, name: &str, title: &str, icon_url: Option<&str>) {
+        self.launcher
+            .db()
+            .with_conn(|conn| {
+                conn.execute(
+                    "UPDATE instance_contents
+                     SET name = ?3, description = ?4, icon_url = ?5, client_side = 'required',
+                         server_side = 'optional', categories = '[\"optimization\"]'
+                     WHERE instance_id = ?1 AND rel_path = ?2",
+                    rusqlite::params![
+                        self.id,
+                        format!("mods/{name}"),
+                        title,
+                        format!("{title} description"),
+                        icon_url
+                    ],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
     /// 版の JSON。ファイルは CDN の `/data/<project>/<version>/<filename>` から返す。
     pub fn version_json(&self, project: &str, id: &str, filename: &str, body: &[u8]) -> Value {
         json!({

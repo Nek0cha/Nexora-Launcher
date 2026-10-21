@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use super::journal::{self, Operation, Target};
+use super::modrinth::DependencyKind;
 use super::ops::content_name;
 use super::resolve::{InstallPlan, PlannedFile};
 use super::scan::{
@@ -318,7 +319,17 @@ pub async fn apply_plan(
     let op = journal::begin(cx.db, kind, cx.instance_id, &prepared.targets, now_ms)?;
     let staging = cx.paths.staging_dir().join(&op.id);
     let mut done = Vec::new();
-    match run(cx, &prepared, &op, &staging, &mut done, &on_progress).await {
+    match run(
+        cx,
+        &prepared,
+        &op,
+        &staging,
+        &mut done,
+        &on_progress,
+        now_ms,
+    )
+    .await
+    {
         Ok(()) => {
             finish_committed(cx, &prepared, &op, &staging, now_ms);
             Ok(outcome(&prepared))
@@ -359,6 +370,7 @@ async fn run<F>(
     staging: &Path,
     done: &mut Vec<Done>,
     on_progress: &F,
+    now_ms: i64,
 ) -> Result<(), CoreError>
 where
     F: Fn(u64, u64) + Send + Sync,
@@ -420,7 +432,7 @@ where
     // 6. 行の更新と確定を 1 つのトランザクションで
     let mut rows = Vec::new();
     for (p, (sha1, sha512)) in prepared.placements.iter().zip(hashes) {
-        rows.push(new_row(cx.game_dir, p, sha1, sha512)?);
+        rows.push(new_row(cx.game_dir, p, sha1, sha512, now_ms)?);
     }
     cx.db.with_conn(|conn| {
         let tx = conn.transaction()?;
@@ -518,12 +530,19 @@ where
     })?
 }
 
-/// 置いたファイルの行。特定の情報（名前、説明など）は次の特定で埋めるので、`identified_at` は空にする。
+/// 置いたファイルの行。
+///
+/// 版の情報（入手元、project、版、版の番号、必須の依存）は計画の版から書く。
+/// 同じ project の行を置き換える（更新と版の切り替え）ときは、プロジェクトの情報（名前、説明、
+/// アイコンの URL、環境、カテゴリー）を元の行から引き継ぎ、Modrinth の値で特定済みとして
+/// `identified_at = now_ms` にする（特定を待つ間に、名前とアイコンが消えないように）。
+/// 新しく入れた行（依存を含む）は、プロジェクトの情報が計画に無いので、次の特定で埋める。
 fn new_row(
     game_dir: &Path,
     p: &Placement<'_>,
     sha1: String,
     sha512: String,
+    now_ms: i64,
 ) -> Result<Row, CoreError> {
     let path = game_dir.join(&p.dest_rel);
     let meta = std::fs::metadata(&path).map_err(|e| io_error(&path, e))?;
@@ -539,17 +558,47 @@ fn new_row(
     row.item.project_id = Some(v.project_id.clone());
     row.item.version_id = Some(v.id.clone());
     row.item.version_number = Some(v.version_number.clone());
+    // 特定（`versions_by_hash`）と同じく、必須の依存の project だけを持つ
+    row.item.dependencies = v
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DependencyKind::Required)
+        .filter_map(|d| d.project_id.clone())
+        .collect();
     match &p.old {
         // 入れた経緯と固定は、利用者の意図として元の行から引き継ぐ。
         // 版の切り替えでは、選んだ版に合わせて固定を付け外しする
         Some(old) => {
             row.item.installed_as = old.item.installed_as;
             row.item.pinned = p.planned.pin.unwrap_or(old.item.pinned);
+            if carries_project_info(old, &v.project_id) {
+                row.item.name = old.item.name.clone();
+                row.item.description = old.item.description.clone();
+                row.item.icon_url = old.item.icon_url.clone();
+                row.item.client_side = old.item.client_side;
+                row.item.server_side = old.item.server_side;
+                row.item.categories = old.item.categories.clone();
+                row.item.identified = true;
+                row.identified_at = Some(now_ms);
+            }
         }
         None if p.planned.as_dependency => row.item.installed_as = InstalledAs::Dependency,
         None => {}
     }
     Ok(row)
+}
+
+/// 置き換える元の行から、プロジェクトの情報を引き継げるか。
+///
+/// Modrinth で特定済みの同じ project の行で、名前が分かっているときだけ引き継ぐ。
+/// アイコンが jar の中のものだけの行は引き継がない。jar の中のアイコンは古い jar の sha1 で
+/// 引くので新しい jar には使えず、特定済みにするとアイコンを読み直す機会が無くなる。
+fn carries_project_info(old: &Row, project_id: &str) -> bool {
+    old.item.provider == Provider::Modrinth
+        && old.identified_at.is_some()
+        && old.item.project_id.as_deref() == Some(project_id)
+        && old.item.name.is_some()
+        && !(old.item.icon_url.is_none() && old.local_icon_key.is_some())
 }
 
 /// `staged` を `game_dir/dest_rel` に置く。置き場所に何かあれば上書きせずに `ContentExists`。

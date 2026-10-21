@@ -145,6 +145,32 @@ async fn changing_to_an_older_version_swaps_the_file_and_pins_the_row() {
 }
 
 #[tokio::test]
+async fn a_changed_mod_keeps_its_name_and_icon_and_shows_the_new_version() {
+    let h = Harness::new().await;
+    h.seed("pa.jar", b"a1", "pa", "pa-v1");
+    h.describe("pa.jar", "Sodium", Some("https://cdn.example/sodium.png"));
+    publish_versions(&h).await;
+
+    let task = h
+        .launcher
+        .change_content_version(&h.id, "mods/pa.jar", "pa-v2")
+        .unwrap();
+    let snap = h.wait(&task).await;
+
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    let item = row(&h, "mods/pa-v2.jar").await;
+    assert_eq!(item.name.as_deref(), Some("Sodium"));
+    assert_eq!(item.description.as_deref(), Some("Sodium description"));
+    assert_eq!(
+        item.icon_url.as_deref(),
+        Some("https://cdn.example/sodium.png")
+    );
+    assert_eq!(item.categories, ["optimization"]);
+    assert_eq!(item.version_number.as_deref(), Some("pa-v2-number"));
+    assert!(item.identified);
+}
+
+#[tokio::test]
 async fn a_disabled_mod_stays_disabled_after_a_change() {
     let h = Harness::new().await;
     h.seed("pa.jar.disabled", b"a1", "pa", "pa-v1");

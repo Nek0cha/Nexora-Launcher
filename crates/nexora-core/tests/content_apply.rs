@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::{http, serve};
 use nexora_core::content::ContentKind;
 use nexora_core::content::apply::{ApplyContext, ApplyOutcome, MODRINTH_CDN, apply_plan};
-use nexora_core::content::modrinth::{FileInfo, FullVersion};
+use nexora_core::content::modrinth::{Dependency, DependencyKind, FileInfo, FullVersion};
 use nexora_core::content::resolve::{InstallPlan, PlannedFile};
 use nexora_core::content::scan::scan;
 use nexora_core::db::Db;
@@ -490,6 +490,153 @@ async fn update_of_a_disabled_mod_stays_disabled() {
     assert_eq!(e.operations(), 0);
     assert!(e.staging().is_empty());
     assert_eq!(e.backups().len(), 1);
+}
+
+/// 特定で書かれる表示の列。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MetaView {
+    name: Option<String>,
+    description: Option<String>,
+    icon_url: Option<String>,
+    version_number: Option<String>,
+    client_side: Option<String>,
+    server_side: Option<String>,
+    categories: String,
+    dependencies: String,
+    local_icon_key: Option<String>,
+}
+
+impl Env {
+    /// 特定済みの行に、Modrinth のプロジェクトの情報（と jar の中のアイコンのキー）を書く。
+    fn describe(&self, rel_path: &str, icon_url: Option<&str>, local_icon_key: Option<&str>) {
+        self.db
+            .with_conn(|conn| {
+                conn.execute(
+                    "UPDATE instance_contents
+                     SET name = 'Alpha', description = 'Alpha description', icon_url = ?3,
+                         local_icon_key = ?4, client_side = 'required', server_side = 'optional',
+                         categories = '[\"optimization\"]', version_number = 'old-number'
+                     WHERE instance_id = ?1 AND rel_path = ?2",
+                    rusqlite::params![self.id, rel_path, icon_url, local_icon_key],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    fn meta(&self, rel_path: &str) -> MetaView {
+        self.db
+            .with_conn(|conn| {
+                Ok(conn.query_row(
+                    "SELECT name, description, icon_url, version_number, client_side, server_side,
+                            categories, dependencies, local_icon_key
+                     FROM instance_contents WHERE instance_id = ?1 AND rel_path = ?2",
+                    rusqlite::params![self.id, rel_path],
+                    |r| {
+                        Ok(MetaView {
+                            name: r.get(0)?,
+                            description: r.get(1)?,
+                            icon_url: r.get(2)?,
+                            version_number: r.get(3)?,
+                            client_side: r.get(4)?,
+                            server_side: r.get(5)?,
+                            categories: r.get(6)?,
+                            dependencies: r.get(7)?,
+                            local_icon_key: r.get(8)?,
+                        })
+                    },
+                )?)
+            })
+            .unwrap()
+    }
+}
+
+fn required(project: &str) -> Dependency {
+    Dependency {
+        project_id: Some(project.into()),
+        version_id: None,
+        kind: DependencyKind::Required,
+    }
+}
+
+#[tokio::test]
+async fn update_keeps_the_project_info_and_marks_the_row_identified() {
+    let e = env().await;
+    e.seed("a-1.jar", b"old a", "a", "a1");
+    e.describe("mods/a-1.jar", Some("https://cdn.example/a.png"), None);
+    let mut root = e.version("a", "a2", "a-2.jar", b"new a").await;
+    root.dependencies = vec![
+        required("lib"),
+        Dependency {
+            project_id: Some("extra".into()),
+            version_id: None,
+            kind: DependencyKind::Optional,
+        },
+    ];
+
+    e.apply(&plan(vec![planned(root, false, Some("mods/a-1.jar"))]), 10)
+        .await
+        .unwrap();
+
+    // 更新の直後から、名前、説明、アイコンが消えずに出る（タブを開き直すまで待たない）
+    assert_eq!(
+        e.meta("mods/a-2.jar"),
+        MetaView {
+            name: Some("Alpha".into()),
+            description: Some("Alpha description".into()),
+            icon_url: Some("https://cdn.example/a.png".into()),
+            version_number: Some("a2-number".into()),
+            client_side: Some("required".into()),
+            server_side: Some("optional".into()),
+            categories: r#"["optimization"]"#.into(),
+            // 特定と同じく、必須の依存の project だけを持つ
+            dependencies: r#"["lib"]"#.into(),
+            local_icon_key: None,
+        }
+    );
+    let row = e.row("mods/a-2.jar");
+    assert_eq!(row.identified_at, Some(10));
+    assert_eq!(row.provider, "modrinth");
+    assert_eq!(row.version_id.as_deref(), Some("a2"));
+}
+
+#[tokio::test]
+async fn update_with_only_a_jar_icon_leaves_the_row_for_identify() {
+    let e = env().await;
+    e.seed("a-1.jar", b"old a", "a", "a1");
+    // jar の中のアイコンは古い jar の sha1 で引くので、新しい jar には使えない。特定に任せる
+    e.describe("mods/a-1.jar", None, Some(&sha1_hex(b"old a")));
+    let root = e.version("a", "a2", "a-2.jar", b"new a").await;
+
+    e.apply(&plan(vec![planned(root, false, Some("mods/a-1.jar"))]), 10)
+        .await
+        .unwrap();
+
+    let row = e.row("mods/a-2.jar");
+    assert_eq!(row.identified_at, None);
+    assert_eq!(row.version_id.as_deref(), Some("a2"));
+    let meta = e.meta("mods/a-2.jar");
+    assert_eq!(meta.local_icon_key, None);
+    assert_eq!(meta.version_number.as_deref(), Some("a2-number"));
+}
+
+#[tokio::test]
+async fn new_installs_carry_the_version_and_wait_for_identify() {
+    let e = env().await;
+    let mut root = e.version("a", "a1", "a-1.jar", b"ay").await;
+    root.dependencies = vec![required("lib")];
+
+    e.apply(&plan(vec![planned(root, false, None)]), 10)
+        .await
+        .unwrap();
+
+    let row = e.row("mods/a-1.jar");
+    assert_eq!(row.identified_at, None);
+    assert_eq!(row.provider, "modrinth");
+    let meta = e.meta("mods/a-1.jar");
+    assert_eq!(meta.name, None);
+    assert_eq!(meta.version_number.as_deref(), Some("a1-number"));
+    assert_eq!(meta.dependencies, r#"["lib"]"#);
 }
 
 #[tokio::test]
