@@ -96,10 +96,48 @@ pub enum CoreError {
     InvalidInstanceSetting { field: String },
     #[error("a content file already exists: {path}")]
     ContentExists { path: String },
+    /// 必須の依存を解決できなかった。何も導入しない。
+    #[error("dependency {project_id} could not be resolved: {cause}")]
+    ContentDependency {
+        project_id: String,
+        cause: DependencyCause,
+    },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
+}
+
+/// 依存を解決できなかった理由。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DependencyCause {
+    /// 依存が循環している。
+    Cycle,
+    /// 版にファイルが無い。
+    NoFile,
+    /// 条件に合う版が見つからない。
+    NoVersion,
+}
+
+impl DependencyCause {
+    /// UI に渡す引数の値。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DependencyCause::Cycle => "cycle",
+            DependencyCause::NoFile => "no_file",
+            DependencyCause::NoVersion => "no_version",
+        }
+    }
+}
+
+impl std::fmt::Display for DependencyCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DependencyCause::Cycle => "the dependencies form a cycle",
+            DependencyCause::NoFile => "the version has no files",
+            DependencyCause::NoVersion => "no matching version was found",
+        })
+    }
 }
 
 /// processor の終了の書き方。コードが無いのは、Java を起動できなかったか、コードなしで終わったとき。
@@ -163,6 +201,7 @@ impl CoreError {
             CoreError::InstanceBusy { .. } => "instance.busy",
             CoreError::InvalidInstanceSetting { .. } => "instance.invalid_setting",
             CoreError::ContentExists { .. } => "content.exists",
+            CoreError::ContentDependency { .. } => "content.dependency",
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
@@ -231,6 +270,10 @@ impl CoreError {
             }
             CoreError::ContentExists { path } => {
                 params.insert("path".into(), ParamValue::Str(path.clone()));
+            }
+            CoreError::ContentDependency { project_id, cause } => {
+                params.insert("projectId".into(), ParamValue::Str(project_id.clone()));
+                params.insert("cause".into(), ParamValue::Str(cause.as_str().into()));
             }
             CoreError::InvalidSkin { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
@@ -653,6 +696,28 @@ mod tests {
         assert_eq!(
             err.to_payload().params.get("path"),
             Some(&ParamValue::Str("mods/a.jar.disabled".into()))
+        );
+    }
+
+    #[test]
+    fn phase5_content_dependency() {
+        let err = CoreError::ContentDependency {
+            project_id: "P7dR8mSH".into(),
+            cause: DependencyCause::Cycle,
+        };
+        assert_eq!(err.code(), "content.dependency");
+        let p = err.to_payload();
+        assert_eq!(
+            p.params.get("projectId"),
+            Some(&ParamValue::Str("P7dR8mSH".into()))
+        );
+        assert_eq!(
+            p.params.get("cause"),
+            Some(&ParamValue::Str("cycle".into()))
+        );
+        assert_eq!(
+            p.detail.as_deref(),
+            Some("dependency P7dR8mSH could not be resolved: the dependencies form a cycle")
         );
     }
 

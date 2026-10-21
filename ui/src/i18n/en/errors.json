@@ -75,7 +75,8 @@
     "invalid_setting": "A setting value is not valid"
   },
   "content": {
-    "exists": "A file with the same name already exists."
+    "exists": "A file with the same name already exists.",
+    "dependency": "A required mod ({{projectId}}) could not be resolved, so nothing was installed. Open Details for the reason."
   },
   "skin": {
     "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"
