@@ -2,6 +2,7 @@
 
 pub mod apply;
 pub mod options;
+pub mod proposals;
 pub mod registry;
 pub mod store;
 pub mod version;

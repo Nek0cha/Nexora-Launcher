@@ -374,6 +374,14 @@ impl GameProcesses {
                 "failed to clear running session"
             );
         }
+        // 終了後の提案を集める。失敗しても終了処理は続ける（内部で握りつぶす）
+        crate::sync::proposals::collect_proposals(
+            &crate::sync::SyncCtx {
+                db: &self.db,
+                paths: &self.paths,
+            },
+            instance_id,
+        );
         self.notifier.exited(instance_id, exit_code);
     }
 
