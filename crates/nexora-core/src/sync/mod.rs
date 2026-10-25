@@ -3,6 +3,7 @@
 pub mod options;
 pub mod registry;
 pub mod store;
+pub mod version;
 
 use crate::db::Db;
 use crate::paths::AppPaths;
