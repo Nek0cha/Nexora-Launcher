@@ -144,7 +144,7 @@ fn apply_member(
             Err(_) => false,
         };
         if stale
-            && let Err(e) = store::save_snapshot(
+            && let Err(e) = save_keeping_proposals(
                 ctx.db,
                 &inst.id,
                 profile.revision,
@@ -160,7 +160,7 @@ fn apply_member(
     file.set_all(&updates);
     write_atomic(&path, &ctx.paths.backups_dir(), &inst.id, &file.render())
         .map_err(|e| format!("failed to write options.txt: {e}"))?;
-    store::save_snapshot(
+    save_keeping_proposals(
         ctx.db,
         &inst.id,
         profile.revision,
@@ -182,21 +182,35 @@ fn skipped(ctx: &SyncCtx, instance_id: &str, reason: SkipReason) -> ApplyOutcome
     ApplyOutcome::Skipped(reason)
 }
 
+/// 記録を保存する。`save_snapshot` は提案を空に戻すので、保存前の提案を戻す。
+/// 未処理の提案は、どの経路でも適用では消さない（古くなったものは後の処理で除く）。
+fn save_keeping_proposals(
+    db: &crate::db::Db,
+    instance_id: &str,
+    applied_revision: i64,
+    baseline: &BTreeMap<String, String>,
+    state: SnapshotState,
+) -> Result<(), crate::error::CoreError> {
+    let proposals = store::snapshot(db, instance_id)?
+        .map(|s| s.proposals)
+        .unwrap_or_default();
+    store::save_snapshot(db, instance_id, applied_revision, baseline, state)?;
+    if !proposals.is_empty() {
+        store::set_proposals(db, instance_id, &proposals)?;
+    }
+    Ok(())
+}
+
 /// 状態だけを記録する。既にある基準値、revision、提案は消さない。
 /// 記録がまだ無いときは、空の基準値と revision 0 で作る。
 fn record_state(ctx: &SyncCtx, instance_id: &str, state: SnapshotState) {
     let result = (|| {
         let existing = store::snapshot(ctx.db, instance_id)?;
-        let (revision, baseline, proposals) = match existing {
-            Some(s) => (s.applied_revision, s.baseline, s.proposals),
-            None => (0, BTreeMap::new(), Vec::new()),
+        let (revision, baseline) = match existing {
+            Some(s) => (s.applied_revision, s.baseline),
+            None => (0, BTreeMap::new()),
         };
-        store::save_snapshot(ctx.db, instance_id, revision, &baseline, state)?;
-        // save_snapshot は提案を空に戻すので、残っていたものを戻す
-        if !proposals.is_empty() {
-            store::set_proposals(ctx.db, instance_id, &proposals)?;
-        }
-        Ok::<(), crate::error::CoreError>(())
+        save_keeping_proposals(ctx.db, instance_id, revision, &baseline, state)
     })();
     if let Err(e) = result {
         tracing::warn!(instance_id, "failed to record the sync state: {e}");
@@ -553,6 +567,118 @@ mod tests {
         let outcome = apply_before_launch(&env.ctx(), &inst);
         assert!(matches!(outcome, ApplyOutcome::Failed(_)), "{outcome:?}");
         assert_eq!(std::fs::read(env.options(&inst)).unwrap(), bytes);
+    }
+
+    fn proposal() -> Vec<store::Proposal> {
+        vec![store::Proposal {
+            field_id: "gamma".to_string(),
+            value: "1.0".to_string(),
+        }]
+    }
+
+    #[test]
+    fn pending_proposals_survive_skip_then_up_to_date_refresh() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.5")]);
+        env.join(&inst, &p);
+        // 版が合わない起動で Skipped、記録ができる
+        env.jar(None);
+        assert!(matches!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(_)
+        ));
+        store::set_proposals(&env.db, &inst.id, &proposal()).unwrap();
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NoDataVersion)
+        );
+        // jar が読めるようになり、値は同じ（基準値の更新だけが走る）
+        env.jar(Some("{\"world_version\":4325}"));
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::UpToDate
+        );
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.state, SnapshotState::Applied);
+        assert_eq!(snap.proposals, proposal());
+    }
+
+    #[test]
+    fn pending_proposals_survive_an_applied_launch_after_revision_bump() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        apply_before_launch(&env.ctx(), &inst);
+        store::set_proposals(&env.db, &inst.id, &proposal()).unwrap();
+        let before = env.revision(&p);
+        store::set_values(
+            &env.db,
+            &p.id,
+            &[("mouseSensitivity".to_string(), "0.7".to_string())],
+        )
+        .unwrap();
+        assert!(env.revision(&p) > before);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.applied_revision, env.revision(&p));
+        assert_eq!(snap.proposals, proposal());
+    }
+
+    #[test]
+    fn empty_or_unterminated_options_are_a_version_mismatch_without_writes() {
+        let env = Env::new();
+        let p = env.profile(&[("fov", "0.9")]);
+        for body in ["", "fov:0.5"] {
+            let inst = env.instance("A", Some(body.as_bytes()));
+            env.join(&inst, &p);
+            assert_eq!(
+                apply_before_launch(&env.ctx(), &inst),
+                ApplyOutcome::Skipped(SkipReason::VersionMismatch)
+            );
+            assert_eq!(env.read(&inst), body);
+        }
+        // 末尾に改行の無いファイルでも、版が合えば最後の行を壊さず書き換える
+        let inst = env.instance("B", Some(b"version:4325\nfov:0.5"));
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(env.read(&inst), "version:4325\nfov:0.9");
+    }
+
+    #[test]
+    fn exclusions_and_overrides_still_hold_after_a_revision_bump() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.9"), ("mouseSensitivity", "0.8")]);
+        env.join(&inst, &p);
+        store::set_excluded(&env.db, &inst.id, &["fov".to_string()]).unwrap();
+        store::set_override(&env.db, &inst.id, "mouseSensitivity", Some("0.1")).unwrap();
+        let before = env.revision(&p);
+        store::set_values(
+            &env.db,
+            &p.id,
+            &[
+                ("fov".to_string(), "0.7".to_string()),
+                ("mouseSensitivity".to_string(), "0.6".to_string()),
+            ],
+        )
+        .unwrap();
+        assert!(env.revision(&p) > before);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(
+            env.read(&inst),
+            SAMPLE.replace("mouseSensitivity:0.3", "mouseSensitivity:0.1")
+        );
     }
 
     #[test]
