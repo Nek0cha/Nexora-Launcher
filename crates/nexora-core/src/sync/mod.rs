@@ -1,5 +1,6 @@
 //! 設定の同期（共通設定）。保存層、登録表、options.txt の読み書きなど。
 
+pub mod apply;
 pub mod options;
 pub mod registry;
 pub mod store;

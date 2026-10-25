@@ -50,6 +50,8 @@ use crate::meta::write_atomic;
 use crate::net::{Depth, Http};
 use crate::paths::AppPaths;
 use crate::settings;
+use crate::sync::SyncCtx;
+use crate::sync::apply::{ApplyOutcome, apply_before_launch};
 use crate::task::{TaskHandle, TaskManager, TaskPhase};
 
 pub const INSTALL_KIND: &str = "install";
@@ -760,6 +762,32 @@ impl Launcher {
             .map_err(|e| CoreError::Unexpected {
                 message: e.to_string(),
             })??;
+
+        // 共通設定の適用。結果は記録するだけで、失敗しても起動は止めない
+        {
+            let db = env.db.clone();
+            let paths = env.paths.clone();
+            let inst = inst.clone();
+            match tokio::task::spawn_blocking(move || {
+                let ctx = SyncCtx {
+                    db: &db,
+                    paths: &paths,
+                };
+                apply_before_launch(&ctx, &inst)
+            })
+            .await
+            {
+                Ok(ApplyOutcome::Failed(message)) => {
+                    tracing::warn!(instance_id = id, %message, "failed to apply the sync profile");
+                }
+                Ok(outcome) => {
+                    tracing::info!(instance_id = id, ?outcome, "sync profile apply finished");
+                }
+                Err(e) => {
+                    tracing::warn!(instance_id = id, "sync apply task failed: {e}");
+                }
+            }
+        }
 
         let game_dir = instance::game_dir(&env.paths, &inst);
         let args = build_args(&ArgInputs {

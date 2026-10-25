@@ -1319,3 +1319,63 @@ async fn fabric_instance_launches_with_the_loader_main_class() {
     assert!(cp.contains(&library.display().to_string()), "{cp}");
     assert!(cp.contains(&client.display().to_string()), "{cp}");
 }
+
+/// 起動の前に、参加中のインスタンスの options.txt だけが共通設定で書き換わる。
+#[tokio::test]
+async fn launch_applies_the_sync_profile_to_members_only() {
+    use nexora_core::sync::registry::Category;
+    use nexora_core::sync::store;
+    use std::io::Write;
+
+    const OPTIONS: &str = "version:4325\nfov:0.5\nlastServer:x\n";
+    // クライアント jar は、DataVersion を持つ version.json だけの zip にする
+    let mut jar = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut jar));
+        zip.start_file("version.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(br#"{"world_version":4325}"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let fake = FakeMojang::start_with_client(&jar).await;
+    let h = harness(&fake).await;
+    let member = h.installed().await;
+    let outsider = h
+        .installed_with(&NewInstance::vanilla("y", "1.99-test"))
+        .await;
+    let paths = AppPaths::from_root(h._temp.path());
+
+    let options_of = |id: &str| {
+        let inst = instance::get(h.launcher.db(), id).unwrap();
+        instance::game_dir(&paths, &inst).join("options.txt")
+    };
+    std::fs::write(options_of(&member), OPTIONS).unwrap();
+    std::fs::write(options_of(&outsider), OPTIONS).unwrap();
+
+    let profile = store::create_profile(
+        h.launcher.db(),
+        "共通",
+        &[Category::Mouse, Category::Graphics],
+    )
+    .unwrap();
+    store::set_values(
+        h.launcher.db(),
+        &profile.id,
+        &[("fov".to_string(), "0.9".to_string())],
+    )
+    .unwrap();
+    store::join(h.launcher.db(), &member, &profile.id).unwrap();
+
+    for id in [&member, &outsider] {
+        let task = h.launcher.launch_instance(id, false).unwrap();
+        assert_reached_spawn(&wait(&h.tasks, &task).await);
+    }
+    assert_eq!(
+        std::fs::read_to_string(options_of(&member)).unwrap(),
+        "version:4325\nfov:0.9\nlastServer:x\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(options_of(&outsider)).unwrap(),
+        OPTIONS
+    );
+}

@@ -63,6 +63,7 @@ use nexora_core::java::runtime::java_relative_path;
 pub const FAKE_JAVA: &[u8] = b"#!/bin/sh\necho \"fake game $*\"\nexit 0\n";
 
 /// FakeMojang が配るライブラリの中身。
+pub const CLIENT_JAR: &[u8] = b"client-jar";
 pub const LIBRARY: &[u8] = b"library-jar";
 
 /// 本文の途中で接続を切る HTTP サーバー（127.0.0.1 だけで待ち受ける）。
@@ -139,7 +140,7 @@ impl FakeMojang {
     /// fetch_all は最初の失敗で取得中のほかのファイルを打ち切るため、404 を遅らせて、
     /// ほかのファイルの取得が先に終わるようにする。
     pub async fn start_with(serve_library: bool) -> Self {
-        let fake = Self::build(serve_library, None, "1.99-test", FAKE_JAVA).await;
+        let fake = Self::build(serve_library, None, "1.99-test", FAKE_JAVA, CLIENT_JAR).await;
         if !serve_library {
             Mock::given(method("GET"))
                 .and(path("/lib.jar"))
@@ -153,12 +154,24 @@ impl FakeMojang {
 
     /// ライブラリ（中身は LIBRARY）だけを、別のサーバーの url から取得させる。
     pub async fn with_library_at(url: &str) -> Self {
-        Self::build(false, Some(url.to_string()), "1.99-test", FAKE_JAVA).await
+        Self::build(
+            false,
+            Some(url.to_string()),
+            "1.99-test",
+            FAKE_JAVA,
+            CLIENT_JAR,
+        )
+        .await
     }
 
     /// バージョン id が version_id で、Java の runtime の中身が java のもの（ライブラリも配る）。
     pub async fn start_version(version_id: &str, java: &[u8]) -> Self {
-        Self::build(true, None, version_id, java).await
+        Self::build(true, None, version_id, java, CLIENT_JAR).await
+    }
+
+    /// クライアント jar の中身が client のもの（DataVersion を読むテスト用）。
+    pub async fn start_with_client(client: &[u8]) -> Self {
+        Self::build(true, None, "1.99-test", FAKE_JAVA, client).await
     }
 
     async fn build(
@@ -166,10 +179,11 @@ impl FakeMojang {
         library_url: Option<String>,
         version_id: &str,
         java: &[u8],
+        client: &[u8],
     ) -> Self {
         let server = MockServer::start().await;
         let u = server.uri();
-        let client = b"client-jar".to_vec();
+        let client = client.to_vec();
         let library = LIBRARY.to_vec();
         let lib_url = library_url.unwrap_or_else(|| format!("{u}/lib.jar"));
         let asset = b"asset-object".to_vec();
