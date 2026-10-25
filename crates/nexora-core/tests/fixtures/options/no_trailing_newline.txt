@@ -1,0 +1,5 @@
+version:3465
+fov:0.5
+maxFps:120
+garbage line without colon
+enableVsync:true

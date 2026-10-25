@@ -1,0 +1,6 @@
+version:3465
+fov:0.5
+
+maxFps:120
+key_key.jump:key.keyboard.space
+lastServer:
