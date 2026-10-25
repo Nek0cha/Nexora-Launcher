@@ -118,30 +118,40 @@ fn unix_ms() -> u128 {
 
 /// `options-<数字>.txt` の数字部分。
 fn backup_stamp(name: &str) -> Option<u128> {
-    name.strip_prefix("options-")?
-        .strip_suffix(".txt")?
-        .parse()
-        .ok()
+    let digits = name.strip_prefix("options-")?.strip_suffix(".txt")?;
+    // `+5` のような符号付きは受け付けない（数字だけの名前に限る）
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }
 
-/// 古いバックアップを消して `BACKUP_KEEP` 件にする。消せなくても書き込みは止めない。
-fn prune_backups(dir: &Path) -> Result<(), CoreError> {
-    let mut found: Vec<(u128, PathBuf)> = fs::read_dir(dir)
-        .map_err(|e| io_err(dir, e))?
+/// 古いバックアップを消して `BACKUP_KEEP` 件にする。`keep` は今作ったもので、時計が戻っても消さない。
+/// 失敗は警告のログだけで、書き込みは止めない。
+fn prune_backups(dir: &Path, keep: &Path) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("バックアップの一覧を読めなかった: {}: {e}", dir.display());
+            return;
+        }
+    };
+    let mut found: Vec<(u128, PathBuf)> = entries
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let stamp = backup_stamp(e.file_name().to_str()?)?;
             Some((stamp, e.path()))
         })
+        .filter(|(_, p)| p != keep)
         .collect();
     found.sort();
-    let excess = found.len().saturating_sub(BACKUP_KEEP);
+    // 今作った 1 件を数えて、残りの枠は BACKUP_KEEP - 1 件
+    let excess = found.len().saturating_sub(BACKUP_KEEP - 1);
     for (_, path) in found.into_iter().take(excess) {
         if let Err(e) = fs::remove_file(&path) {
             tracing::warn!("古いバックアップを消せなかった: {}: {e}", path.display());
         }
     }
-    Ok(())
 }
 
 /// バックアップ → `<path>.tmp` → rename の順で書き換える。
@@ -166,13 +176,20 @@ pub fn write_atomic(
             stamp += 1;
         };
         fs::copy(path, &backup).map_err(|e| io_err(&backup, e))?;
-        prune_backups(&dir)?;
+        prune_backups(&dir, &backup);
     }
 
     let mut tmp_name = path.as_os_str().to_owned();
     tmp_name.push(".tmp");
     let tmp = PathBuf::from(tmp_name);
-    if let Err(e) = fs::write(&tmp, text) {
+    // 書いた内容をディスクへ出してから rename する（電源断で空の options.txt にならないように）
+    let write_tmp = || -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()
+    };
+    if let Err(e) = write_tmp() {
         let _ = fs::remove_file(&tmp);
         return Err(io_err(&tmp, e));
     }
@@ -282,6 +299,51 @@ mod tests {
         assert_eq!(OptionsFile::parse(CRLF).version(), Some(3465));
         assert_eq!(OptionsFile::parse(LEGACY).version(), None);
         assert_eq!(OptionsFile::parse("version:abc\n").version(), None);
+    }
+
+    #[test]
+    fn backup_stamp_accepts_only_ascii_digits() {
+        assert_eq!(backup_stamp("options-123.txt"), Some(123));
+        for bad in [
+            "options-+5.txt",
+            "options-.txt",
+            "options--5.txt",
+            "options-1a.txt",
+            "options-１.txt",
+            "x-1.txt",
+        ] {
+            assert_eq!(backup_stamp(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn prune_keeps_newest_ten_and_just_created_and_ignores_odd_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        for i in 1..=12u32 {
+            fs::write(dir.join(format!("options-{i}.txt")), "").unwrap();
+        }
+        fs::write(dir.join("options-+5.txt"), "").unwrap();
+        // 今作ったものが最小の番号（時計が戻った場合）でも消さない
+        let keep = dir.join("options-0.txt");
+        fs::write(&keep, "").unwrap();
+        prune_backups(dir, &keep);
+        assert!(keep.exists());
+        assert!(dir.join("options-+5.txt").exists());
+        let numbered = (1..=12u32)
+            .filter(|i| dir.join(format!("options-{i}.txt")).exists())
+            .count();
+        assert_eq!(numbered, 9);
+        assert!(dir.join("options-12.txt").exists() && !dir.join("options-3.txt").exists());
+    }
+
+    #[test]
+    fn prune_on_missing_dir_does_not_panic() {
+        let tmp = tempfile::tempdir().unwrap();
+        prune_backups(
+            &tmp.path().join("nope"),
+            &tmp.path().join("nope/options-1.txt"),
+        );
     }
 
     fn backups(dir: &Path, id: &str) -> Vec<String> {
