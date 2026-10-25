@@ -68,6 +68,8 @@ pub struct Snapshot {
     pub baseline: BTreeMap<String, String>,
     pub proposals: Vec<Proposal>,
     pub state: SnapshotState,
+    /// 最後に記録した時刻（unix ミリ秒）。時刻を持たない古い記録は `None`。
+    pub updated_at: Option<i64>,
 }
 
 fn now_millis() -> i64 {
@@ -337,14 +339,22 @@ pub fn save_snapshot(
     let baseline = to_json(baseline)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO sync_snapshots (instance_id, applied_revision, baseline, proposals, state)
-             VALUES (?1, ?2, ?3, '[]', ?4)
+            "INSERT INTO sync_snapshots
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5)
              ON CONFLICT(instance_id) DO UPDATE SET
                  applied_revision = excluded.applied_revision,
                  baseline = excluded.baseline,
                  proposals = '[]',
-                 state = excluded.state",
-            params![instance_id, applied_revision, baseline, state.as_str()],
+                 state = excluded.state,
+                 updated_at = excluded.updated_at",
+            params![
+                instance_id,
+                applied_revision,
+                baseline,
+                state.as_str(),
+                now_millis()
+            ],
         )?;
         Ok(())
     })
@@ -354,7 +364,7 @@ pub fn snapshot(db: &Db, instance_id: &str) -> Result<Option<Snapshot>, CoreErro
     db.with_conn(|conn| {
         let row = conn
             .query_row(
-                "SELECT applied_revision, baseline, proposals, state
+                "SELECT applied_revision, baseline, proposals, state, updated_at
                  FROM sync_snapshots WHERE instance_id = ?1",
                 [instance_id],
                 |row| {
@@ -363,17 +373,19 @@ pub fn snapshot(db: &Db, instance_id: &str) -> Result<Option<Snapshot>, CoreErro
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
                     ))
                 },
             )
             .optional()?;
-        row.map(|(applied_revision, baseline, proposals, state)| {
+        row.map(|(applied_revision, baseline, proposals, state, updated_at)| {
             Ok(Snapshot {
                 instance_id: instance_id.to_string(),
                 applied_revision,
                 baseline: from_json(&baseline)?,
                 proposals: from_json(&proposals)?,
                 state: SnapshotState::parse(&state)?,
+                updated_at,
             })
         })
         .transpose()
@@ -501,6 +513,22 @@ mod tests {
         let s = snapshot(&db, "i1").unwrap().unwrap();
         assert_eq!(s.state, SnapshotState::Failed);
         assert!(s.proposals.is_empty());
+    }
+
+    #[test]
+    fn snapshot_records_the_save_time() {
+        let db = db_with_instances(&["i1"]);
+        let before = now_millis();
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        let at = snapshot(&db, "i1").unwrap().unwrap().updated_at.unwrap();
+        assert!(at >= before && at <= now_millis());
+        // 時刻を持たない古い記録は None として読める
+        db.with_conn(|conn| {
+            conn.execute("UPDATE sync_snapshots SET updated_at = NULL", [])?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(snapshot(&db, "i1").unwrap().unwrap().updated_at, None);
     }
 
     #[test]

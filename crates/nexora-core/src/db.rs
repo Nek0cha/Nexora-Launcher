@@ -18,6 +18,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("../migrations/0004_instance_contents.sql")),
         M::up(include_str!("../migrations/0005_operations_backups.sql")),
         M::up(include_str!("../migrations/0006_sync.sql")),
+        M::up(include_str!("../migrations/0007_sync_snapshot_time.sql")),
     ])
 }
 
