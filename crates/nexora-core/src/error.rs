@@ -122,6 +122,9 @@ pub enum CoreError {
     ContentVersionUnavailable { name: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
+    /// options.txt が無い（ゲームを一度も起動していない）ので、共通設定を作れない。
+    #[error("the instance has no options.txt yet")]
+    SyncNoOptions,
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
 }
@@ -226,6 +229,7 @@ impl CoreError {
             CoreError::ContentNoLoader => "content.no_loader",
             CoreError::ContentVersionUnavailable { .. } => "content.version_unavailable",
             CoreError::InvalidSkin { .. } => "skin.invalid",
+            CoreError::SyncNoOptions => "sync.no_options",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
     }
@@ -795,6 +799,7 @@ mod tests {
             Some(&ParamValue::Str("mods/a.jar".into()))
         );
         assert_eq!(CoreError::ContentNoLoader.code(), "content.no_loader");
+        assert_eq!(CoreError::SyncNoOptions.code(), "sync.no_options");
         let err = CoreError::ContentVersionUnavailable {
             name: "Sodium".into(),
         };

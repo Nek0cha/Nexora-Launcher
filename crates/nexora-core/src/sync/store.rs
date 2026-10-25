@@ -203,15 +203,32 @@ pub fn values(db: &Db, profile_id: &str) -> Result<BTreeMap<String, String>, Cor
     })
 }
 
-/// インスタンスを共通設定に参加させる。すでに別の共通設定にいれば移る（除外と上書きは空に戻す）。
+/// インスタンスを共通設定に参加させる。同じ共通設定への再参加は何も変えない。
+/// 別の共通設定にいれば移り、除外と上書きを空に戻し、前の共通設定の記録（snapshot）を消す。
 pub fn join(db: &Db, instance_id: &str, profile_id: &str) -> Result<(), CoreError> {
     db.with_conn(|conn| {
-        conn.execute(
+        let tx = conn.transaction()?;
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT profile_id FROM sync_profile_instances WHERE instance_id = ?1",
+                [instance_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if current.as_deref() == Some(profile_id) {
+            return Ok(());
+        }
+        tx.execute(
             "INSERT INTO sync_profile_instances (instance_id, profile_id) VALUES (?1, ?2)
              ON CONFLICT(instance_id) DO UPDATE SET
                  profile_id = excluded.profile_id, excluded_fields = '[]', overrides = '{}'",
             params![instance_id, profile_id],
         )?;
+        tx.execute(
+            "DELETE FROM sync_snapshots WHERE instance_id = ?1",
+            [instance_id],
+        )?;
+        tx.commit()?;
         Ok(())
     })
 }
@@ -518,5 +535,36 @@ mod tests {
         assert!(values(&db, &p.id).unwrap().is_empty());
         assert_eq!(count(&db, "sync_values"), 1);
         assert_eq!(list_profiles(&db).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rejoining_the_same_profile_keeps_state() {
+        let db = db_with_instances(&["i1"]);
+        let p = create_profile(&db, "A", &[]).unwrap();
+        join(&db, "i1", &p.id).unwrap();
+        set_excluded(&db, "i1", &["fov".to_string()]).unwrap();
+        set_override(&db, "i1", "gamma", Some("2")).unwrap();
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        join(&db, "i1", &p.id).unwrap();
+        let m = membership(&db, "i1").unwrap().unwrap();
+        assert_eq!(m.excluded, vec!["fov".to_string()]);
+        assert_eq!(m.overrides.get("gamma").map(String::as_str), Some("2"));
+        assert!(snapshot(&db, "i1").unwrap().is_some());
+    }
+
+    #[test]
+    fn moving_to_another_profile_resets_state_and_drops_snapshot() {
+        let db = db_with_instances(&["i1"]);
+        let a = create_profile(&db, "A", &[]).unwrap();
+        let b = create_profile(&db, "B", &[]).unwrap();
+        join(&db, "i1", &a.id).unwrap();
+        set_excluded(&db, "i1", &["fov".to_string()]).unwrap();
+        set_override(&db, "i1", "gamma", Some("2")).unwrap();
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        join(&db, "i1", &b.id).unwrap();
+        let m = membership(&db, "i1").unwrap().unwrap();
+        assert_eq!(m.profile_id, b.id);
+        assert!(m.excluded.is_empty() && m.overrides.is_empty());
+        assert!(snapshot(&db, "i1").unwrap().is_none());
     }
 }

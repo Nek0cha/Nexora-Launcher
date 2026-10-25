@@ -70,6 +70,20 @@ impl OptionsFile {
             .map(|(_, v)| v)
     }
 
+    /// `key:value` の組を並び順どおりに返す。同じキーが複数あれば、`get` と同じく最後の行だけ。
+    pub fn entries(&self) -> Vec<(&str, &str)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<(&str, &str)> = self
+            .lines
+            .iter()
+            .rev()
+            .filter_map(Line::split)
+            .filter(|(k, _)| seen.insert(*k))
+            .collect();
+        out.reverse();
+        out
+    }
+
     /// `version:` の行（DataVersion）。
     pub fn version(&self) -> Option<i64> {
         self.get("version")?.trim().parse().ok()
