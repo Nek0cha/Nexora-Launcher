@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::registry::Category;
 use crate::db::Db;
@@ -33,8 +34,9 @@ pub struct Proposal {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum SnapshotState {
     Applied,
     Skipped,
@@ -378,16 +380,18 @@ pub fn snapshot(db: &Db, instance_id: &str) -> Result<Option<Snapshot>, CoreErro
                 },
             )
             .optional()?;
-        row.map(|(applied_revision, baseline, proposals, state, updated_at)| {
-            Ok(Snapshot {
-                instance_id: instance_id.to_string(),
-                applied_revision,
-                baseline: from_json(&baseline)?,
-                proposals: from_json(&proposals)?,
-                state: SnapshotState::parse(&state)?,
-                updated_at,
-            })
-        })
+        row.map(
+            |(applied_revision, baseline, proposals, state, updated_at)| {
+                Ok(Snapshot {
+                    instance_id: instance_id.to_string(),
+                    applied_revision,
+                    baseline: from_json(&baseline)?,
+                    proposals: from_json(&proposals)?,
+                    state: SnapshotState::parse(&state)?,
+                    updated_at,
+                })
+            },
+        )
         .transpose()
     })
 }
