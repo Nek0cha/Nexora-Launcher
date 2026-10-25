@@ -22,6 +22,10 @@ use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
+use nexora_core::sync::JoinMode;
+use nexora_core::sync::proposals::Resolution;
+use nexora_core::sync::registry::Category;
+use nexora_core::sync::wire::{InstanceSync, JoinResult, PendingView, SyncProfileView};
 use nexora_core::task::TaskSnapshot;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -710,4 +714,164 @@ mod tests {
             assert_eq!(modrinth_project_url(bad), None, "{bad}");
         }
     }
+}
+
+/// 共通設定の一覧。
+#[tauri::command]
+pub async fn list_sync_profiles(state: State<'_, AppState>) -> CmdResult<Vec<SyncProfileView>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_sync_profiles()
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// インスタンスの options.txt から共通設定を作って参加させる。options.txt が無ければ `sync.no_options`。
+#[tauri::command]
+pub async fn create_sync_profile_from_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    name: String,
+) -> CmdResult<SyncProfileView> {
+    let services = state.services()?;
+    services
+        .launcher
+        .create_sync_profile_from_instance(&instance_id, &name)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn rename_sync_profile(
+    state: State<'_, AppState>,
+    profile_id: String,
+    name: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .rename_sync_profile(&profile_id, &name)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn delete_sync_profile(state: State<'_, AppState>, profile_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .delete_sync_profile(&profile_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn set_sync_categories(
+    state: State<'_, AppState>,
+    profile_id: String,
+    categories: Vec<Category>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .set_sync_categories(&profile_id, categories)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 参加させたときに食い違う項目の数。書き込まない。
+#[tauri::command]
+pub async fn preview_join_sync_profile(
+    state: State<'_, AppState>,
+    instance_id: String,
+    profile_id: String,
+) -> CmdResult<u32> {
+    let services = state.services()?;
+    services
+        .launcher
+        .preview_join_sync_profile(&instance_id, &profile_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn join_sync_profile(
+    state: State<'_, AppState>,
+    instance_id: String,
+    profile_id: String,
+    mode: JoinMode,
+) -> CmdResult<JoinResult> {
+    let services = state.services()?;
+    services
+        .launcher
+        .join_sync_profile(&instance_id, &profile_id, mode)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn leave_sync_profile(state: State<'_, AppState>, instance_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .leave_sync_profile(&instance_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn get_instance_sync(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<InstanceSync> {
+    let services = state.services()?;
+    services
+        .launcher
+        .get_instance_sync(&instance_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn set_sync_excluded(
+    state: State<'_, AppState>,
+    instance_id: String,
+    field_ids: Vec<String>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .set_sync_excluded(&instance_id, field_ids)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn pending_sync_proposals(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> CmdResult<PendingView> {
+    let services = state.services()?;
+    services
+        .launcher
+        .pending_sync_proposals(&profile_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn resolve_sync_proposal(
+    state: State<'_, AppState>,
+    instance_id: String,
+    field_id: String,
+    resolution: Resolution,
+    chosen_value: Option<String>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .resolve_sync_proposal(&instance_id, &field_id, resolution, chosen_value)
+        .await
+        .map_err(ErrorPayload::from)
 }

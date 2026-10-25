@@ -20,6 +20,7 @@ use nexora_core::instance::{
 use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::meta::loader::LoaderKind;
 use nexora_core::paths::AppPaths;
+use nexora_core::sync::JoinMode;
 use nexora_core::task::{TaskManager, TaskPhase, TaskSnapshot, TaskState};
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -1378,4 +1379,95 @@ async fn launch_applies_the_sync_profile_to_members_only() {
         std::fs::read_to_string(options_of(&outsider)).unwrap(),
         OPTIONS
     );
+}
+
+#[tokio::test]
+async fn sync_profile_create_join_and_leave() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let a = h.installed().await;
+    let b = h
+        .installed_with(&NewInstance::vanilla("y", "1.99-test"))
+        .await;
+    let dir = |id: &str| {
+        let inst = instance::get(h.launcher.db(), id).unwrap();
+        instance::game_dir(&AppPaths::from_root(h._temp.path()), &inst)
+    };
+
+    // options.txt が無いと作れない
+    let err = h
+        .launcher
+        .create_sync_profile_from_instance(&a, "shared")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "sync.no_options");
+
+    std::fs::write(
+        dir(&a).join("options.txt"),
+        "fov:0.5\nsoundCategory_master:0.3\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir(&b).join("options.txt"),
+        "fov:0.9\nsoundCategory_master:0.3\n",
+    )
+    .unwrap();
+    let profile = h
+        .launcher
+        .create_sync_profile_from_instance(&a, "shared")
+        .await
+        .unwrap();
+    assert_eq!(h.launcher.list_sync_profiles().await.unwrap().len(), 1);
+
+    assert_eq!(
+        h.launcher
+            .preview_join_sync_profile(&b, &profile.id)
+            .await
+            .unwrap(),
+        1
+    );
+    let joined = h
+        .launcher
+        .join_sync_profile(&b, &profile.id, JoinMode::KeepProfile)
+        .await
+        .unwrap();
+    assert_eq!(joined.differing, 1);
+
+    let sync = h.launcher.get_instance_sync(&b).await.unwrap();
+    assert_eq!(
+        sync.profile.as_ref().map(|p| p.id.as_str()),
+        Some(profile.id.as_str())
+    );
+    let mut names: Vec<_> = sync.members.iter().map(|m| m.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["x", "y"]);
+    assert_eq!(sync.pending_count, 0);
+
+    h.launcher
+        .set_sync_excluded(&b, vec!["fov".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        h.launcher.get_instance_sync(&b).await.unwrap().excluded,
+        ["fov"]
+    );
+
+    h.launcher.leave_sync_profile(&b).await.unwrap();
+    let left = h.launcher.get_instance_sync(&b).await.unwrap();
+    assert!(left.profile.is_none() && left.members.is_empty());
+    assert_eq!(
+        h.launcher
+            .get_instance_sync(&a)
+            .await
+            .unwrap()
+            .members
+            .len(),
+        1
+    );
+
+    // 存在しない ID は通常のエラー
+    assert!(h.launcher.delete_sync_profile("nope").await.is_err());
+    assert!(h.launcher.get_instance_sync("nope").await.is_err());
+    h.launcher.delete_sync_profile(&profile.id).await.unwrap();
+    assert!(h.launcher.list_sync_profiles().await.unwrap().is_empty());
 }

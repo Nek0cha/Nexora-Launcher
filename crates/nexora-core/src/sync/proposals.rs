@@ -3,6 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use serde::Deserialize;
+use ts_rs::TS;
+
 use super::registry::{Category, KeyCodec, field_for_key, key_codec};
 use super::store::{self, Membership, Proposal, SyncProfile};
 use super::{ALL_CATEGORIES, SyncCtx, find_profile, options_path, read_options, registered_values};
@@ -23,7 +26,9 @@ pub struct PendingProposals {
     pub conflicts: Vec<ConflictGroup>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub enum Resolution {
     ApplyToProfile,
     KeepForInstance,

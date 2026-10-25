@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 共通設定の項目をまとめる種別。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum Category {
     Keys,
     Mouse,

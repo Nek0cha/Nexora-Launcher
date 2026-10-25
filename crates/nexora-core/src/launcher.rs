@@ -50,8 +50,14 @@ use crate::meta::write_atomic;
 use crate::net::{Depth, Http};
 use crate::paths::AppPaths;
 use crate::settings;
-use crate::sync::SyncCtx;
 use crate::sync::apply::{ApplyOutcome, apply_before_launch};
+use crate::sync::proposals::{self, Resolution};
+use crate::sync::registry::Category;
+use crate::sync::store as sync_store;
+use crate::sync::wire::{
+    InstanceSync, JoinResult, LastApplied, PendingView, SyncMember, SyncProfileView,
+};
+use crate::sync::{self, JoinMode, SyncCtx};
 use crate::task::{TaskHandle, TaskManager, TaskPhase};
 
 pub const INSTALL_KIND: &str = "install";
@@ -100,6 +106,11 @@ fn already_running(instance_id: &str) -> CoreError {
     CoreError::AlreadyRunning {
         instance_id: instance_id.to_string(),
     }
+}
+
+/// 件数を u32 に収める。
+fn clamp_count(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// タスクの進捗（u32）に収める。
@@ -265,6 +276,193 @@ impl Launcher {
     ) -> Result<Instance, CoreError> {
         let _guard = self.locks.lock(id).await;
         instance::update_settings(&self.env.db, id, settings)
+    }
+
+    /// 共通設定の処理を `spawn_blocking` で動かす。
+    async fn sync_blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&SyncCtx) -> Result<T, CoreError> + Send + 'static,
+    ) -> Result<T, CoreError> {
+        let (db, paths) = (self.env.db.clone(), self.env.paths.clone());
+        blocking(move || {
+            f(&SyncCtx {
+                db: &db,
+                paths: &paths,
+            })
+        })
+        .await
+    }
+
+    pub async fn list_sync_profiles(&self) -> Result<Vec<SyncProfileView>, CoreError> {
+        self.sync_blocking(|ctx| {
+            Ok(sync_store::list_profiles(ctx.db)?
+                .into_iter()
+                .map(SyncProfileView::from)
+                .collect())
+        })
+        .await
+    }
+
+    /// インスタンスの options.txt から共通設定を作り、そのインスタンスを参加させる。
+    pub async fn create_sync_profile_from_instance(
+        &self,
+        instance_id: &str,
+        name: &str,
+    ) -> Result<SyncProfileView, CoreError> {
+        let (instance_id, name) = (instance_id.to_string(), name.to_string());
+        self.sync_blocking(move |ctx| {
+            sync::create_profile_from_instance(ctx, &instance_id, &name).map(SyncProfileView::from)
+        })
+        .await
+    }
+
+    pub async fn rename_sync_profile(&self, profile_id: &str, name: &str) -> Result<(), CoreError> {
+        let (profile_id, name) = (profile_id.to_string(), name.to_string());
+        self.sync_blocking(move |ctx| {
+            sync::find_profile(ctx, &profile_id)?;
+            sync_store::rename_profile(ctx.db, &profile_id, &name)
+        })
+        .await
+    }
+
+    /// 共通設定を消す。参加していたインスタンスの options.txt は触らない。
+    pub async fn delete_sync_profile(&self, profile_id: &str) -> Result<(), CoreError> {
+        let profile_id = profile_id.to_string();
+        self.sync_blocking(move |ctx| {
+            sync::find_profile(ctx, &profile_id)?;
+            sync_store::delete_profile(ctx.db, &profile_id)
+        })
+        .await
+    }
+
+    pub async fn set_sync_categories(
+        &self,
+        profile_id: &str,
+        categories: Vec<Category>,
+    ) -> Result<(), CoreError> {
+        let profile_id = profile_id.to_string();
+        self.sync_blocking(move |ctx| {
+            sync::find_profile(ctx, &profile_id)?;
+            sync::set_categories(ctx, &profile_id, &categories)
+        })
+        .await
+    }
+
+    /// 参加させたときの差の件数。書き込まない。
+    pub async fn preview_join_sync_profile(
+        &self,
+        instance_id: &str,
+        profile_id: &str,
+    ) -> Result<u32, CoreError> {
+        let (instance_id, profile_id) = (instance_id.to_string(), profile_id.to_string());
+        self.sync_blocking(move |ctx| {
+            sync::preview_join(ctx, &instance_id, &profile_id).map(clamp_count)
+        })
+        .await
+    }
+
+    /// 参加させる。起動中のインスタンスも参加できる（書き込みは起動前だけ）。
+    pub async fn join_sync_profile(
+        &self,
+        instance_id: &str,
+        profile_id: &str,
+        mode: JoinMode,
+    ) -> Result<JoinResult, CoreError> {
+        let (instance_id, profile_id) = (instance_id.to_string(), profile_id.to_string());
+        self.sync_blocking(move |ctx| {
+            let report = sync::join_instance(ctx, &instance_id, &profile_id, mode)?;
+            Ok(JoinResult {
+                differing: clamp_count(report.differing),
+            })
+        })
+        .await
+    }
+
+    pub async fn leave_sync_profile(&self, instance_id: &str) -> Result<(), CoreError> {
+        let instance_id = instance_id.to_string();
+        self.sync_blocking(move |ctx| {
+            instance::get(ctx.db, &instance_id)?;
+            sync::leave_instance(ctx, &instance_id)
+        })
+        .await
+    }
+
+    /// インスタンスの共通設定の状態。参加していなければ `profile` が `None`。
+    pub async fn get_instance_sync(&self, instance_id: &str) -> Result<InstanceSync, CoreError> {
+        let instance_id = instance_id.to_string();
+        self.sync_blocking(move |ctx| {
+            instance::get(ctx.db, &instance_id)?;
+            let Some(membership) = sync::membership(ctx, &instance_id)? else {
+                return Ok(InstanceSync {
+                    profile: None,
+                    members: Vec::new(),
+                    last_applied: None,
+                    pending_count: 0,
+                    excluded: Vec::new(),
+                });
+            };
+            let profile = sync::find_profile(ctx, &membership.profile_id)?;
+            let mut members = Vec::new();
+            for id in sync_store::members(ctx.db, &profile.id)? {
+                if let Ok(inst) = instance::get(ctx.db, &id) {
+                    members.push(SyncMember {
+                        id,
+                        name: inst.name,
+                    });
+                }
+            }
+            let last_applied = sync_store::snapshot(ctx.db, &instance_id)?.map(|s| LastApplied {
+                state: s.state,
+                at_ms: s.updated_at,
+            });
+            let pending = proposals::pending(ctx, &profile.id)?;
+            Ok(InstanceSync {
+                members,
+                last_applied,
+                pending_count: clamp_count(pending.single.len() + pending.conflicts.len()),
+                excluded: membership.excluded,
+                profile: Some(profile.into()),
+            })
+        })
+        .await
+    }
+
+    pub async fn set_sync_excluded(
+        &self,
+        instance_id: &str,
+        field_ids: Vec<String>,
+    ) -> Result<(), CoreError> {
+        let instance_id = instance_id.to_string();
+        self.sync_blocking(move |ctx| {
+            instance::get(ctx.db, &instance_id)?;
+            if sync::membership(ctx, &instance_id)?.is_none() {
+                return Err(CoreError::Unexpected {
+                    message: format!("instance {instance_id} is not in a sync profile"),
+                });
+            }
+            sync::set_excluded(ctx, &instance_id, &field_ids)
+        })
+        .await
+    }
+
+    pub async fn pending_sync_proposals(&self, profile_id: &str) -> Result<PendingView, CoreError> {
+        let profile_id = profile_id.to_string();
+        self.sync_blocking(move |ctx| proposals::pending(ctx, &profile_id).map(PendingView::from))
+            .await
+    }
+
+    pub async fn resolve_sync_proposal(
+        &self,
+        instance_id: &str,
+        field_id: &str,
+        resolution: Resolution,
+        chosen_value: Option<String>,
+    ) -> Result<(), CoreError> {
+        let (instance_id, field_id) = (instance_id.to_string(), field_id.to_string());
+        self.sync_blocking(move |ctx| {
+            proposals::resolve(ctx, &instance_id, &field_id, resolution, chosen_value)
+        })
+        .await
     }
 
     /// 中身の一覧。ディスクを走査して DB を合わせてから返す。

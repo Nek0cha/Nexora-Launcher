@@ -6,9 +6,13 @@ pub mod proposals;
 pub mod registry;
 pub mod store;
 pub mod version;
+pub mod wire;
 
 use std::collections::BTreeMap;
 use std::path::Path;
+
+use serde::Deserialize;
+use ts_rs::TS;
 
 use crate::db::Db;
 use crate::error::CoreError;
@@ -26,7 +30,9 @@ pub struct SyncCtx<'a> {
 }
 
 /// 参加のときに、インスタンスの値をどちらに合わせるか。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub enum JoinMode {
     /// 共通設定に合わせる。値は書き換えず、次回の起動前に適用する。
     KeepProfile,
@@ -89,7 +95,7 @@ fn registered_values(file: &OptionsFile, categories: &[Category]) -> BTreeMap<St
     out
 }
 
-fn find_profile(ctx: &SyncCtx, profile_id: &str) -> Result<SyncProfile, CoreError> {
+pub(crate) fn find_profile(ctx: &SyncCtx, profile_id: &str) -> Result<SyncProfile, CoreError> {
     store::list_profiles(ctx.db)?
         .into_iter()
         .find(|p| p.id == profile_id)

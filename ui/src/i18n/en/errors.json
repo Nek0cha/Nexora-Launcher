@@ -86,6 +86,9 @@
   "skin": {
     "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"
   },
+  "sync": {
+    "no_options": "This instance has no options.txt yet. Launch the game once so it is created, then try again."
+  },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"
   }
