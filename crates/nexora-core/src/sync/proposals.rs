@@ -171,6 +171,12 @@ pub fn resolve(
 
     match resolution {
         Resolution::ApplyToProfile => {
+            let profile = find_profile(ctx, &membership.profile_id)?;
+            let current = store::values(ctx.db, &membership.profile_id)?;
+            // もう意味の無い提案は、共通設定を変えずに消すだけ
+            if !is_live(&profile, &current, &membership, proposal) {
+                return clear_proposal(ctx, instance_id, field_id, None);
+            }
             let all = pending(ctx, &membership.profile_id)?;
             let value = match all.conflicts.iter().find(|c| c.field_id == field_id) {
                 Some(group) => {
@@ -199,12 +205,39 @@ pub fn resolve(
         }
         Resolution::Ignore => {}
     }
+    // 判断した値を基準値にして、同じ値が次回また提案されないようにする
+    let accepted = proposal.value.clone();
+    clear_proposal(ctx, instance_id, field_id, Some(accepted))
+}
+
+/// そのインスタンスの項目の提案を消す。`baseline_value` があれば基準値もその値にする。
+/// 適用済みの revision、状態、他の提案は変えない。
+fn clear_proposal(
+    ctx: &SyncCtx,
+    instance_id: &str,
+    field_id: &str,
+    baseline_value: Option<String>,
+) -> Result<(), CoreError> {
+    let Some(snapshot) = store::snapshot(ctx.db, instance_id)? else {
+        return Ok(());
+    };
     let rest: Vec<Proposal> = snapshot
         .proposals
         .iter()
         .filter(|p| p.field_id != field_id)
         .cloned()
         .collect();
+    if let Some(value) = baseline_value {
+        let mut baseline = snapshot.baseline.clone();
+        baseline.insert(field_id.to_string(), value);
+        store::save_snapshot(
+            ctx.db,
+            instance_id,
+            snapshot.applied_revision,
+            &baseline,
+            snapshot.state,
+        )?;
+    }
     store::set_proposals(ctx.db, instance_id, &rest)
 }
 
@@ -571,6 +604,55 @@ mod tests {
                 .overrides
                 .is_empty()
         );
+    }
+
+    fn set_fov(env: &Env, inst: &Instance, fov: &str) {
+        std::fs::write(
+            env.options(inst),
+            format!(
+                "version:4325
+fov:{fov}
+"
+            ),
+        )
+        .unwrap();
+        collect_proposals(&env.ctx(), &inst.id);
+    }
+
+    #[test]
+    fn keep_for_instance_is_sticky() {
+        let env = Env::new();
+        let (_p, a, _b) = two_members(&env, "0.9", "0.8");
+        resolve(&env.ctx(), &a.id, "fov", Resolution::KeepForInstance, None).unwrap();
+        collect_proposals(&env.ctx(), &a.id);
+        assert!(env.proposals(&a).is_empty());
+    }
+
+    #[test]
+    fn ignore_is_sticky_but_a_new_value_proposes_again() {
+        let env = Env::new();
+        let (p, a, _b) = two_members(&env, "0.9", "0.8");
+        let snap = store::snapshot(&env.db, &a.id).unwrap().unwrap();
+        resolve(&env.ctx(), &a.id, "fov", Resolution::Ignore, None).unwrap();
+        collect_proposals(&env.ctx(), &a.id);
+        assert!(env.proposals(&a).is_empty());
+        let after = store::snapshot(&env.db, &a.id).unwrap().unwrap();
+        assert_eq!(after.applied_revision, snap.applied_revision);
+        assert_eq!(after.state, snap.state);
+        set_fov(&env, &a, "0.2");
+        assert_eq!(env.proposals(&a), vec![pair("fov", "0.2")]);
+        let _ = p;
+    }
+
+    #[test]
+    fn apply_to_profile_on_a_stale_proposal_changes_nothing() {
+        let env = Env::new();
+        let (p, a, _b) = two_members(&env, "0.9", "0.8");
+        store::set_values(&env.db, &p.id, &[("fov".into(), "0.9".into())]).unwrap();
+        let before = env.revision(&p);
+        resolve(&env.ctx(), &a.id, "fov", Resolution::ApplyToProfile, None).unwrap();
+        assert_eq!(env.revision(&p), before);
+        assert!(env.proposals(&a).is_empty());
     }
 
     #[test]
