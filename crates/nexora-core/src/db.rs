@@ -17,6 +17,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("../migrations/0003_accounts.sql")),
         M::up(include_str!("../migrations/0004_instance_contents.sql")),
         M::up(include_str!("../migrations/0005_operations_backups.sql")),
+        M::up(include_str!("../migrations/0006_sync.sql")),
     ])
 }
 
@@ -94,6 +95,10 @@ mod tests {
             "java_runtimes",
             "operations",
             "running_sessions",
+            "sync_profile_instances",
+            "sync_profiles",
+            "sync_snapshots",
+            "sync_values",
         ] {
             let exists = db.with_conn(|conn| Ok(table_exists(conn, table))).unwrap();
             assert!(exists, "{table} was not created");
@@ -140,6 +145,7 @@ mod tests {
             M::up(include_str!("../migrations/0003_accounts.sql")),
             M::up(include_str!("../migrations/0004_instance_contents.sql")),
             M::up(include_str!("../migrations/0005_operations_backups.sql")),
+            M::up(include_str!("../migrations/0006_sync.sql")),
             M::up("CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;"),
         ]);
         let result = Db::open_with(&path, &broken);
@@ -153,7 +159,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
     }
 
     #[test]
