@@ -5,6 +5,10 @@ import type { SyncProfile } from "./SyncProfile";
 
 export type InstanceSync = { profile: SyncProfile | null, members: Array<SyncMember>, lastApplied: LastApplied | null, 
 /**
- * 参加中の共通設定で、未解決の提案の件数（競合は 1 件と数える）。
+ * このインスタンスに関わる未解決の提案の件数（競合は 1 項目を 1 件と数える）。
  */
-pendingCount: number, excluded: Array<string>, };
+pendingCount: number, 
+/**
+ * 参加中の共通設定全体の、未解決の提案の件数（競合は 1 件と数える）。
+ */
+profilePendingCount: number, excluded: Array<string>, };

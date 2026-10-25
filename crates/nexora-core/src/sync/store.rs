@@ -116,6 +116,37 @@ pub fn create_profile(
     })
 }
 
+/// 共通設定を作り、値を入れ、インスタンスを参加させるまでを 1 つのトランザクションで行う。
+/// 途中で失敗しても、空の共通設定は残らない。revision は値を入れた分の 1 になる。
+pub fn create_profile_joined(
+    db: &Db,
+    name: &str,
+    categories: &[Category],
+    values: &[(String, String)],
+    instance_id: &str,
+) -> Result<SyncProfile, CoreError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let json = to_json(categories)?;
+    db.with_conn(|conn| {
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO sync_profiles (id, name, revision, categories, created_at)
+             VALUES (?1, ?2, 0, ?3, ?4)",
+            params![id, name, json, now_millis()],
+        )?;
+        set_values_tx(&tx, &id, values)?;
+        join_tx(&tx, instance_id, &id)?;
+        tx.commit()?;
+        Ok(())
+    })?;
+    Ok(SyncProfile {
+        id,
+        name: name.to_string(),
+        revision: 1,
+        categories: categories.to_vec(),
+    })
+}
+
 pub fn list_profiles(db: &Db) -> Result<Vec<SyncProfile>, CoreError> {
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(
@@ -165,10 +196,17 @@ pub fn set_categories(db: &Db, profile_id: &str, categories: &[Category]) -> Res
     })
 }
 
-/// 共通設定を消す。値と参加の行は外部キーで一緒に消える。
+/// 共通設定を消す。値と参加の行は外部キーで一緒に消え、参加者の記録（snapshot）も同時に消す。
 pub fn delete_profile(db: &Db, profile_id: &str) -> Result<(), CoreError> {
     db.with_conn(|conn| {
-        conn.execute("DELETE FROM sync_profiles WHERE id = ?1", [profile_id])?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM sync_snapshots WHERE instance_id IN
+                 (SELECT instance_id FROM sync_profile_instances WHERE profile_id = ?1)",
+            [profile_id],
+        )?;
+        tx.execute("DELETE FROM sync_profiles WHERE id = ?1", [profile_id])?;
+        tx.commit()?;
         Ok(())
     })
 }
@@ -177,23 +215,32 @@ pub fn delete_profile(db: &Db, profile_id: &str) -> Result<(), CoreError> {
 pub fn set_values(db: &Db, profile_id: &str, values: &[(String, String)]) -> Result<(), CoreError> {
     db.with_conn(|conn| {
         let tx = conn.transaction()?;
-        let now = now_millis();
-        for (field_id, value) in values {
-            tx.execute(
-                "INSERT INTO sync_values (profile_id, field_id, value, updated_at)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(profile_id, field_id)
-                 DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                params![profile_id, field_id, value, now],
-            )?;
-        }
-        tx.execute(
-            "UPDATE sync_profiles SET revision = revision + 1 WHERE id = ?1",
-            [profile_id],
-        )?;
+        set_values_tx(&tx, profile_id, values)?;
         tx.commit()?;
         Ok(())
     })
+}
+
+fn set_values_tx(
+    tx: &rusqlite::Transaction,
+    profile_id: &str,
+    values: &[(String, String)],
+) -> Result<(), CoreError> {
+    let now = now_millis();
+    for (field_id, value) in values {
+        tx.execute(
+            "INSERT INTO sync_values (profile_id, field_id, value, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(profile_id, field_id)
+             DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            params![profile_id, field_id, value, now],
+        )?;
+    }
+    tx.execute(
+        "UPDATE sync_profiles SET revision = revision + 1 WHERE id = ?1",
+        [profile_id],
+    )?;
+    Ok(())
 }
 
 pub fn values(db: &Db, profile_id: &str) -> Result<BTreeMap<String, String>, CoreError> {
@@ -212,37 +259,53 @@ pub fn values(db: &Db, profile_id: &str) -> Result<BTreeMap<String, String>, Cor
 pub fn join(db: &Db, instance_id: &str, profile_id: &str) -> Result<(), CoreError> {
     db.with_conn(|conn| {
         let tx = conn.transaction()?;
-        let current: Option<String> = tx
-            .query_row(
-                "SELECT profile_id FROM sync_profile_instances WHERE instance_id = ?1",
-                [instance_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if current.as_deref() == Some(profile_id) {
-            return Ok(());
-        }
-        tx.execute(
-            "INSERT INTO sync_profile_instances (instance_id, profile_id) VALUES (?1, ?2)
-             ON CONFLICT(instance_id) DO UPDATE SET
-                 profile_id = excluded.profile_id, excluded_fields = '[]', overrides = '{}'",
-            params![instance_id, profile_id],
-        )?;
-        tx.execute(
-            "DELETE FROM sync_snapshots WHERE instance_id = ?1",
-            [instance_id],
-        )?;
+        join_tx(&tx, instance_id, profile_id)?;
         tx.commit()?;
         Ok(())
     })
 }
 
+fn join_tx(
+    tx: &rusqlite::Transaction,
+    instance_id: &str,
+    profile_id: &str,
+) -> Result<(), CoreError> {
+    let current: Option<String> = tx
+        .query_row(
+            "SELECT profile_id FROM sync_profile_instances WHERE instance_id = ?1",
+            [instance_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if current.as_deref() == Some(profile_id) {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT INTO sync_profile_instances (instance_id, profile_id) VALUES (?1, ?2)
+         ON CONFLICT(instance_id) DO UPDATE SET
+             profile_id = excluded.profile_id, excluded_fields = '[]', overrides = '{}'",
+        params![instance_id, profile_id],
+    )?;
+    tx.execute(
+        "DELETE FROM sync_snapshots WHERE instance_id = ?1",
+        [instance_id],
+    )?;
+    Ok(())
+}
+
+/// 共通設定から抜ける。そのインスタンスの記録（snapshot）も同時に消す。
 pub fn leave(db: &Db, instance_id: &str) -> Result<(), CoreError> {
     db.with_conn(|conn| {
-        conn.execute(
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM sync_snapshots WHERE instance_id = ?1",
+            [instance_id],
+        )?;
+        tx.execute(
             "DELETE FROM sync_profile_instances WHERE instance_id = ?1",
             [instance_id],
         )?;
+        tx.commit()?;
         Ok(())
     })
 }
@@ -292,10 +355,13 @@ pub fn members(db: &Db, profile_id: &str) -> Result<Vec<String>, CoreError> {
 pub fn set_excluded(db: &Db, instance_id: &str, excluded: &[String]) -> Result<(), CoreError> {
     let json = to_json(excluded)?;
     db.with_conn(|conn| {
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE sync_profile_instances SET excluded_fields = ?2 WHERE instance_id = ?1",
             params![instance_id, json],
         )?;
+        if changed == 0 {
+            return Err(CoreError::SyncNotMember);
+        }
         Ok(())
     })
 }
@@ -307,25 +373,33 @@ pub fn set_override(
     field_id: &str,
     value: Option<&str>,
 ) -> Result<(), CoreError> {
-    let Some(mut current) = membership(db, instance_id)? else {
-        return Ok(());
-    };
-    match value {
-        Some(value) => {
-            current
-                .overrides
-                .insert(field_id.to_string(), value.to_string());
-        }
-        None => {
-            current.overrides.remove(field_id);
-        }
-    }
-    let json = to_json(&current.overrides)?;
     db.with_conn(|conn| {
-        conn.execute(
+        // 読み出しと書き込みを 1 つのトランザクションにして、同時の更新を失わない
+        let tx = conn.transaction()?;
+        let text: Option<String> = tx
+            .query_row(
+                "SELECT overrides FROM sync_profile_instances WHERE instance_id = ?1",
+                [instance_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(text) = text else {
+            return Err(CoreError::SyncNotMember);
+        };
+        let mut overrides: BTreeMap<String, String> = from_json(&text)?;
+        match value {
+            Some(value) => {
+                overrides.insert(field_id.to_string(), value.to_string());
+            }
+            None => {
+                overrides.remove(field_id);
+            }
+        }
+        tx.execute(
             "UPDATE sync_profile_instances SET overrides = ?2 WHERE instance_id = ?1",
-            params![instance_id, json],
+            params![instance_id, to_json(&overrides)?],
         )?;
+        tx.commit()?;
         Ok(())
     })
 }
@@ -363,36 +437,136 @@ pub fn save_snapshot(
 }
 
 pub fn snapshot(db: &Db, instance_id: &str) -> Result<Option<Snapshot>, CoreError> {
-    db.with_conn(|conn| {
-        let row = conn
-            .query_row(
-                "SELECT applied_revision, baseline, proposals, state, updated_at
-                 FROM sync_snapshots WHERE instance_id = ?1",
-                [instance_id],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Option<i64>>(4)?,
-                    ))
-                },
-            )
-            .optional()?;
-        row.map(
-            |(applied_revision, baseline, proposals, state, updated_at)| {
-                Ok(Snapshot {
-                    instance_id: instance_id.to_string(),
-                    applied_revision,
-                    baseline: from_json(&baseline)?,
-                    proposals: from_json(&proposals)?,
-                    state: SnapshotState::parse(&state)?,
-                    updated_at,
-                })
+    db.with_conn(|conn| read_snapshot(conn, instance_id))
+}
+
+fn read_snapshot(
+    conn: &rusqlite::Connection,
+    instance_id: &str,
+) -> Result<Option<Snapshot>, CoreError> {
+    let row = conn
+        .query_row(
+            "SELECT applied_revision, baseline, proposals, state, updated_at
+             FROM sync_snapshots WHERE instance_id = ?1",
+            [instance_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                ))
             },
         )
-        .transpose()
+        .optional()?;
+    row.map(
+        |(applied_revision, baseline, proposals, state, updated_at)| {
+            Ok(Snapshot {
+                instance_id: instance_id.to_string(),
+                applied_revision,
+                baseline: from_json(&baseline)?,
+                proposals: from_json(&proposals)?,
+                state: SnapshotState::parse(&state)?,
+                updated_at,
+            })
+        },
+    )
+    .transpose()
+}
+
+/// `update_snapshot` が書き込む内容。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotEdit {
+    pub applied_revision: i64,
+    pub baseline: BTreeMap<String, String>,
+    pub proposals: Vec<Proposal>,
+    pub state: SnapshotState,
+    /// `true` なら「最後に記録した時刻」を今にする。`false` なら既存の時刻を変えない
+    /// （記録がまだ無いときは今にする）。提案の解決や収集は `false`。
+    pub touch: bool,
+}
+
+impl SnapshotEdit {
+    /// 既存の記録と同じ内容。変えたい部分だけ書き換えて使う。
+    pub fn of(snapshot: &Snapshot, touch: bool) -> Self {
+        SnapshotEdit {
+            applied_revision: snapshot.applied_revision,
+            baseline: snapshot.baseline.clone(),
+            proposals: snapshot.proposals.clone(),
+            state: snapshot.state,
+            touch,
+        }
+    }
+}
+
+/// 記録の読み出しと書き込みを、1 つのトランザクション（1 つの接続）で行う。
+/// `f` は現在の記録（無ければ `None`）を受け取り、書く内容を返す。`None` を返すと何も書かない。
+pub fn update_snapshot(
+    db: &Db,
+    instance_id: &str,
+    f: impl FnOnce(Option<Snapshot>) -> Result<Option<SnapshotEdit>, CoreError>,
+) -> Result<(), CoreError> {
+    db.with_conn(|conn| {
+        let tx = conn.transaction()?;
+        let current = read_snapshot(&tx, instance_id)?;
+        let Some(edit) = f(current)? else {
+            return Ok(());
+        };
+        tx.execute(
+            "INSERT INTO sync_snapshots
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(instance_id) DO UPDATE SET
+                 applied_revision = excluded.applied_revision,
+                 baseline = excluded.baseline,
+                 proposals = excluded.proposals,
+                 state = excluded.state,
+                 updated_at = CASE WHEN ?7 THEN excluded.updated_at
+                                   ELSE sync_snapshots.updated_at END",
+            params![
+                instance_id,
+                edit.applied_revision,
+                to_json(&edit.baseline)?,
+                to_json(&edit.proposals)?,
+                edit.state.as_str(),
+                now_millis(),
+                edit.touch,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    })
+}
+
+/// 適用の結果を記録する。未解決の提案には触れない（1 文の UPSERT なので原子的）。
+pub fn save_snapshot_keeping_proposals(
+    db: &Db,
+    instance_id: &str,
+    applied_revision: i64,
+    baseline: &BTreeMap<String, String>,
+    state: SnapshotState,
+) -> Result<(), CoreError> {
+    let baseline = to_json(baseline)?;
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO sync_snapshots
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5)
+             ON CONFLICT(instance_id) DO UPDATE SET
+                 applied_revision = excluded.applied_revision,
+                 baseline = excluded.baseline,
+                 state = excluded.state,
+                 updated_at = excluded.updated_at",
+            params![
+                instance_id,
+                applied_revision,
+                baseline,
+                state.as_str(),
+                now_millis()
+            ],
+        )?;
+        Ok(())
     })
 }
 
@@ -598,5 +772,100 @@ mod tests {
         assert_eq!(m.profile_id, b.id);
         assert!(m.excluded.is_empty() && m.overrides.is_empty());
         assert!(snapshot(&db, "i1").unwrap().is_none());
+    }
+
+    #[test]
+    fn leave_and_delete_profile_drop_snapshots() {
+        let db = db_with_instances(&["i1", "i2", "i3"]);
+        let p = create_profile(&db, "A", &[]).unwrap();
+        let q = create_profile(&db, "B", &[]).unwrap();
+        for (id, profile) in [("i1", &p), ("i2", &p), ("i3", &q)] {
+            join(&db, id, &profile.id).unwrap();
+            save_snapshot(&db, id, 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        }
+        leave(&db, "i1").unwrap();
+        assert!(snapshot(&db, "i1").unwrap().is_none());
+        assert_eq!(count(&db, "sync_snapshots"), 2);
+        delete_profile(&db, &p.id).unwrap();
+        assert!(snapshot(&db, "i2").unwrap().is_none());
+        assert!(snapshot(&db, "i3").unwrap().is_some());
+    }
+
+    #[test]
+    fn overrides_and_exclusions_need_a_membership() {
+        let db = db_with_instances(&["i1"]);
+        assert_eq!(
+            set_override(&db, "i1", "fov", Some("1"))
+                .unwrap_err()
+                .code(),
+            "sync.not_member"
+        );
+        assert_eq!(
+            set_excluded(&db, "i1", &[]).unwrap_err().code(),
+            "sync.not_member"
+        );
+    }
+
+    #[test]
+    fn update_snapshot_keeps_the_time_unless_touched() {
+        let db = db_with_instances(&["i1"]);
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        db.with_conn(|conn| {
+            conn.execute("UPDATE sync_snapshots SET updated_at = 5", [])?;
+            Ok(())
+        })
+        .unwrap();
+        update_snapshot(&db, "i1", |s| {
+            let mut edit = SnapshotEdit::of(&s.unwrap(), false);
+            edit.baseline.insert("fov".into(), "1".into());
+            Ok(Some(edit))
+        })
+        .unwrap();
+        let s = snapshot(&db, "i1").unwrap().unwrap();
+        assert_eq!((s.updated_at, s.baseline.len()), (Some(5), 1));
+        update_snapshot(&db, "i1", |s| Ok(Some(SnapshotEdit::of(&s.unwrap(), true)))).unwrap();
+        assert_ne!(snapshot(&db, "i1").unwrap().unwrap().updated_at, Some(5));
+        // None を返せば何も書かない。記録が無いインスタンスへも作らない
+        update_snapshot(&db, "i1x", |s| {
+            assert!(s.is_none());
+            Ok(None)
+        })
+        .unwrap();
+        assert_eq!(count(&db, "sync_snapshots"), 1);
+    }
+
+    #[test]
+    fn keeping_proposals_save_leaves_them_alone() {
+        let db = db_with_instances(&["i1"]);
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        let proposals = vec![Proposal {
+            field_id: "gamma".into(),
+            value: "2".into(),
+        }];
+        set_proposals(&db, "i1", &proposals).unwrap();
+        save_snapshot_keeping_proposals(&db, "i1", 2, &BTreeMap::new(), SnapshotState::Failed)
+            .unwrap();
+        let s = snapshot(&db, "i1").unwrap().unwrap();
+        assert_eq!((s.applied_revision, s.state), (2, SnapshotState::Failed));
+        assert_eq!(s.proposals, proposals);
+    }
+
+    #[test]
+    fn create_profile_joined_leaves_nothing_when_it_fails() {
+        let db = db_with_instances(&["i1"]);
+        // 存在しないインスタンスの参加は外部キーで失敗する。共通設定も残らない
+        let err = create_profile_joined(
+            &db,
+            "A",
+            &[Category::Keys],
+            &[("fov".to_string(), "1".to_string())],
+            "ghost",
+        );
+        assert!(err.is_err());
+        assert_eq!(count(&db, "sync_profiles"), 0);
+        assert_eq!(count(&db, "sync_values"), 0);
+        let ok = create_profile_joined(&db, "A", &[], &[], "i1").unwrap();
+        assert_eq!(ok.revision, 1);
+        assert_eq!(membership(&db, "i1").unwrap().unwrap().profile_id, ok.id);
     }
 }

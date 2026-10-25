@@ -52,8 +52,10 @@ pub struct InstanceSync {
     pub profile: Option<SyncProfileView>,
     pub members: Vec<SyncMember>,
     pub last_applied: Option<LastApplied>,
-    /// 参加中の共通設定で、未解決の提案の件数（競合は 1 件と数える）。
+    /// このインスタンスに関わる未解決の提案の件数（競合は 1 項目を 1 件と数える）。
     pub pending_count: u32,
+    /// 参加中の共通設定全体の、未解決の提案の件数（競合は 1 件と数える）。
+    pub profile_pending_count: u32,
     pub excluded: Vec<String>,
 }
 

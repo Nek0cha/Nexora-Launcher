@@ -54,56 +54,66 @@ fn collect(ctx: &SyncCtx, instance_id: &str) -> Result<(), CoreError> {
     if store::membership(ctx.db, instance_id)?.is_none() {
         return Ok(());
     }
-    let Some(snapshot) = store::snapshot(ctx.db, instance_id)? else {
-        return Ok(());
-    };
     // 読めない・無いときは何もしない（既存の提案を残す）
     let Some(file) = read_options(&options_path(ctx, instance_id)?)? else {
         return Ok(());
     };
     let current = registered_values(&file, &ALL_CATEGORIES);
 
-    let mut merged: BTreeMap<String, String> = BTreeMap::new();
-    // 既存の提案は、現在値が基準値に戻っている項目だけ捨てる
-    for p in &snapshot.proposals {
-        let obsolete = match (current.get(&p.field_id), snapshot.baseline.get(&p.field_id)) {
-            (Some(now), Some(base)) => now == base,
-            _ => false,
+    // 読み出しから書き込みまでを 1 つのトランザクションにして、同時の解決を失わない
+    store::update_snapshot(ctx.db, instance_id, |snapshot| {
+        let Some(snapshot) = snapshot else {
+            return Ok(None);
         };
-        if !obsolete {
-            merged.insert(p.field_id.clone(), p.value.clone());
-        }
-    }
-    // 基準値にある項目だけを比べる。今回計算した値が古い提案に勝つ
-    for (field_id, base) in &snapshot.baseline {
-        let Some(now) = current.get(field_id) else {
-            continue;
-        };
-        if now == base {
-            continue;
-        }
-        let Some(field) = field_for_key(field_id) else {
-            continue;
-        };
-        if field.category == Category::Keys {
-            let codec = key_codec(now);
-            if codec == KeyCodec::Unknown || codec != key_codec(base) {
-                continue;
+        let mut merged: BTreeMap<String, String> = BTreeMap::new();
+        // 既存の提案は残す。適用が値を共通設定に戻した後でも、ユーザーが解決するまで消えない
+        // （意味の無くなったものは `pending` が隠し、ユーザーは無視できる）
+        for p in &snapshot.proposals {
+            if is_syncable_proposal(&p.field_id, &p.value) {
+                merged.insert(p.field_id.clone(), p.value.clone());
             }
         }
-        merged.insert(field_id.clone(), now.clone());
-    }
-    let proposals: Vec<Proposal> = merged
-        .into_iter()
-        .map(|(field_id, value)| Proposal { field_id, value })
-        .collect();
-    if proposals != snapshot.proposals {
-        store::set_proposals(ctx.db, instance_id, &proposals)?;
-    }
-    Ok(())
+        // 基準値にある項目だけを比べる。今回計算した値が古い提案に勝つ
+        for (field_id, base) in &snapshot.baseline {
+            let Some(now) = current.get(field_id) else {
+                continue;
+            };
+            if now == base || !is_syncable_proposal(field_id, now) {
+                continue;
+            }
+            // キー割り当ては、基準値も `key.keyboard.*` の書式のときだけ比べる
+            if field_for_key(field_id).is_some_and(|f| f.category == Category::Keys)
+                && key_codec(base) != KeyCodec::Keyboard
+            {
+                continue;
+            }
+            merged.insert(field_id.clone(), now.clone());
+        }
+        let proposals: Vec<Proposal> = merged
+            .into_iter()
+            .map(|(field_id, value)| Proposal { field_id, value })
+            .collect();
+        if proposals == snapshot.proposals {
+            return Ok(None);
+        }
+        // 提案の収集は「最後に適用した時刻」を動かさない
+        Ok(Some(store::SnapshotEdit {
+            proposals,
+            ..store::SnapshotEdit::of(&snapshot, false)
+        }))
+    })
 }
 
-/// 提案が今も意味を持つか。共通設定の値と同じ、除外された項目、無効なカテゴリは意味が無い。
+/// 提案にできる項目と値か。登録表に無い項目と、`key.keyboard.*` 以外のキー割り当ては対象外。
+fn is_syncable_proposal(field_id: &str, value: &str) -> bool {
+    let Some(field) = field_for_key(field_id) else {
+        return false;
+    };
+    field.category != Category::Keys || key_codec(value) == KeyCodec::Keyboard
+}
+
+/// 提案が今も意味を持つか。インスタンスの実効値（上書きがあれば上書き、無ければ共通設定の値）と
+/// 同じ、除外された項目、無効なカテゴリは意味が無い。
 fn is_live(
     profile: &SyncProfile,
     values: &BTreeMap<String, String>,
@@ -113,9 +123,13 @@ fn is_live(
     let Some(field) = field_for_key(&p.field_id) else {
         return false;
     };
+    let effective = membership
+        .overrides
+        .get(&p.field_id)
+        .or_else(|| values.get(&p.field_id));
     profile.categories.contains(&field.category)
         && !membership.excluded.contains(&p.field_id)
-        && values.get(&p.field_id) != Some(&p.value)
+        && effective != Some(&p.value)
 }
 
 /// 共通設定に参加している全インスタンスの、未解決の提案。
@@ -152,8 +166,20 @@ pub fn pending(ctx: &SyncCtx, profile_id: &str) -> Result<PendingProposals, Core
     Ok(out)
 }
 
-fn unexpected(message: String) -> CoreError {
-    CoreError::Unexpected { message }
+impl PendingProposals {
+    /// 指定のインスタンスに関わる件数。そのインスタンスの単独の提案と、
+    /// そのインスタンスが加わっている競合（1 項目を 1 件）を数える。
+    pub fn count_for_instance(&self, instance_id: &str) -> usize {
+        self.single
+            .iter()
+            .filter(|(id, _)| id == instance_id)
+            .count()
+            + self
+                .conflicts
+                .iter()
+                .filter(|c| c.entries.iter().any(|(id, _)| id == instance_id))
+                .count()
+    }
 }
 
 /// 提案 1 件へのユーザーの判断を反映する。どの場合も、そのインスタンスのその項目の提案は消す。
@@ -164,15 +190,13 @@ pub fn resolve(
     resolution: Resolution,
     chosen_value: Option<String>,
 ) -> Result<(), CoreError> {
-    let membership = store::membership(ctx.db, instance_id)?
-        .ok_or_else(|| unexpected(format!("instance {instance_id} is not in a sync profile")))?;
-    let snapshot = store::snapshot(ctx.db, instance_id)?
-        .ok_or_else(|| unexpected(format!("instance {instance_id} has no sync record")))?;
+    let membership = store::membership(ctx.db, instance_id)?.ok_or(CoreError::SyncNotMember)?;
+    let snapshot = store::snapshot(ctx.db, instance_id)?.ok_or(CoreError::SyncNoProposal)?;
     let proposal = snapshot
         .proposals
         .iter()
         .find(|p| p.field_id == field_id)
-        .ok_or_else(|| unexpected(format!("no proposal for {field_id} on {instance_id}")))?;
+        .ok_or(CoreError::SyncNoProposal)?;
 
     match resolution {
         Resolution::ApplyToProfile => {
@@ -185,15 +209,9 @@ pub fn resolve(
             let all = pending(ctx, &membership.profile_id)?;
             let value = match all.conflicts.iter().find(|c| c.field_id == field_id) {
                 Some(group) => {
-                    let chosen = chosen_value.ok_or_else(|| {
-                        unexpected(format!(
-                            "{field_id} is in conflict and needs a chosen value"
-                        ))
-                    })?;
+                    let chosen = chosen_value.ok_or(CoreError::SyncNeedsChosenValue)?;
                     if !group.entries.iter().any(|(_, v)| *v == chosen) {
-                        return Err(unexpected(format!(
-                            "the chosen value is not one of the proposals for {field_id}"
-                        )));
+                        return Err(CoreError::SyncNeedsChosenValue);
                     }
                     chosen
                 }
@@ -204,6 +222,8 @@ pub fn resolve(
                 &membership.profile_id,
                 &[(field_id.to_string(), value)],
             )?;
+            // 共通設定に反映したので、このインスタンスの上書きは外す（次の適用で共通の値になる）
+            store::set_override(ctx.db, instance_id, field_id, None)?;
         }
         Resolution::KeepForInstance => {
             store::set_override(ctx.db, instance_id, field_id, Some(&proposal.value))?;
@@ -216,34 +236,25 @@ pub fn resolve(
 }
 
 /// そのインスタンスの項目の提案を消す。`baseline_value` があれば基準値もその値にする。
-/// 適用済みの revision、状態、他の提案は変えない。
+/// 読み出しと書き込みは 1 つのトランザクション。適用済みの revision、状態、
+/// 「最後に適用した時刻」、他の提案は変えない。
 fn clear_proposal(
     ctx: &SyncCtx,
     instance_id: &str,
     field_id: &str,
     baseline_value: Option<String>,
 ) -> Result<(), CoreError> {
-    let Some(snapshot) = store::snapshot(ctx.db, instance_id)? else {
-        return Ok(());
-    };
-    let rest: Vec<Proposal> = snapshot
-        .proposals
-        .iter()
-        .filter(|p| p.field_id != field_id)
-        .cloned()
-        .collect();
-    if let Some(value) = baseline_value {
-        let mut baseline = snapshot.baseline.clone();
-        baseline.insert(field_id.to_string(), value);
-        store::save_snapshot(
-            ctx.db,
-            instance_id,
-            snapshot.applied_revision,
-            &baseline,
-            snapshot.state,
-        )?;
-    }
-    store::set_proposals(ctx.db, instance_id, &rest)
+    store::update_snapshot(ctx.db, instance_id, |snapshot| {
+        let Some(snapshot) = snapshot else {
+            return Ok(None);
+        };
+        let mut edit = store::SnapshotEdit::of(&snapshot, false);
+        edit.proposals.retain(|p| p.field_id != field_id);
+        if let Some(value) = baseline_value {
+            edit.baseline.insert(field_id.to_string(), value);
+        }
+        Ok(Some(edit))
+    })
 }
 
 #[cfg(test)]
@@ -439,18 +450,19 @@ mod tests {
         )
         .unwrap();
         collect_proposals(&env.ctx(), &inst.id);
-        // fov は新しい値が勝つ。mouseSensitivity は基準値に戻ったので捨てる
+        // fov は新しい値が勝つ。mouseSensitivity は基準値に戻っても、解決するまで残る
         std::fs::write(
             env.options(&inst),
             "version:4325\nfov:1.1\nmouseSensitivity:0.3\n",
         )
         .unwrap();
         collect_proposals(&env.ctx(), &inst.id);
-        assert_eq!(env.proposals(&inst), vec![pair("fov", "1.1")]);
+        let both = vec![pair("fov", "1.1"), pair("mouseSensitivity", "0.7")];
+        assert_eq!(env.proposals(&inst), both);
         // 行が消えた項目の提案は残る
         std::fs::write(env.options(&inst), "version:4325\nmouseSensitivity:0.3\n").unwrap();
         collect_proposals(&env.ctx(), &inst.id);
-        assert_eq!(env.proposals(&inst), vec![pair("fov", "1.1")]);
+        assert_eq!(env.proposals(&inst), both);
     }
 
     fn two_members(env: &Env, a_fov: &str, b_fov: &str) -> (SyncProfile, Instance, Instance) {
@@ -679,5 +691,197 @@ fov:{fov}
         let snap = store::snapshot(&env.db, &a.id).unwrap().unwrap();
         assert_eq!(snap.applied_revision, revision);
         assert_eq!(snap.baseline["fov"], "0.9");
+    }
+
+    #[test]
+    fn unresolved_proposal_survives_apply_and_the_next_collect() {
+        let env = Env::new();
+        let inst = env.instance("A", BASE);
+        let p = env.profile(&[("fov", "0.5")]);
+        env.member(&inst, &p);
+        set_fov(&env, &inst, "0.9");
+        assert_eq!(env.proposals(&inst), vec![pair("fov", "0.9")]);
+        // 次の起動前の適用が共通の値 0.5 を書き戻す。遊ばずに終了しても提案は消えない
+        assert!(matches!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { .. }
+        ));
+        collect_proposals(&env.ctx(), &inst.id);
+        assert_eq!(env.proposals(&inst), vec![pair("fov", "0.9")]);
+    }
+
+    #[test]
+    fn apply_to_profile_clears_the_instance_override() {
+        let env = Env::new();
+        let (p, a, _b) = two_members(&env, "0.9", "0.8");
+        resolve(&env.ctx(), &a.id, "fov", Resolution::KeepForInstance, None).unwrap();
+        // ゲーム内でさらに 1.0 にした。実効値は上書きの 0.9 なので、提案は有効
+        set_fov(&env, &a, "1.0");
+        assert_eq!(env.proposals(&a), vec![pair("fov", "1.0")]);
+        // B も 0.8 を提案していて競合するので、採用する値を選ぶ
+        resolve(
+            &env.ctx(),
+            &a.id,
+            "fov",
+            Resolution::ApplyToProfile,
+            Some("1.0".into()),
+        )
+        .unwrap();
+        assert_eq!(store::values(&env.db, &p.id).unwrap()["fov"], "1.0");
+        assert!(
+            store::membership(&env.db, &a.id)
+                .unwrap()
+                .unwrap()
+                .overrides
+                .is_empty()
+        );
+        // 上書きが残っていれば 0.9 が書かれるはず。次の適用は共通の値 1.0 になる
+        std::fs::write(env.options(&a), "version:4325\nfov:0.7\n").unwrap();
+        apply_before_launch(&env.ctx(), &a);
+        assert!(
+            std::fs::read_to_string(env.options(&a))
+                .unwrap()
+                .contains("fov:1.0")
+        );
+    }
+
+    #[test]
+    fn liveness_is_judged_against_the_effective_value() {
+        let env = Env::new();
+        let a = env.instance("A", BASE);
+        let p = env.profile(&[("fov", "0.5")]);
+        env.member(&a, &p);
+        set_fov(&env, &a, "0.9");
+        resolve(&env.ctx(), &a.id, "fov", Resolution::KeepForInstance, None).unwrap();
+        // 共通の値 0.5 に戻しても、実効値は上書きの 0.9。次の適用で 0.9 に戻るので提案は有効
+        set_fov(&env, &a, "0.5");
+        let got = pending(&env.ctx(), &p.id).unwrap();
+        assert!(
+            got.single
+                .iter()
+                .any(|(id, pr)| *id == a.id && pr.value == "0.5")
+        );
+        // 上書きと同じ値の提案は有効ではない（共通の値と違っても）
+        let membership = store::membership(&env.db, &a.id).unwrap().unwrap();
+        let profile = find_profile(&env.ctx(), &p.id).unwrap();
+        let values = store::values(&env.db, &p.id).unwrap();
+        let same_as_override = Proposal {
+            field_id: "fov".into(),
+            value: "0.9".into(),
+        };
+        assert!(!is_live(&profile, &values, &membership, &same_as_override));
+    }
+
+    #[test]
+    fn lwjgl2_key_values_are_never_proposed() {
+        let env = Env::new();
+        let inst = env.instance("A", BASE);
+        let p = env.profile(&[("key_key.jump", "key.keyboard.space")]);
+        env.member(&inst, &p);
+        std::fs::write(env.options(&inst), "version:4325\nkey_key.jump:57\n").unwrap();
+        collect_proposals(&env.ctx(), &inst.id);
+        assert!(env.proposals(&inst).is_empty());
+        // 保存済みの旧式の値の提案も、収集で取り除く
+        store::update_snapshot(&env.db, &inst.id, |s| {
+            let mut edit = store::SnapshotEdit::of(&s.unwrap(), false);
+            edit.proposals = vec![Proposal {
+                field_id: "key_key.jump".into(),
+                value: "57".into(),
+            }];
+            Ok(Some(edit))
+        })
+        .unwrap();
+        collect_proposals(&env.ctx(), &inst.id);
+        assert!(env.proposals(&inst).is_empty());
+    }
+
+    #[test]
+    fn parallel_resolves_on_different_fields_both_persist() {
+        let env = Env::new();
+        let inst = env.instance("A", BASE);
+        let p = env.profile(&[("fov", "0.5"), ("mouseSensitivity", "0.3")]);
+        env.member(&inst, &p);
+        std::fs::write(
+            env.options(&inst),
+            "version:4325\nfov:0.9\nmouseSensitivity:0.7\n",
+        )
+        .unwrap();
+        collect_proposals(&env.ctx(), &inst.id);
+        assert_eq!(env.proposals(&inst).len(), 2);
+        std::thread::scope(|scope| {
+            for (field, resolution) in [
+                ("fov", Resolution::KeepForInstance),
+                ("mouseSensitivity", Resolution::Ignore),
+            ] {
+                let (env, id) = (&env, inst.id.clone());
+                scope.spawn(move || {
+                    resolve(&env.ctx(), &id, field, resolution, None).unwrap();
+                });
+            }
+        });
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert!(snap.proposals.is_empty());
+        assert_eq!(snap.baseline["fov"], "0.9");
+        assert_eq!(snap.baseline["mouseSensitivity"], "0.7");
+    }
+
+    #[test]
+    fn resolving_and_collecting_do_not_move_last_applied() {
+        let env = Env::new();
+        let (_p, a, _b) = two_members(&env, "0.9", "0.8");
+        let stamp = 12_345;
+        env.db
+            .with_conn(|conn| {
+                conn.execute("UPDATE sync_snapshots SET updated_at = ?1", [stamp])?;
+                Ok(())
+            })
+            .unwrap();
+        set_fov(&env, &a, "0.95");
+        resolve(&env.ctx(), &a.id, "fov", Resolution::KeepForInstance, None).unwrap();
+        let snap = store::snapshot(&env.db, &a.id).unwrap().unwrap();
+        assert_eq!(snap.updated_at, Some(stamp));
+    }
+
+    #[test]
+    fn resolve_errors_have_specific_codes() {
+        let env = Env::new();
+        let (_p, a, _b) = two_members(&env, "0.9", "0.8");
+        let code = |r: Result<(), CoreError>| r.unwrap_err().code();
+        let ctx = env.ctx();
+        assert_eq!(
+            code(resolve(&ctx, "ghost", "fov", Resolution::Ignore, None)),
+            "sync.not_member"
+        );
+        assert_eq!(
+            code(resolve(&ctx, &a.id, "gamma", Resolution::Ignore, None)),
+            "sync.no_proposal"
+        );
+        assert_eq!(
+            code(resolve(
+                &ctx,
+                &a.id,
+                "fov",
+                Resolution::ApplyToProfile,
+                None
+            )),
+            "sync.needs_chosen_value"
+        );
+    }
+
+    #[test]
+    fn pending_count_is_per_instance() {
+        let env = Env::new();
+        let (p, a, b) = two_members(&env, "0.9", "0.8");
+        std::fs::write(
+            env.options(&b),
+            "version:4325\nfov:0.8\nmouseSensitivity:0.6\n",
+        )
+        .unwrap();
+        collect_proposals(&env.ctx(), &b.id);
+        let got = pending(&env.ctx(), &p.id).unwrap();
+        // fov は A と B の競合、mouseSensitivity は B だけの提案
+        assert_eq!(got.count_for_instance(&a.id), 1);
+        assert_eq!(got.count_for_instance(&b.id), 2);
+        assert_eq!(got.count_for_instance("other"), 0);
     }
 }

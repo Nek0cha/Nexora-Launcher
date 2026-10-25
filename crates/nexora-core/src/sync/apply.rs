@@ -112,12 +112,12 @@ fn apply_member(
         let Some(current) = file.get(field.key) else {
             continue;
         };
-        // キー割り当ては、書式が同じで判定できるものだけ
-        if field.category == Category::Keys {
-            let codec = key_codec(current);
-            if codec == KeyCodec::Unknown || codec != key_codec(value) {
-                continue;
-            }
+        // キー割り当ては、現在値も共通の値も `key.keyboard.*` / `key.mouse.*` の書式のものだけ。
+        // 旧式の整数コードや判定できない書式は、検出するだけで書き換えない
+        if field.category == Category::Keys
+            && (key_codec(current) != KeyCodec::Keyboard || key_codec(value) != KeyCodec::Keyboard)
+        {
+            continue;
         }
         managed.push((id.clone(), field.key, value.clone(), current.to_string()));
     }
@@ -137,9 +137,10 @@ fn apply_member(
         .collect();
 
     if updates.is_empty() {
-        // ファイルには触れない。記録が無い、または古いときだけ基準値を残す
+        // ファイルには触れない。記録が無い、古い、または基準値が今の管理対象と違うときだけ残す。
+        // （カテゴリを有効にした・除外を外した項目は、値が同じでも基準値に加える必要がある）
         let stale = match store::snapshot(ctx.db, &inst.id) {
-            Ok(Some(s)) => !is_current(&s, profile.revision),
+            Ok(Some(s)) => !is_current(&s, profile.revision) || s.baseline != baseline,
             Ok(None) => true,
             Err(_) => false,
         };
@@ -182,8 +183,8 @@ fn skipped(ctx: &SyncCtx, instance_id: &str, reason: SkipReason) -> ApplyOutcome
     ApplyOutcome::Skipped(reason)
 }
 
-/// 記録を保存する。`save_snapshot` は提案を空に戻すので、保存前の提案を戻す。
-/// 未処理の提案は、どの経路でも適用では消さない（古くなったものは後の処理で除く）。
+/// 記録を保存する。未処理の提案は、どの経路でも適用では消さない
+/// （古くなったものは `pending` が隠す）。読み出しを挟まない 1 文の UPSERT で行う。
 fn save_keeping_proposals(
     db: &crate::db::Db,
     instance_id: &str,
@@ -191,27 +192,27 @@ fn save_keeping_proposals(
     baseline: &BTreeMap<String, String>,
     state: SnapshotState,
 ) -> Result<(), crate::error::CoreError> {
-    let proposals = store::snapshot(db, instance_id)?
-        .map(|s| s.proposals)
-        .unwrap_or_default();
-    store::save_snapshot(db, instance_id, applied_revision, baseline, state)?;
-    if !proposals.is_empty() {
-        store::set_proposals(db, instance_id, &proposals)?;
-    }
-    Ok(())
+    store::save_snapshot_keeping_proposals(db, instance_id, applied_revision, baseline, state)
 }
 
 /// 状態だけを記録する。既にある基準値、revision、提案は消さない。
 /// 記録がまだ無いときは、空の基準値と revision 0 で作る。
 fn record_state(ctx: &SyncCtx, instance_id: &str, state: SnapshotState) {
-    let result = (|| {
-        let existing = store::snapshot(ctx.db, instance_id)?;
-        let (revision, baseline) = match existing {
-            Some(s) => (s.applied_revision, s.baseline),
-            None => (0, BTreeMap::new()),
-        };
-        save_keeping_proposals(ctx.db, instance_id, revision, &baseline, state)
-    })();
+    let result = store::update_snapshot(ctx.db, instance_id, |existing| {
+        Ok(Some(match existing {
+            Some(s) => store::SnapshotEdit {
+                state,
+                ..store::SnapshotEdit::of(&s, true)
+            },
+            None => store::SnapshotEdit {
+                applied_revision: 0,
+                baseline: BTreeMap::new(),
+                proposals: Vec::new(),
+                state,
+                touch: true,
+            },
+        }))
+    });
     if let Err(e) = result {
         tracing::warn!(instance_id, "failed to record the sync state: {e}");
     }
@@ -679,6 +680,59 @@ mod tests {
             env.read(&inst),
             SAMPLE.replace("mouseSensitivity:0.3", "mouseSensitivity:0.1")
         );
+    }
+
+    #[test]
+    fn enabling_a_category_adds_matching_fields_to_the_baseline() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.5"), ("mouseSensitivity", "0.3")]);
+        store::set_categories(&env.db, &p.id, &[C::Mouse]).unwrap();
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::UpToDate
+        );
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(
+            snap.baseline.keys().collect::<Vec<_>>(),
+            ["mouseSensitivity"]
+        );
+        // カテゴリを足しても revision は変わらず、値も同じ。それでも基準値は増える
+        let rev = env.revision(&p);
+        store::set_categories(&env.db, &p.id, &ALL).unwrap();
+        assert_eq!(env.revision(&p), rev);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::UpToDate
+        );
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.baseline["fov"], "0.5");
+        assert_eq!(snap.baseline["mouseSensitivity"], "0.3");
+    }
+
+    #[test]
+    fn lwjgl2_key_values_are_never_applied() {
+        let env = Env::new();
+        let text = "version:4325\nkey_key.jump:57\nkey_key.drop:16\nkey_key.use:key.mouse.left\n";
+        let inst = env.instance("A", Some(text.as_bytes()));
+        // 現在値も共通の値も旧式の整数コード（同じ系統）でも、書き換えない
+        let p = env.profile(&[
+            ("key_key.jump", "58"),
+            ("key_key.drop", "key.keyboard.q"),
+            ("key_key.use", "key.mouse.right"),
+        ]);
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(
+            env.read(&inst),
+            "version:4325\nkey_key.jump:57\nkey_key.drop:16\nkey_key.use:key.mouse.right\n"
+        );
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.baseline.keys().collect::<Vec<_>>(), ["key_key.use"]);
     }
 
     #[test]

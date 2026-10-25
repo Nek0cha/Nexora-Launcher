@@ -46,7 +46,7 @@ pub struct JoinReport {
     pub differing: usize,
 }
 
-const ALL_CATEGORIES: [Category; 6] = [
+pub(crate) const ALL_CATEGORIES: [Category; 6] = [
     Category::Keys,
     Category::Mouse,
     Category::Sound,
@@ -77,7 +77,7 @@ fn read_options(path: &Path) -> Result<Option<OptionsFile>, CoreError> {
 }
 
 /// 登録表にある項目の値を、読んだままの文字列で取り出す。
-/// キー割り当てのうち書式を判定できないものは入れない。
+/// キー割り当てのうち、`key.keyboard.*` / `key.mouse.*` の書式でないもの（旧式の整数コードを含む）は入れない。
 fn registered_values(file: &OptionsFile, categories: &[Category]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for (key, value) in file.entries() {
@@ -87,7 +87,7 @@ fn registered_values(file: &OptionsFile, categories: &[Category]) -> BTreeMap<St
         if !categories.contains(&field.category) {
             continue;
         }
-        if field.category == Category::Keys && key_codec(value) == KeyCodec::Unknown {
+        if field.category == Category::Keys && key_codec(value) != KeyCodec::Keyboard {
             continue;
         }
         out.insert(field.id.to_string(), value.to_string());
@@ -99,9 +99,25 @@ pub(crate) fn find_profile(ctx: &SyncCtx, profile_id: &str) -> Result<SyncProfil
     store::list_profiles(ctx.db)?
         .into_iter()
         .find(|p| p.id == profile_id)
-        .ok_or_else(|| CoreError::Unexpected {
-            message: format!("sync profile {profile_id} was not found"),
-        })
+        .ok_or(CoreError::SyncProfileNotFound)
+}
+
+/// 共通設定の名前の上限（文字数）。
+const MAX_NAME_CHARS: usize = 60;
+
+/// 前後の空白を除き、空や長すぎる名前を `SyncInvalidName` にする。
+fn validate_name(name: &str) -> Result<String, CoreError> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > MAX_NAME_CHARS {
+        return Err(CoreError::SyncInvalidName);
+    }
+    Ok(name.to_string())
+}
+
+pub fn rename_profile(ctx: &SyncCtx, profile_id: &str, name: &str) -> Result<(), CoreError> {
+    let name = validate_name(name)?;
+    find_profile(ctx, profile_id)?;
+    store::rename_profile(ctx.db, profile_id, &name)
 }
 
 /// 共通設定の有効なカテゴリの値のうち、インスタンスの値と食い違う件数。
@@ -125,16 +141,14 @@ pub fn create_profile_from_instance(
     instance_id: &str,
     name: &str,
 ) -> Result<SyncProfile, CoreError> {
+    let name = validate_name(name)?;
     let path = options_path(ctx, instance_id)?;
     let file = read_options(&path)?.ok_or(CoreError::SyncNoOptions)?;
     let values: Vec<(String, String)> = registered_values(&file, &ALL_CATEGORIES)
         .into_iter()
         .collect();
-    let mut profile = store::create_profile(ctx.db, name, &ALL_CATEGORIES)?;
-    store::set_values(ctx.db, &profile.id, &values)?;
-    store::join(ctx.db, instance_id, &profile.id)?;
-    profile.revision += 1;
-    Ok(profile)
+    // 作成・値の保存・参加は 1 つのトランザクション。失敗しても空の共通設定は残らない
+    store::create_profile_joined(ctx.db, &name, &ALL_CATEGORIES, &values, instance_id)
 }
 
 /// 参加させたときの差の件数。書き込まない。options.txt が無ければ 0。
@@ -169,11 +183,21 @@ pub fn join_instance(
         JoinMode::KeepProfile => store::join(ctx.db, instance_id, profile_id)?,
         JoinMode::AdoptInstance => {
             let file = file.ok_or(CoreError::SyncNoOptions)?;
+            // 同じ共通設定に参加済みなら、その除外項目は取り込まない（移るときは除外が空に戻る）
+            let excluded = store::membership(ctx.db, instance_id)?
+                .filter(|m| m.profile_id == profile_id)
+                .map(|m| m.excluded)
+                .unwrap_or_default();
+            let current = store::values(ctx.db, profile_id)?;
+            // 実際に値が変わる項目だけ。差が無ければ revision を上げない
             let values: Vec<(String, String)> = registered_values(&file, &profile.categories)
                 .into_iter()
+                .filter(|(id, value)| !excluded.contains(id) && current.get(id) != Some(value))
                 .collect();
             store::join(ctx.db, instance_id, profile_id)?;
-            store::set_values(ctx.db, profile_id, &values)?;
+            if !values.is_empty() {
+                store::set_values(ctx.db, profile_id, &values)?;
+            }
         }
     }
     Ok(JoinReport { differing })
@@ -298,17 +322,97 @@ mod tests {
     }
 
     #[test]
-    fn create_skips_unknown_key_codec() {
+    fn create_skips_unknown_and_lwjgl2_key_codecs() {
         let env = Env::new();
         let id = env.instance(
             "A",
-            Some(b"key_key.jump:scancode.4\nkey_key.use:key.mouse.right\nkey_key.drop:16\n"),
+            Some(
+                b"key_key.jump:scancode.4
+key_key.use:key.mouse.right
+key_key.drop:16
+",
+            ),
         );
         let p = create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
         let values = store::values(&env.db, &p.id).unwrap();
-        assert!(!values.contains_key("key_key.jump"));
-        assert_eq!(values.len(), 2);
-        assert_eq!(values.get("key_key.drop").map(String::as_str), Some("16"));
+        // 旧式の整数コード（drop）も判定できない書式（jump）も入れない
+        assert_eq!(
+            values.keys().collect::<Vec<_>>(),
+            vec![&"key_key.use".to_string()]
+        );
+    }
+
+    #[test]
+    fn adopt_skips_lwjgl2_key_codec() {
+        let env = Env::new();
+        let id = env.instance(
+            "A",
+            Some(
+                b"fov:0.5
+key_key.drop:16
+key_key.jump:key.keyboard.space
+",
+            ),
+        );
+        let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+        join_instance(&env.ctx(), &id, &p.id, JoinMode::AdoptInstance).unwrap();
+        let values = store::values(&env.db, &p.id).unwrap();
+        assert!(!values.contains_key("key_key.drop"));
+        assert!(values.contains_key("key_key.jump") && values.contains_key("fov"));
+    }
+
+    #[test]
+    fn preview_ignores_lwjgl2_key_values() {
+        let env = Env::new();
+        let id = env.instance(
+            "A",
+            Some(
+                b"key_key.drop:16
+fov:0.5
+",
+            ),
+        );
+        let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+        store::set_values(
+            &env.db,
+            &p.id,
+            &[
+                ("key_key.drop".to_string(), "17".to_string()),
+                ("fov".to_string(), "0.9".to_string()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(preview_join(&env.ctx(), &id, &p.id).unwrap(), 1);
+    }
+
+    #[test]
+    fn profile_names_are_trimmed_and_validated() {
+        let env = Env::new();
+        let id = env.instance("A", Some(SAMPLE.as_bytes()));
+        for bad in ["", "   ", &"あ".repeat(61)] {
+            let err = create_profile_from_instance(&env.ctx(), &id, bad).unwrap_err();
+            assert_eq!(err.code(), "sync.invalid_name");
+        }
+        assert!(store::list_profiles(&env.db).unwrap().is_empty());
+        let p = create_profile_from_instance(&env.ctx(), &id, &format!("  {}  ", "あ".repeat(60)))
+            .unwrap();
+        assert_eq!(p.name, "あ".repeat(60));
+        assert_eq!(
+            rename_profile(&env.ctx(), &p.id, " 	").unwrap_err().code(),
+            "sync.invalid_name"
+        );
+        assert_eq!(
+            rename_profile(&env.ctx(), &p.id, &"x".repeat(61))
+                .unwrap_err()
+                .code(),
+            "sync.invalid_name"
+        );
+        rename_profile(&env.ctx(), &p.id, "  新  ").unwrap();
+        assert_eq!(store::list_profiles(&env.db).unwrap()[0].name, "新");
+        assert_eq!(
+            rename_profile(&env.ctx(), "nope", "x").unwrap_err().code(),
+            "sync.profile_not_found"
+        );
     }
 
     #[test]
@@ -363,6 +467,24 @@ mod tests {
         let err = join_instance(&env.ctx(), &bare, &p.id, JoinMode::AdoptInstance).unwrap_err();
         assert_eq!(err.code(), "sync.no_options");
         assert!(membership(&env.ctx(), &bare).unwrap().is_none());
+    }
+
+    #[test]
+    fn adopt_skips_excluded_fields_and_keeps_revision_when_nothing_changes() {
+        let env = Env::new();
+        let id = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = profile_with_fov(&env, "0.9");
+        join_instance(&env.ctx(), &id, &p.id, JoinMode::KeepProfile).unwrap();
+        set_excluded(&env.ctx(), &id, &["fov".to_string()]).unwrap();
+        join_instance(&env.ctx(), &id, &p.id, JoinMode::AdoptInstance).unwrap();
+        let values = store::values(&env.db, &p.id).unwrap();
+        // 除外した fov は取り込まない。他の項目は取り込む
+        assert_eq!(values["fov"], "0.9");
+        assert_eq!(values["mouseSensitivity"], "0.3");
+        // 差が無いなら revision は動かない
+        let rev = store::list_profiles(&env.db).unwrap()[0].revision;
+        join_instance(&env.ctx(), &id, &p.id, JoinMode::AdoptInstance).unwrap();
+        assert_eq!(store::list_profiles(&env.db).unwrap()[0].revision, rev);
     }
 
     #[test]

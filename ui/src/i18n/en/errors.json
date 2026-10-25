@@ -87,7 +87,12 @@
     "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"
   },
   "sync": {
-    "no_options": "This instance has no options.txt yet. Launch the game once so it is created, then try again."
+    "no_options": "This instance has never been launched, so its settings cannot be read yet. Launch it once, then try again.",
+    "profile_not_found": "The shared settings profile was not found. Reopen the list and try again.",
+    "not_member": "This instance is not in a shared settings profile.",
+    "no_proposal": "No matching proposal was found. Reopen the screen and try again.",
+    "needs_chosen_value": "Instances disagree on this setting. Choose which value to use.",
+    "invalid_name": "Enter a name between 1 and 60 characters for the shared settings profile."
   },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"

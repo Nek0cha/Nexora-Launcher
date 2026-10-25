@@ -318,11 +318,8 @@ impl Launcher {
 
     pub async fn rename_sync_profile(&self, profile_id: &str, name: &str) -> Result<(), CoreError> {
         let (profile_id, name) = (profile_id.to_string(), name.to_string());
-        self.sync_blocking(move |ctx| {
-            sync::find_profile(ctx, &profile_id)?;
-            sync_store::rename_profile(ctx.db, &profile_id, &name)
-        })
-        .await
+        self.sync_blocking(move |ctx| sync::rename_profile(ctx, &profile_id, &name))
+            .await
     }
 
     /// 共通設定を消す。参加していたインスタンスの options.txt は触らない。
@@ -398,6 +395,7 @@ impl Launcher {
                     members: Vec::new(),
                     last_applied: None,
                     pending_count: 0,
+                    profile_pending_count: 0,
                     excluded: Vec::new(),
                 });
             };
@@ -419,7 +417,8 @@ impl Launcher {
             Ok(InstanceSync {
                 members,
                 last_applied,
-                pending_count: clamp_count(pending.single.len() + pending.conflicts.len()),
+                pending_count: clamp_count(pending.count_for_instance(&instance_id)),
+                profile_pending_count: clamp_count(pending.single.len() + pending.conflicts.len()),
                 excluded: membership.excluded,
                 profile: Some(profile.into()),
             })
@@ -436,9 +435,7 @@ impl Launcher {
         self.sync_blocking(move |ctx| {
             instance::get(ctx.db, &instance_id)?;
             if sync::membership(ctx, &instance_id)?.is_none() {
-                return Err(CoreError::Unexpected {
-                    message: format!("instance {instance_id} is not in a sync profile"),
-                });
+                return Err(CoreError::SyncNotMember);
             }
             sync::set_excluded(ctx, &instance_id, &field_ids)
         })
