@@ -67,11 +67,14 @@ static FIELDS: &[Field] = &[
     f("soundCategory_player", C::Sound, K::Float),
     f("soundCategory_ambient", C::Sound, K::Float),
     f("soundCategory_voice", C::Sound, K::Float),
+    f("soundCategory_ui", C::Sound, K::Float),
+    f("directionalAudio", C::Sound, K::Bool),
+    f("musicFrequency", C::Sound, K::Text),
     f("mouseSensitivity", C::Mouse, K::Float),
     f("invertYMouse", C::Mouse, K::Bool),
-    f("discreteMouseScroll", C::Mouse, K::Bool),
+    f("discrete_mouse_scroll", C::Mouse, K::Bool),
+    f("invertXMouse", C::Mouse, K::Bool),
     f("mouseWheelSensitivity", C::Mouse, K::Float),
-    f("rawMouseInput", C::Mouse, K::Bool),
     f("renderDistance", C::Graphics, K::Int),
     f("fov", C::Graphics, K::Float),
     f("gamma", C::Graphics, K::Float),
@@ -79,7 +82,15 @@ static FIELDS: &[Field] = &[
     f("enableVsync", C::Graphics, K::Bool),
     f("guiScale", C::Graphics, K::Int),
     f("entityShadows", C::Graphics, K::Bool),
-    f("viewBobbing", C::Graphics, K::Bool),
+    f("bobView", C::Graphics, K::Bool),
+    f("damageTiltStrength", C::Graphics, K::Float),
+    f("glintSpeed", C::Graphics, K::Float),
+    f("glintStrength", C::Graphics, K::Float),
+    f("darknessEffectScale", C::Graphics, K::Float),
+    f("screenEffectScale", C::Graphics, K::Float),
+    f("fovEffectScale", C::Graphics, K::Float),
+    f("hideLightningFlashes", C::Graphics, K::Bool),
+    f("menuBackgroundBlurriness", C::Graphics, K::Int),
     f("particles", C::Graphics, K::Int),
     f("chatOpacity", C::Chat, K::Float),
     f("chatScale", C::Chat, K::Float),
@@ -89,11 +100,19 @@ static FIELDS: &[Field] = &[
     f("chatLinks", C::Chat, K::Bool),
     f("chatColors", C::Chat, K::Bool),
     f("chatLinksPrompt", C::Chat, K::Bool),
+    f("chatLineSpacing", C::Chat, K::Float),
+    f("textBackgroundOpacity", C::Chat, K::Float),
+    f("autoSuggestions", C::Chat, K::Bool),
     f("narrator", C::Accessibility, K::Int),
     f("highContrast", C::Accessibility, K::Bool),
     f("autoJump", C::Accessibility, K::Bool),
     f("toggleCrouch", C::Accessibility, K::Bool),
     f("toggleSprint", C::Accessibility, K::Bool),
+    f("toggleAttack", C::Accessibility, K::Bool),
+    f("toggleUse", C::Accessibility, K::Bool),
+    f("sprintWindow", C::Accessibility, K::Int),
+    f("attackIndicator", C::Accessibility, K::Int),
+    f("mainHand", C::Accessibility, K::Text),
     f("showSubtitles", C::Accessibility, K::Bool),
     key_field("key_key.attack"),
     key_field("key_key.use"),
@@ -235,5 +254,84 @@ mod tests {
         assert_eq!(key_codec("key.mouse.left"), KeyCodec::Keyboard);
         assert_eq!(key_codec("scancode.4"), KeyCodec::Unknown);
         assert_eq!(key_codec(""), KeyCodec::Unknown);
+    }
+
+    const REAL: &str = include_str!("../../tests/fixtures/options/real_modern.txt");
+
+    #[test]
+    fn registry_keys_match_the_real_sample() {
+        // 古い版にだけ存在すると分かっているキー（現状なし）
+        let legacy_only: &[&str] = &[];
+        let sample = crate::sync::options::OptionsFile::parse(REAL);
+        for x in fields() {
+            if x.key.starts_with("key_") || legacy_only.contains(&x.key) {
+                continue;
+            }
+            assert!(sample.get(x.key).is_some(), "サンプルに無いキー: {}", x.key);
+        }
+    }
+
+    #[test]
+    fn real_sample_round_trips() {
+        let sample = crate::sync::options::OptionsFile::parse(REAL);
+        assert_eq!(sample.render(), REAL);
+    }
+
+    #[test]
+    fn real_sample_key_bindings_are_keyboard_codec() {
+        let sample = crate::sync::options::OptionsFile::parse(REAL);
+        let keys: Vec<_> = sample
+            .entries()
+            .into_iter()
+            .filter(|(k, _)| k.starts_with("key_"))
+            .collect();
+        assert!(!keys.is_empty());
+        for (k, v) in keys {
+            assert_eq!(key_codec(v), KeyCodec::Keyboard, "{k}={v}");
+        }
+    }
+
+    #[test]
+    fn excluded_keys_stay_unregistered_in_the_real_sample() {
+        let sample = crate::sync::options::OptionsFile::parse(REAL);
+        for key in [
+            "overrideWidth",
+            "overrideHeight",
+            "fullscreen",
+            "soundDevice",
+            "resourcePacks",
+            "lastServer",
+            "tutorialStep",
+            "telemetryOptInExtra",
+            "onboardAccessibility",
+            "skipMultiplayerWarning",
+            "joinedFirstServer",
+            "graphicsPreset",
+            "preferredGraphicsBackend",
+            "textureFiltering",
+            "improvedTransparency",
+            "lang",
+            "modelPart_cape",
+            "realmsNotifications",
+            "sharePresence",
+        ] {
+            assert!(sample.get(key).is_some(), "サンプルに無い: {key}");
+            assert!(field_for_key(key).is_none(), "{key}");
+        }
+    }
+
+    #[test]
+    fn newly_registered_real_keys_resolve() {
+        for (key, cat) in [
+            ("discrete_mouse_scroll", Category::Mouse),
+            ("bobView", Category::Graphics),
+            ("invertXMouse", Category::Mouse),
+            ("soundCategory_ui", Category::Sound),
+            ("mainHand", Category::Accessibility),
+            ("textBackgroundOpacity", Category::Chat),
+        ] {
+            assert_eq!(field_for_key(key).unwrap().category, cat, "{key}");
+        }
+        assert!(field_for_key("rawMouseInput").is_none());
     }
 }
