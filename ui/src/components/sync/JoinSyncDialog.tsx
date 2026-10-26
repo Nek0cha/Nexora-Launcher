@@ -70,6 +70,18 @@ function Choice({ value, label, isDisabled, describedBy }: {
 
 type Kind = "create" | "join";
 
+type JoinOptions = {
+  /** インスタンスの名前。共通設定の画面から開くときに、どのインスタンスの話かを見出しで示す */
+  instanceName?: string;
+  /**
+   * 参加先と値の違いの件数が決まっているとき（共通設定の画面で、違いがあると分かった後）。
+   * どちらに揃えるかだけを聞き、「キャンセル」で閉じる。
+   */
+  target?: { profileId: string; differing: number };
+  /** 参加したとき（新しく作ったときは呼ばない） */
+  onJoined?: (profileId: string) => void;
+};
+
 /**
  * 「他のインスタンスと設定を揃える」のダイアログ。新しい共通設定を作るか、既存のものに参加するかを選ぶ（spec 3.1、3.2）。
  * 参加しても、その場では設定ファイルを書き換えない。
@@ -81,7 +93,7 @@ export function JoinSyncDialog(props: {
   running: boolean;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+} & JoinOptions) {
   return (
     <ModalOverlay isOpen={props.isOpen} onOpenChange={props.onOpenChange} isDismissable className={overlayClass}>
       <Modal className={modalClass}>
@@ -94,28 +106,29 @@ export function JoinSyncDialog(props: {
   );
 }
 
-function JoinContent({ instanceId, hasOptions, running, close }: {
+function JoinContent({ instanceId, hasOptions, running, close, instanceName, target, onJoined }: {
   instanceId: string;
   hasOptions: boolean;
   running: boolean;
   close: () => void;
-}) {
+} & JoinOptions) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const reasonId = useId();
   const profiles = useSyncProfiles().data ?? [];
 
   // 利用者が選ぶまでは null。選ぶまでは、選べるものから既定を決める
-  const [kind, setKind] = useState<Kind | null>(null);
+  const [kind, setKind] = useState<Kind | null>(target ? "join" : null);
   const [name, setName] = useState<string | null>(null);
-  const [profileId, setProfileId] = useState<string | null>(null);
+  const [profileId, setProfileId] = useState<string | null>(target?.profileId ?? null);
   // 値の違いがあったときだけ、どちらに揃えるかを聞く
-  const [differing, setDiffering] = useState<number | null>(null);
+  const [differing, setDiffering] = useState<number | null>(target?.differing ?? null);
   const [mode, setMode] = useState<JoinMode>("keepProfile");
 
   const chosenKind: Kind | null = kind ?? (hasOptions ? "create" : profiles.length > 0 ? "join" : null);
   const chosenName = name ?? defaultProfileName(t("sync.join.defaultName"), profiles.map((p) => p.name));
-  const chosenProfile = profiles.find((p) => p.id === profileId) ?? profiles[0];
+  const chosenProfile = profiles.find((p) => p.id === profileId) ?? (target ? undefined : profiles[0]);
+  const joinId = chosenProfile?.id ?? target?.profileId;
 
   const done = () => {
     void client.invalidateQueries({ queryKey: SYNC_KEY });
@@ -138,9 +151,12 @@ function JoinContent({ instanceId, hasOptions, running, close }: {
       await joinSyncProfile(instanceId, target, asked ? mode : "keepProfile");
       return 0;
     },
-    onSuccess: (count) => {
+    onSuccess: (count, { target: joined }) => {
       if (count > 0) setDiffering(count);
-      else done();
+      else {
+        onJoined?.(joined);
+        done();
+      }
     },
   });
 
@@ -151,12 +167,12 @@ function JoinContent({ instanceId, hasOptions, running, close }: {
     !pending &&
     (asking ||
       (chosenKind === "create" && hasOptions && chosenName.trim() !== "") ||
-      (chosenKind === "join" && chosenProfile !== undefined));
+      (chosenKind === "join" && joinId !== undefined));
 
   const submit = () => {
     if (!canSubmit) return;
     if (chosenKind === "create" && !asking) create.mutate(chosenName.trim());
-    else if (chosenProfile) join.mutate({ target: chosenProfile.id, asked: asking });
+    else if (joinId) join.mutate({ target: joinId, asked: asking });
   };
 
   const resetErrors = () => {
@@ -173,7 +189,7 @@ function JoinContent({ instanceId, hasOptions, running, close }: {
       }}
     >
       <Heading slot="title" className="font-display text-lg font-semibold text-text-strong">
-        {t("sync.join.title")}
+        {instanceName ? t("sync.join.titleFor", { name: instanceName }) : t("sync.join.title")}
       </Heading>
 
       {asking ? (
@@ -265,7 +281,7 @@ function JoinContent({ instanceId, hasOptions, running, close }: {
       <div className="flex justify-end gap-2 pt-1">
         <Button
           onPress={() => {
-            if (asking) {
+            if (asking && !target) {
               setDiffering(null);
               resetErrors();
             } else close();
@@ -273,7 +289,7 @@ function JoinContent({ instanceId, hasOptions, running, close }: {
           isDisabled={pending}
           className={secondaryButton}
         >
-          <StableLabel labels={[t("sync.join.cancel"), t("sync.join.back")]} active={asking ? 1 : 0} />
+          <StableLabel labels={[t("sync.join.cancel"), t("sync.join.back")]} active={asking && !target ? 1 : 0} />
         </Button>
         <Button type="submit" isDisabled={!canSubmit} isPending={pending} className={primaryButton}>
           <StableLabel

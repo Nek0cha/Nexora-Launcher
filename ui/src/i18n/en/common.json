@@ -3,6 +3,7 @@
   "nav": {
     "home": "Home",
     "instances": "Instances",
+    "sync": "Shared settings",
     "browse": "Browse",
     "accounts": "Accounts",
     "settings": "Settings"
@@ -490,8 +491,8 @@
     "categories": {
       "keys": "Key bindings",
       "mouse": "Mouse",
-      "sound": "Sound",
-      "graphics": "Video",
+      "sound": "Volume",
+      "graphics": "Graphics",
       "chat": "Chat",
       "accessibility": "Accessibility"
     },
@@ -511,7 +512,37 @@
       "submitCreate": "Create",
       "submitJoin": "Join",
       "cancel": "Cancel",
-      "back": "Back"
+      "back": "Back",
+      "titleFor": "Match settings for {{name}}"
+    },
+    "screen": {
+      "intro": "Keep key bindings, volume and other settings the same across instances. Drag an instance onto a card, or pick one from “Add instance”, to join it. Joining changes nothing right away. It applies at the next launch.",
+      "create": "Create shared settings",
+      "createFrom": "Start from instance",
+      "emptyBody": "Keep key bindings, volume and other settings the same across instances. First, pick an instance to start the shared settings from.",
+      "noInstancesBody": "Shared settings keep settings the same across instances. Create an instance first.",
+      "unjoined": "Instances not joined",
+      "unjoinedHint": "Drag one onto a card to join it.",
+      "unjoinedNone": "Every instance has joined shared settings.",
+      "name": "Name of the shared settings",
+      "categories": "Settings to match",
+      "members": "Joined instances",
+      "membersNone": "No instance has joined yet.",
+      "add": "Add instance",
+      "addNone": "There is no instance left to add.",
+      "remove": "Remove {{name}}",
+      "dropToJoin": "Release to join.",
+      "dropToLeave": "Release to leave the shared settings.",
+      "delete": "Delete",
+      "deleteLabel": "Delete {{name}}",
+      "deleteTitle": "Delete “{{name}}”?",
+      "deleteBody": "Joined instances go back to not joined. Their settings files do not change.",
+      "deleteConfirm": "Delete",
+      "cancel": "Cancel",
+      "deleted": "Deleted “{{name}}”",
+      "joined": "{{instance}} joined “{{profile}}”. It applies at the next launch.",
+      "joinedRunning": "{{instance}} joined “{{profile}}”. It applies after the current play ends.",
+      "left": "{{name}} left the shared settings. Its settings file did not change."
     }
   }
 }

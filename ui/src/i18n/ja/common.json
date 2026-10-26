@@ -3,6 +3,7 @@
   "nav": {
     "home": "ホーム",
     "instances": "インスタンス",
+    "sync": "共通設定",
     "browse": "探す",
     "accounts": "アカウント",
     "settings": "設定"
@@ -490,10 +491,10 @@
     "categories": {
       "keys": "キー割り当て",
       "mouse": "マウス",
-      "sound": "音",
-      "graphics": "画面",
+      "sound": "音量",
+      "graphics": "グラフィック",
       "chat": "チャット",
-      "accessibility": "操作の補助"
+      "accessibility": "アクセシビリティ"
     },
     "otherField": "その他の設定",
     "join": {
@@ -511,7 +512,37 @@
       "submitCreate": "作成する",
       "submitJoin": "参加する",
       "cancel": "キャンセル",
-      "back": "戻る"
+      "back": "戻る",
+      "titleFor": "{{name}} の設定を揃える"
+    },
+    "screen": {
+      "intro": "キー割り当てや音量などの設定を、複数のインスタンスで揃えます。インスタンスをカードへドラッグするか、「インスタンスを追加」から選ぶと参加します。参加させても、その場では何も書き換えません。次の起動時に反映されます。",
+      "create": "共通設定を作る",
+      "createFrom": "元にするインスタンス",
+      "emptyBody": "キー割り当てや音量などの設定を、複数のインスタンスで揃えられます。まず、元にするインスタンスを選んで共通設定を作ります。",
+      "noInstancesBody": "共通設定は、インスタンスどうしで設定を揃える仕組みです。先にインスタンスを作ってください。",
+      "unjoined": "未参加のインスタンス",
+      "unjoinedHint": "カードへドラッグすると参加します。",
+      "unjoinedNone": "すべてのインスタンスが、どれかの共通設定に参加しています。",
+      "name": "共通設定の名前",
+      "categories": "揃える設定",
+      "members": "参加中のインスタンス",
+      "membersNone": "まだ参加しているインスタンスはありません。",
+      "add": "インスタンスを追加",
+      "addNone": "追加できる未参加のインスタンスはありません。",
+      "remove": "{{name}} を外す",
+      "dropToJoin": "ここで離すと参加します。",
+      "dropToLeave": "ここで離すと共通設定から外れます。",
+      "delete": "削除",
+      "deleteLabel": "{{name}} を削除",
+      "deleteTitle": "「{{name}}」を削除しますか？",
+      "deleteBody": "参加中のインスタンスは未参加に戻ります。設定ファイルは変わりません。",
+      "deleteConfirm": "削除",
+      "cancel": "キャンセル",
+      "deleted": "「{{name}}」を削除しました",
+      "joined": "{{instance}} を「{{profile}}」に参加させました。次の起動時に反映されます。",
+      "joinedRunning": "{{instance}} を「{{profile}}」に参加させました。いまのプレイが終わった後に反映されます。",
+      "left": "{{name}} を共通設定から外しました。設定ファイルは変わりません。"
     }
   }
 }
