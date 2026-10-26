@@ -1,7 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteSyncProfile, leaveSyncProfile, renameSyncProfile, setSyncCategories } from "../../api/commands";
+import {
+  deleteSyncProfile,
+  getSyncProfileValues,
+  leaveSyncProfile,
+  pendingSyncProposals,
+  renameSyncProfile,
+  setSyncCategories,
+} from "../../api/commands";
 import type { SyncMember } from "../../bindings/SyncMember";
 import type { SyncProfile } from "../../bindings/SyncProfile";
 import i18n from "../../i18n";
@@ -12,6 +19,9 @@ vi.mock("../../api/commands", () => ({
   setSyncCategories: vi.fn(),
   leaveSyncProfile: vi.fn(),
   deleteSyncProfile: vi.fn(),
+  pendingSyncProposals: vi.fn(),
+  getSyncProfileValues: vi.fn(),
+  resolveSyncProposal: vi.fn(),
 }));
 
 const profile: SyncProfile = {
@@ -47,6 +57,8 @@ beforeEach(async () => {
   vi.mocked(setSyncCategories).mockResolvedValue(null);
   vi.mocked(leaveSyncProfile).mockResolvedValue(null);
   vi.mocked(deleteSyncProfile).mockResolvedValue(null);
+  vi.mocked(pendingSyncProposals).mockResolvedValue({ single: [], conflicts: [] });
+  vi.mocked(getSyncProfileValues).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -69,6 +81,25 @@ describe("ProfileCard", () => {
     expect(within(card).getByText("Survival")).toBeTruthy();
     expect(within(card).getByText("Creative")).toBeTruthy();
     expect(within(card).queryByText("Modded")).toBeNull();
+  });
+
+  it("has no proposal badge when no instance changed anything", async () => {
+    mount();
+    await waitFor(() => expect(pendingSyncProposals).toHaveBeenCalledWith("p1"));
+    await act(async () => {});
+    expect(screen.queryByTestId("proposal-badge")).toBeNull();
+    expect(document.body.textContent).not.toContain("変えた設定");
+  });
+
+  it("says how many settings the instances changed in game", async () => {
+    vi.mocked(pendingSyncProposals).mockResolvedValue({
+      single: [{ instanceIds: ["i1"], fieldId: "fov", value: "0.5" }],
+      conflicts: [{ fieldId: "gamma", entries: [{ instanceId: "i1", value: "0.1" }, { instanceId: "i2", value: "0.9" }] }],
+    });
+    mount();
+    const card = screen.getByRole("region", { name: "いつもの" });
+    expect(await within(card).findByText("参加中のインスタンスで変えた設定が 2 件あります")).toBeTruthy();
+    expect(within(card).getByTestId("proposal-badge").textContent).toBe("2");
   });
 
   it("never shows the words of the mechanism", () => {

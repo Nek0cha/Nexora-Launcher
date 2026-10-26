@@ -7,12 +7,16 @@ import { toErrorPayload } from "../../api/ipc";
 import type { Instance } from "../../bindings/Instance";
 import type { InstanceSync } from "../../bindings/InstanceSync";
 import type { SyncField } from "../../bindings/SyncField";
-import { applicabilityKey, fieldCategory, isKnownFieldId, reasonKey } from "../../features/sync/syncText";
+import type { SyncFieldValue } from "../../bindings/SyncFieldValue";
+import { fieldLabel, hasFieldLabel } from "../../features/sync/fieldLabels";
+import { formatValue } from "../../features/sync/formatValue";
+import { applicabilityKey, isKnownFieldId, reasonKey } from "../../features/sync/syncText";
 import { SYNC_KEY, useInstanceSync, useSyncFields } from "../../features/sync/useInstanceSync";
 import { FailureNotice } from "../FailureNotice";
 import { Notice } from "../settingsLayout";
 import { useToast } from "../toast/useToast";
 import { JoinSyncDialog } from "./JoinSyncDialog";
+import { ProposalsSection } from "./ProposalList";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -152,9 +156,18 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
         <Notice tone="info">{running ? t("sync.card.afterPlay") : t("sync.card.nextLaunch")}</Notice>
       )}
 
+      {sync.profile && (
+        <ProposalsSection
+          profileId={sync.profile.id}
+          members={sync.members}
+          instanceId={instanceId}
+          count={sync.pendingCount}
+        />
+      )}
+
       {sync.overrides.length > 0 && (
         <Overrides
-          overrides={sync.overrides.map((o) => o.fieldId)}
+          overrides={sync.overrides}
           fields={fields}
           onRelease={(fieldId) => release.mutate(fieldId)}
           isDisabled={release.isPending || leave.isPending}
@@ -178,31 +191,33 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
 }
 
 function Overrides({ overrides, fields, onRelease, isDisabled }: {
-  overrides: string[];
+  overrides: SyncFieldValue[];
   fields: SyncField[];
   onRelease: (fieldId: string) => void;
   isDisabled: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const headingId = useId();
-  // 項目ごとの表示名は提案の確認（Task 5）で足す。それまでは種別の名前で出し、ID は見せない
-  const label = (id: string) => {
-    const category = fieldCategory(id, fields);
-    return category ? t(`sync.categories.${category}`) : t("sync.otherField");
-  };
   return (
     <div className="flex flex-col gap-1">
       <h3 id={headingId} className="text-sm text-text">
         {t("sync.card.overrides")}
       </h3>
       <ul aria-labelledby={headingId} className="flex flex-col divide-y divide-line">
-        {overrides.map((id) => {
-          const name = label(id);
+        {overrides.map(({ fieldId: id, value }) => {
+          const name = fieldLabel(id, i18n);
+          const known = isKnownFieldId(id, fields);
           return (
             <li key={id} className="flex min-h-10 items-center justify-between gap-4">
-              <span className="min-w-0 truncate text-sm text-text-muted">{name}</span>
+              <span className="flex min-w-0 items-baseline gap-2 text-sm">
+                <span className="truncate text-text-muted">{name}</span>
+                {/* 名前の無い項目は、値からも何の設定か分からないので出さない */}
+                {hasFieldLabel(id, i18n) && (
+                  <span className="shrink-0 text-text tabular-nums">{formatValue(id, value, t)}</span>
+                )}
+              </span>
               {/* 解除のコマンドには、知っている項目の ID だけを送る */}
-              {isKnownFieldId(id, fields) && (
+              {known && (
                 <Button
                   aria-label={t("sync.card.releaseLabel", { name })}
                   onPress={() => onRelease(id)}

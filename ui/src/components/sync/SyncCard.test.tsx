@@ -203,6 +203,38 @@ describe("SyncCard when joined", () => {
     expect(card().textContent).not.toContain("fov");
   });
 
+  it("names each value only for this instance and shows the value", async () => {
+    mount({
+      ...joined,
+      overrides: [
+        { fieldId: "fov", value: "1.0" },
+        { fieldId: "key_key.jump", value: "key.keyboard.j" },
+        { fieldId: "lastServer", value: "x" },
+      ],
+    });
+    await screen.findByText("このインスタンスだけの値");
+    expect(await screen.findByRole("button", { name: "視野角を共通設定に戻す" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "ジャンプを共通設定に戻す" })).toBeTruthy();
+    const rows = within(screen.getByRole("list", { name: "このインスタンスだけの値" })).getAllByRole("listitem");
+    expect(rows[0]!.textContent).toContain("110°");
+    expect(rows[1]!.textContent).toContain("J");
+    expect(rows[2]!.textContent).toContain("その他の設定");
+    expect(rows[2]!.textContent).not.toContain("x");
+  });
+
+  it("has no badge or proposal text when nothing changed in game", async () => {
+    mount({ ...joined, pendingCount: 0 });
+    await screen.findByText("共通設定「いつもの」を使っています");
+    expect(screen.queryByTestId("proposal-badge")).toBeNull();
+    expect(card().textContent).not.toContain("変えた設定");
+  });
+
+  it("says how many settings changed in this instance", async () => {
+    mount({ ...joined, pendingCount: 2 });
+    expect(await screen.findByText("このインスタンスで変えた設定が 2 件あります")).toBeTruthy();
+    expect(screen.getByTestId("proposal-badge").textContent).toBe("2");
+  });
+
   it("leaves without a confirmation and notes that it can be undone", async () => {
     mount(joined);
     await screen.findByText("共通設定「いつもの」を使っています");

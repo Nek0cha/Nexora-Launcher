@@ -11,6 +11,7 @@ import { CATEGORIES, useSyncProfileActions } from "../../features/sync/useSyncPr
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ChipGroup } from "../content/ContentFilter";
 import { InstanceChip } from "./InstanceChip";
+import { ProposalsSection } from "./ProposalList";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -141,6 +142,9 @@ export function ProfileCard({ profile, unjoined, onJoin, drag = null, onChipDrag
           <p className="text-sm text-text-muted">{t("sync.screen.membersNone")}</p>
         )}
       </div>
+
+      {/* ゲームの中で変えた設定。0 件なら何も出ない */}
+      <ProposalsSection profileId={profile.id} members={profile.members} />
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <MenuTrigger>

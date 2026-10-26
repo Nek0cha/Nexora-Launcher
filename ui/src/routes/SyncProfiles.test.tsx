@@ -4,12 +4,15 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getInstanceSync,
+  getSyncProfileValues,
   joinSyncProfile,
   leaveSyncProfile,
   listInstances,
   listRunning,
   listSyncProfiles,
+  pendingSyncProposals,
   previewJoinSyncProfile,
+  resolveSyncProposal,
 } from "../api/commands";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSync } from "../bindings/InstanceSync";
@@ -30,6 +33,9 @@ vi.mock("../api/commands", () => ({
   renameSyncProfile: vi.fn(),
   setSyncCategories: vi.fn(),
   deleteSyncProfile: vi.fn(),
+  pendingSyncProposals: vi.fn(),
+  getSyncProfileValues: vi.fn(),
+  resolveSyncProposal: vi.fn(),
 }));
 
 const instance = (id: string, name: string): Instance => ({
@@ -98,6 +104,9 @@ beforeEach(async () => {
   vi.mocked(previewJoinSyncProfile).mockResolvedValue(0);
   vi.mocked(joinSyncProfile).mockResolvedValue({ differing: 0 });
   vi.mocked(leaveSyncProfile).mockResolvedValue(null);
+  vi.mocked(pendingSyncProposals).mockResolvedValue({ single: [], conflicts: [] });
+  vi.mocked(getSyncProfileValues).mockResolvedValue([]);
+  vi.mocked(resolveSyncProposal).mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -268,5 +277,30 @@ describe("SyncProfiles", () => {
       });
       expect(previewJoinSyncProfile).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("SyncProfiles proposals", () => {
+  it("reviews the changes made in game on the card of the shared settings", async () => {
+    vi.mocked(pendingSyncProposals).mockImplementation(async (profileId) =>
+      profileId === "p1"
+        ? { single: [{ instanceIds: ["i2"], fieldId: "key_key.jump", value: "key.keyboard.j" }], conflicts: [] }
+        : { single: [], conflicts: [] },
+    );
+    vi.mocked(getSyncProfileValues).mockResolvedValue([{ fieldId: "key_key.jump", value: "key.keyboard.space" }]);
+    mount({ profiles: [profile("p1", "いつもの", ["i1", "i2"]), profile("p2", "別", ["i3"])] });
+    const card = await screen.findByRole("region", { name: "いつもの" });
+    expect(await within(card).findByText("参加中のインスタンスで変えた設定が 1 件あります")).toBeTruthy();
+    const other = screen.getByRole("region", { name: "別" });
+    expect(within(other).queryByTestId("proposal-badge")).toBeNull();
+    await press(within(card).getByRole("button", { name: "確認する" }));
+    const row = await within(card).findByRole("listitem", { name: "ジャンプ" });
+    expect(row.textContent).toContain("スペース");
+    expect(row.textContent).toContain("J");
+    expect(row.textContent).toContain("Creative");
+    await press(within(row).getByRole("button", { name: "全部に反映する" }));
+    await waitFor(() =>
+      expect(resolveSyncProposal).toHaveBeenCalledWith("i2", "key_key.jump", "applyToProfile", undefined),
+    );
   });
 });
