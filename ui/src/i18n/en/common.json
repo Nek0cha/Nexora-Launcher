@@ -605,7 +605,6 @@
       "toggleUse": "Use Toggle",
       "sprintWindow": "Sprint Window",
       "attackIndicator": "Attack Indicator",
-      "mainHand": "Main Hand",
       "showSubtitles": "Subtitles",
       "key_key.attack": "Attack/Destroy",
       "key_key.use": "Use Item/Place Block",
@@ -646,9 +645,7 @@
       "on": "On",
       "off": "Off",
       "auto": "Auto",
-      "unlimited": "Unlimited",
-      "left": "Left",
-      "right": "Right"
+      "unlimited": "Unlimited"
     },
     "keys": {
       "unbound": "Not bound",
@@ -677,7 +674,8 @@
       "keepFor": "Keep for {{names}} only",
       "ignore": "Ignore",
       "ignoreNote": "If you choose Ignore, the shared value comes back on the next launch.",
-      "applyAll": "Apply these {{count}} to all",
+      "applyAll_one": "Apply this {{count}} to all",
+      "applyAll_other": "Apply these {{count}} to all",
       "conflictsExcluded": "Settings with different values are left out of applying all. Choose for each one.",
       "conflict": "The instances have different values. Choose one value to apply to all.",
       "conflictChoices": "Values of {{name}}",

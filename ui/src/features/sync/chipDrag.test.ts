@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { dropAction, dropZoneAt, passedDragThreshold } from "./chipDrag";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { dropAction, dropZoneAt, passedDragThreshold, useChipDrag } from "./chipDrag";
 
 function zone(html: string): HTMLElement {
   document.body.innerHTML = html;
@@ -89,5 +90,31 @@ describe("passedDragThreshold", () => {
     expect(passedDragThreshold(2, 2)).toBe(false);
     expect(passedDragThreshold(4, 0)).toBe(true);
     expect(passedDragThreshold(-3, -3)).toBe(true);
+  });
+});
+
+describe("useChipDrag", () => {
+  const fire = (type: string, init: PointerEventInit & { pointerId?: number }) => {
+    const e = new Event(type, { bubbles: true }) as Event & Record<string, unknown>;
+    Object.assign(e, { pointerId: 1, buttons: 1, clientX: 0, clientY: 0, ...init });
+    window.dispatchEvent(e);
+  };
+
+  it("cancels the drag when a move arrives with no button pressed (a lost pointerup)", () => {
+    const onDrop = vi.fn();
+    const { result } = renderHook(() => useChipDrag(onDrop, () => null));
+    act(() => {
+      result.current.start({ instanceId: "a", profileId: null, name: "A" }, {
+        pointerId: 1, clientX: 0, clientY: 0,
+      } as never);
+    });
+    act(() => fire("pointermove", { clientX: 20, clientY: 20 }));
+    expect(result.current.drag).not.toBeNull();
+
+    act(() => fire("pointermove", { clientX: 40, clientY: 40, buttons: 0 }));
+    expect(result.current.drag).toBeNull();
+
+    act(() => fire("pointerup", { clientX: 40, clientY: 40, buttons: 0 }));
+    expect(onDrop).not.toHaveBeenCalled();
   });
 });

@@ -151,8 +151,8 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
       {last?.state === "skipped" && !skipCoveredByApplicability && (
         <Notice tone="info">{t("sync.card.lastSkipped", { reason: t(reasonKey(last.reason)) })}</Notice>
       )}
-      {/* 適用できる状態のときだけ「反映されます」と言う。反映済みなら何も言わない */}
-      {applicable && !sync.upToDate && (
+      {/* 適用できる状態のときだけ「反映されます」と言う。反映済み、または反映するものが無いなら何も言わない */}
+      {applicable && !sync.upToDate && last?.reason !== "nothingToApply" && (
         <Notice tone="info">{running ? t("sync.card.afterPlay") : t("sync.card.nextLaunch")}</Notice>
       )}
 

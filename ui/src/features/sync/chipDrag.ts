@@ -90,6 +90,11 @@ export function useChipDrag(
       const move = (e: PointerEvent) => {
         const p = pending.current;
         if (!p || e.pointerId !== p.pointerId) return;
+        // pointerup を取りこぼしたとき、ボタンが離れているのにゴーストが追従し続けないようにする
+        if (e.buttons === 0) {
+          stop();
+          return;
+        }
         if (!p.started && !passedDragThreshold(e.clientX - p.startX, e.clientY - p.startY)) return;
         p.started = true;
         document.body.style.cursor = "grabbing";

@@ -45,9 +45,9 @@ describe("formatValue", () => {
     expect(formatValue("maxFps", "120", t)).toBe("120");
   });
 
-  it("names the main hand and drops the quotes of older files", () => {
-    expect(formatValue("mainHand", '"left"', t)).toBe("左");
-    expect(formatValue("mainHand", "right", t)).toBe("右");
+  it("drops the quotes of text values written by older files", () => {
+    expect(formatValue("someText", '"left"', t)).toBe("left");
+    expect(formatValue("someText", "right", t)).toBe("right");
   });
 
   it("formats key bindings as key names", () => {

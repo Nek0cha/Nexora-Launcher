@@ -4,8 +4,6 @@ type ValueKey =
   | "sync.value.off"
   | "sync.value.auto"
   | "sync.value.unlimited"
-  | "sync.value.left"
-  | "sync.value.right"
   | "sync.keys.unbound"
   | "sync.keys.space"
   | "sync.keys.mouseLeft"
@@ -55,7 +53,6 @@ export function formatValue(fieldId: string, raw: string, t: Translate): string 
   if (fieldId.startsWith("key_")) return formatKey(value, t);
   if (value === "true") return t("sync.value.on");
   if (value === "false") return t("sync.value.off");
-  if (fieldId === "mainHand" && (value === "left" || value === "right")) return t(`sync.value.${value}`);
   if (!NUMBER.test(value)) return value;
 
   const n = Number(value);

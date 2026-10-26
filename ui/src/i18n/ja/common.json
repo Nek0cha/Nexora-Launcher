@@ -605,7 +605,6 @@
       "toggleUse": "使用の切り替え",
       "sprintWindow": "ダッシュの二度押しの間隔",
       "attackIndicator": "攻撃のインジケーター",
-      "mainHand": "利き手",
       "showSubtitles": "字幕",
       "key_key.attack": "攻撃・破壊",
       "key_key.use": "アイテムの使用・ブロックの設置",
@@ -646,9 +645,7 @@
       "on": "オン",
       "off": "オフ",
       "auto": "自動",
-      "unlimited": "無制限",
-      "left": "左",
-      "right": "右"
+      "unlimited": "無制限"
     },
     "keys": {
       "unbound": "未割り当て",
@@ -677,7 +674,8 @@
       "keepFor": "{{names}} だけ別にする",
       "ignore": "無視",
       "ignoreNote": "「無視」を選ぶと、次の起動で共通設定の値に戻ります。",
-      "applyAll": "まとめて全部に反映する（{{count}} 件）",
+      "applyAll_one": "まとめて全部に反映する（{{count}} 件）",
+      "applyAll_other": "まとめて全部に反映する（{{count}} 件）",
       "conflictsExcluded": "値が分かれている項目は、まとめての反映に含めません。個別に選んでください。",
       "conflict": "インスタンスによって値が分かれています。全部に反映する値を 1 つ選んでください。",
       "conflictChoices": "{{name}}の値",

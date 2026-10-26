@@ -112,7 +112,6 @@ static FIELDS: &[Field] = &[
     f("toggleUse", C::Accessibility, K::Bool),
     f("sprintWindow", C::Accessibility, K::Int),
     f("attackIndicator", C::Accessibility, K::Int),
-    f("mainHand", C::Accessibility, K::Text),
     f("showSubtitles", C::Accessibility, K::Bool),
     key_field("key_key.attack"),
     key_field("key_key.use"),
@@ -232,6 +231,8 @@ mod tests {
             "fancyGraphics",
             "graphicsMode",
             "key_",
+            // 版によって値の引用符が違う（1.19 以降は "right"、1.13〜1.18 は right）ため同期しない
+            "mainHand",
         ] {
             assert!(field_for_key(key).is_none(), "{key}");
         }
@@ -314,6 +315,8 @@ mod tests {
             "modelPart_cape",
             "realmsNotifications",
             "sharePresence",
+            // 版によって値の引用符が違う（1.19 以降は "right"、1.13〜1.18 は right）ため同期しない
+            "mainHand",
         ] {
             assert!(sample.get(key).is_some(), "サンプルに無い: {key}");
             assert!(field_for_key(key).is_none(), "{key}");
@@ -327,7 +330,6 @@ mod tests {
             ("bobView", Category::Graphics),
             ("invertXMouse", Category::Mouse),
             ("soundCategory_ui", Category::Sound),
-            ("mainHand", Category::Accessibility),
             ("textBackgroundOpacity", Category::Chat),
         ] {
             assert_eq!(field_for_key(key).unwrap().category, cat, "{key}");

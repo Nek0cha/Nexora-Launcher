@@ -221,10 +221,10 @@ describe("SyncProfiles", () => {
       hit = to;
       await act(async () => {
         fireEvent.pointerDown(from, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
-        fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 1, buttons: 1 });
       });
       await act(async () => {
-        fireEvent.pointerUp(window, { clientX: 40, clientY: 40, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 40, clientY: 40, pointerId: 1, buttons: 1 });
       });
     };
 
@@ -251,7 +251,7 @@ describe("SyncProfiles", () => {
       hit = card;
       await act(async () => {
         fireEvent.pointerDown(within(side).getByText("Modded"), { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
-        fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 1, buttons: 1 });
       });
       expect(card.getAttribute("data-drop-active")).toBe("true");
       expect(screen.getByTestId("drag-ghost").textContent).toContain("Modded");
@@ -261,7 +261,7 @@ describe("SyncProfiles", () => {
       });
       expect(screen.queryByTestId("drag-ghost")).toBeNull();
       await act(async () => {
-        fireEvent.pointerUp(window, { clientX: 40, clientY: 40, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 40, clientY: 40, pointerId: 1, buttons: 1 });
       });
       expect(joinSyncProfile).not.toHaveBeenCalled();
       expect(previewJoinSyncProfile).not.toHaveBeenCalled();

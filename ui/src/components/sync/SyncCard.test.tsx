@@ -142,6 +142,12 @@ describe("SyncCard when joined", () => {
     expect(card().textContent).toContain("まだ反映していません。");
   });
 
+  it("does not promise the next launch when there was nothing to apply", async () => {
+    mount({ ...joined, upToDate: false, lastApplied: { state: "skipped", atMs: 1, reason: "nothingToApply" } });
+    await screen.findByText(/を使っています/);
+    expect(card().textContent).not.toContain("次の起動時に反映されます");
+  });
+
   it("says it applies after the current session while the game runs", async () => {
     mount({ ...joined, upToDate: false }, { running: true });
     expect(await screen.findByText("いまのプレイが終わった後に反映されます。")).toBeTruthy();
