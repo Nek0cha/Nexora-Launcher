@@ -68,7 +68,12 @@
     "tabNoVersions": "No supported versions",
     "loadingLoaderVersions": "Loading loader versions",
     "noLoaderVersions": "No loader versions are available for this Minecraft version",
-    "retryLoaders": "Retry loading loaders"
+    "retryLoaders": "Retry loading loaders",
+    "shared": {
+      "use": "Use shared settings",
+      "profile": "Shared settings to join",
+      "joinFailed": "Created {{name}}, but could not join the shared settings. You can join from the instance settings."
+    }
   },
   "tasks": {
     "title": "Tasks",

@@ -68,7 +68,12 @@
     "tabNoVersions": "対応するバージョンがありません",
     "loadingLoaderVersions": "ローダーを読み込んでいます",
     "noLoaderVersions": "このMinecraftのバージョンに対応するローダーのバージョンがありません",
-    "retryLoaders": "ローダーの一覧を再試行"
+    "retryLoaders": "ローダーの一覧を再試行",
+    "shared": {
+      "use": "共通設定を使う",
+      "profile": "参加する共通設定",
+      "joinFailed": "{{name}} を作成しましたが、共通設定に参加できませんでした。インスタンスの設定から参加できます。"
+    }
   },
   "tasks": {
     "title": "タスク",
