@@ -108,3 +108,53 @@
 | `options.txt` が無い新規インスタンスへの新規作成 | 行わない（2.2）。サンプルで検証できたら再検討 |
 | LWJGL2 と SDL3 の系統のキー割り当て | フェーズ 6 の対象外。サンプルが集まってから足す |
 | `instances.sync_profile_id` 列の削除 | 将来の整理 |
+
+## 9. 実装後の差分
+
+6-2 の UI を作る中で、上の設計と異なった点、新しく決めた点である。
+
+### 9.1 フィールド登録表の修正
+
+- 実機の `options.txt` を `crates/nexora-core/tests/fixtures/options/real_modern.txt` に置き、登録表のキーが実在することをテストで確かめた。この確認で見つかった誤りを直した。
+  - `discreteMouseScroll` は `discrete_mouse_scroll`、`viewBobbing` は `bobView` が実際のキーである。
+  - `rawMouseInput` は実在しないため外した。
+  - 実在する 20 項目を加えた。
+- **`mainHand`（利き手）は同期しない。** 値の引用符が版で異なる（1.19 以降は `"right"` のように引用符つき、1.13〜1.18 は引用符なし）ためである。DataVersion の範囲を登録表に持たせるまでは、版で書式が変わる項目は登録しない。持たせられた時点で再検討する。
+- カテゴリの表示名は「音量」「グラフィック」「アクセシビリティ」とした。
+
+### 9.2 `applicability` と `upToDate`
+
+- `applicability` は、インスタンスに共通設定を適用できるかを、何も書かずに調べる。値は次の 4 つである。
+  - `ready`：適用できる。
+  - `needsFirstLaunch`：`options.txt` が無い。一度ゲームを起動する必要がある。
+  - `versionUnreadable`：DataVersion を読めない。`options.txt` を読めない場合（入出力の失敗、UTF-8 でない）もこれに含める。
+  - `versionMismatch`：`options.txt` の `version` の行が jar の DataVersion と一致しない。
+- 参加していないインスタンスにも計算する（共通設定の作成ボタンの可否に使うため）。`hasOptions` も同じである。
+- `upToDate` は、スナップショットの状態が「適用済み」であり、かつ適用した revision が共通設定の revision と一致するときに真になる。起動前の適用と同じ判定（`is_current`）を使う。スキップや失敗の記録があれば、revision が同じでも偽である。
+- カテゴリの有効・無効や除外を変えても revision は上がらない。そのため、変更の直後は `upToDate` が真のままで、次の起動で実際に書かれる項目が増えることがある。画面の文言は「最新です」と言い切らず、「次の起動時に反映」の表示と併用する。
+- 最後の適用の理由を `sync_snapshots.reason`（マイグレーション 0008）に保存し、`lastApplied.reason` で返す。スキップは `noOptionsFile`、`noDataVersion`、`versionMismatch`、`nothingToApply`、失敗は `readFailed`、`writeFailed`、`recordFailed`、`unexpected` である。適用が済んだ場合は空にする。
+- 適用が終わるたびに、イベント `sync-apply-finished`（`instanceId`、結果、理由）を送る。結果は `applied`、`upToDate`、`skipped`、`failed` である。
+
+### 9.3 ドラッグはポインターイベントで実装した
+
+3.1 の「チップをドラッグ」は、HTML5 のドラッグ（`draggable`、`dragstart`）ではなく、`pointerdown`、`pointermove`、`pointerup` で実装した。Tauri の `dragDropEnabled` が既定で有効（`tauri.conf.json` で未設定）であり、その場合 Windows の WebView2 では、ウィンドウ内の HTML5 のドラッグが届かないためである。`dragDropEnabled` を無効にすると、ファイルのドロップなど他の機能に影響しうるため、設定は変えていない。
+
+- 判定は純関数（`dropZoneAt`、`dropAction`、`passedDragThreshold`）に切り出し、動きの小さな揺れは無視する閾値を持つ。
+- ボタンが押されていない状態の `pointermove` はドラッグを取り消す（ボタンを画面外で離した場合の対策）。
+- 実際のウィンドウでの操作は未確認で、利用者の確認項目とする。
+- ドラッグ自体のキーボード操作は設けていない。「×」と「インスタンスを追加」のメニューが同じ操作を代わりに担う。
+
+### 9.4 UI のために足した API
+
+- `InstanceSync` に `hasOptions`、`applicability`、`upToDate`、`overrides` を、`LastApplied` に `reason` を足した。
+- 共通設定の一覧と、`InstanceSync` の共通設定に、メンバー（`id`、`name`）を足した。
+- `list_sync_fields`（登録表の項目 id とカテゴリ。キー名は返さない）、`get_sync_profile_values`、`set_sync_override`（`null` で解除）を足した。
+- `SingleProposal` の `instanceId` を `instanceIds` に変えた。同じ項目に同じ値を提案しているインスタンスをまとめて持つ。`resolve_sync_proposal` は、指定したインスタンスの提案だけを解決する。
+- `set_sync_override` は、項目 id と値の改行を検証しない。適用側が、登録表に無い id と改行を含む値を読み飛ばすため害はないが、値を入れる画面を作る前に検証を足す。
+
+### 9.5 未決定に足すもの
+
+| 項目 | 状態 |
+|---|---|
+| 版で書式が変わる項目（`mainHand` など）の登録 | DataVersion の範囲を登録表に持たせてから |
+| カテゴリや除外の変更で revision を上げるか | 上げていない。必要になれば `upToDate` の定義と合わせて見直す |
