@@ -313,7 +313,7 @@ pub fn instance_sync(ctx: &SyncCtx, instance_id: &str) -> Result<InstanceSync, C
     let snapshot = store::snapshot(ctx.db, instance_id)?;
     let up_to_date = snapshot
         .as_ref()
-        .is_some_and(|s| s.applied_revision == profile.revision);
+        .is_some_and(|s| apply::is_current(s, profile.revision));
     let last_applied = snapshot.map(|s| LastApplied {
         state: s.state,
         at_ms: s.updated_at,

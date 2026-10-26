@@ -318,7 +318,8 @@ fn apply_member(
     })
 }
 
-fn is_current(snapshot: &Snapshot, revision: i64) -> bool {
+/// 記録が共通設定の今の revision を適用済みか。スキップや失敗の記録は最新ではない。
+pub(crate) fn is_current(snapshot: &Snapshot, revision: i64) -> bool {
     snapshot.state == SnapshotState::Applied && snapshot.applied_revision == revision
 }
 
@@ -941,6 +942,35 @@ mod tests {
         assert!(!up_to_date());
         apply_before_launch(&env.ctx(), &inst);
         assert!(up_to_date());
+        // 同じ revision のままでも、スキップや失敗を記録したら最新ではない
+        let rev = env.revision(&p);
+        env.jar(None);
+        assert!(matches!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NoDataVersion)
+        ));
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(
+            (snap.applied_revision, snap.state),
+            (rev, SnapshotState::Skipped)
+        );
+        assert!(!up_to_date());
+        env.jar(Some(&format!("{{\"world_version\":{VERSION}}}")));
+        apply_before_launch(&env.ctx(), &inst);
+        assert!(up_to_date());
+        std::fs::write(env.options(&inst), b"version:4325\nfov:\xff\n").unwrap();
+        assert!(matches!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Failed(_)
+        ));
+        assert_eq!(
+            store::snapshot(&env.db, &inst.id)
+                .unwrap()
+                .unwrap()
+                .applied_revision,
+            rev
+        );
+        assert!(!up_to_date());
     }
 
     #[test]
