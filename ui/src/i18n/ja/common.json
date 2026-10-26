@@ -444,5 +444,74 @@
     },
     "versionChanged": "{{name}} を {{version}} に切り替えました",
     "versionChangeCancelled": "版の切り替えをキャンセルしました"
+  },
+  "sync": {
+    "card": {
+      "title": "設定の同期",
+      "intro": "キー割り当てや音量などの設定を、ほかのインスタンスと揃えられます。",
+      "start": "他のインスタンスと設定を揃える",
+      "joined": "共通設定「{{name}}」を使っています",
+      "members": "一緒に使っているインスタンス：{{names}}",
+      "membersNone": "ほかに参加しているインスタンスはまだありません。",
+      "separator": "、",
+      "lastApplied": "最後に反映：{{date}}",
+      "neverApplied": "まだ反映していません。",
+      "lastSkipped": "前回の起動では反映しませんでした。{{reason}}",
+      "lastFailed": "前回の起動で反映に失敗しました。{{reason}}",
+      "nextLaunch": "次の起動時に反映されます。",
+      "afterPlay": "いまのプレイが終わった後に反映されます。",
+      "notApplicable": "このインスタンスにはまだ適用できません。{{reason}}",
+      "overrides": "このインスタンスだけの値",
+      "release": "共通設定に戻す",
+      "releaseLabel": "{{name}}を共通設定に戻す",
+      "leave": "共通設定から外れる",
+      "leaveNote": "外れても、このインスタンスの設定はそのまま残ります。あとでまた参加できます。",
+      "left": "共通設定から外れました"
+    },
+    "applicability": {
+      "needsFirstLaunch": "一度起動すると、設定を読み取れるようになります。",
+      "versionUnreadable": "設定ファイルか、ゲームのバージョンを読み取れません。",
+      "versionMismatch": "設定ファイルが、このゲームのバージョンのものと合っていません。"
+    },
+    "reason": {
+      "noOptionsFile": "まだ一度も起動していません。",
+      "noDataVersion": "ゲームのバージョンを読み取れませんでした。",
+      "versionMismatch": "設定ファイルとゲームのバージョンが合いませんでした。",
+      "nothingToApply": "反映する設定がありませんでした。",
+      "readFailed": "設定ファイルを読み取れませんでした。",
+      "writeFailed": "設定ファイルに書き込めませんでした。",
+      "recordFailed": "反映した記録を保存できませんでした。",
+      "unexpected": "予期しない問題が起きました。"
+    },
+    "toast": {
+      "failed": "{{name}} に共通設定を反映できませんでした。{{reason}}",
+      "failedNoName": "共通設定を反映できませんでした。{{reason}}"
+    },
+    "categories": {
+      "keys": "キー割り当て",
+      "mouse": "マウス",
+      "sound": "音",
+      "graphics": "画面",
+      "chat": "チャット",
+      "accessibility": "操作の補助"
+    },
+    "otherField": "その他の設定",
+    "join": {
+      "title": "他のインスタンスと設定を揃える",
+      "create": "このインスタンスの設定から新しい共通設定を作る",
+      "createDisabled": "一度起動すると、設定を読み取れるようになります。",
+      "existing": "既存の共通設定に参加する",
+      "name": "名前",
+      "defaultName": "共通設定",
+      "profile": "参加する共通設定",
+      "differing_one": "このインスタンスと共通設定で、{{count}} 件の設定が違います。どちらに揃えますか。",
+      "differing_other": "このインスタンスと共通設定で、{{count}} 件の設定が違います。どちらに揃えますか。",
+      "keepProfile": "共通設定に合わせる",
+      "adoptInstance": "このインスタンスの値で共通設定を更新する",
+      "submitCreate": "作成する",
+      "submitJoin": "参加する",
+      "cancel": "キャンセル",
+      "back": "戻る"
+    }
   }
 }

@@ -444,5 +444,74 @@
     },
     "versionChanged": "Changed {{name}} to {{version}}",
     "versionChangeCancelled": "Changing the version was cancelled"
+  },
+  "sync": {
+    "card": {
+      "title": "Settings sync",
+      "intro": "Keep settings such as key bindings and volume the same as your other instances.",
+      "start": "Match settings with other instances",
+      "joined": "Using the shared settings “{{name}}”",
+      "members": "Also using them: {{names}}",
+      "membersNone": "No other instance uses them yet.",
+      "separator": ", ",
+      "lastApplied": "Last applied: {{date}}",
+      "neverApplied": "Not applied yet.",
+      "lastSkipped": "Not applied on the last launch. {{reason}}",
+      "lastFailed": "Applying failed on the last launch. {{reason}}",
+      "nextLaunch": "Applies on the next launch.",
+      "afterPlay": "Applies after the current session ends.",
+      "notApplicable": "These settings can't be applied to this instance yet. {{reason}}",
+      "overrides": "Values only for this instance",
+      "release": "Use shared value",
+      "releaseLabel": "Use the shared value for {{name}}",
+      "leave": "Stop using shared settings",
+      "leaveNote": "This instance keeps its current settings when it stops. You can join again later.",
+      "left": "Stopped using shared settings"
+    },
+    "applicability": {
+      "needsFirstLaunch": "Launch it once so its settings can be read.",
+      "versionUnreadable": "The settings file or the game version can't be read.",
+      "versionMismatch": "The settings file doesn't match this game version."
+    },
+    "reason": {
+      "noOptionsFile": "It hasn't been launched yet.",
+      "noDataVersion": "The game version couldn't be read.",
+      "versionMismatch": "The settings file didn't match the game version.",
+      "nothingToApply": "There was nothing to apply.",
+      "readFailed": "The settings file couldn't be read.",
+      "writeFailed": "The settings file couldn't be written.",
+      "recordFailed": "The record of what was applied couldn't be saved.",
+      "unexpected": "Something unexpected went wrong."
+    },
+    "toast": {
+      "failed": "Couldn't apply shared settings to {{name}}. {{reason}}",
+      "failedNoName": "Couldn't apply shared settings. {{reason}}"
+    },
+    "categories": {
+      "keys": "Key bindings",
+      "mouse": "Mouse",
+      "sound": "Sound",
+      "graphics": "Video",
+      "chat": "Chat",
+      "accessibility": "Accessibility"
+    },
+    "otherField": "Other settings",
+    "join": {
+      "title": "Match settings with other instances",
+      "create": "Create new shared settings from this instance",
+      "createDisabled": "Launch it once so its settings can be read.",
+      "existing": "Join existing shared settings",
+      "name": "Name",
+      "defaultName": "Shared settings",
+      "profile": "Shared settings to join",
+      "differing_one": "{{count}} setting differs between this instance and the shared settings. Which should be kept?",
+      "differing_other": "{{count}} settings differ between this instance and the shared settings. Which should be kept?",
+      "keepProfile": "Match the shared settings",
+      "adoptInstance": "Update the shared settings with this instance's values",
+      "submitCreate": "Create",
+      "submitJoin": "Join",
+      "cancel": "Cancel",
+      "back": "Back"
+    }
   }
 }

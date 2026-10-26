@@ -4,11 +4,14 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addContentFiles,
+  getInstanceSync,
   identifyContent,
   listContent,
   listContentCategories,
   listInstances,
   listRunning,
+  listSyncFields,
+  listSyncProfiles,
   openInstanceFolder,
   systemMemoryMb,
   updateInstance,
@@ -39,6 +42,9 @@ vi.mock("../api/commands", () => ({
   addContentFiles: vi.fn(),
   listContentCategories: vi.fn(),
   getContentIcon: vi.fn(),
+  getInstanceSync: vi.fn(),
+  listSyncProfiles: vi.fn(),
+  listSyncFields: vi.fn(),
 }));
 
 vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
@@ -107,6 +113,13 @@ beforeEach(async () => {
   vi.mocked(identifyContent).mockResolvedValue({ identified: 0, local: 0 });
   vi.mocked(listContentCategories).mockResolvedValue([]);
   vi.mocked(onFilesDropped).mockResolvedValue(() => {});
+  // 設定のタブの先頭の「設定の同期」は、未参加の状態で始める
+  vi.mocked(getInstanceSync).mockResolvedValue({
+    profile: null, members: [], lastApplied: null, pendingCount: 0, profilePendingCount: 0,
+    excluded: [], hasOptions: true, applicability: "ready", upToDate: false, overrides: [],
+  });
+  vi.mocked(listSyncProfiles).mockResolvedValue([]);
+  vi.mocked(listSyncFields).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -116,6 +129,15 @@ afterEach(() => {
 });
 
 describe("InstanceDetail", () => {
+  it("puts the settings sync card first in the settings tab", async () => {
+    mount([instance()]);
+    const sync = await screen.findByRole("region", { name: "Settings sync" });
+    expect(await within(sync).findByRole("button", { name: "Match settings with other instances" })).toBeTruthy();
+    expect(getInstanceSync).toHaveBeenCalledWith("i1");
+    // カードは名前の欄より前にある
+    expect(sync.compareDocumentPosition(nameInput()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("save_is_disabled_until_changed", async () => {
     mount([instance()]);
     expect(await screen.findByRole("heading", { level: 1, name: "Survival" })).toBeTruthy();
