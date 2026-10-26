@@ -21,8 +21,9 @@ pub struct ConflictGroup {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PendingProposals {
-    /// (インスタンス ID, 提案)。値が 1 通りの項目は、同じ提案が複数あっても 1 件にまとめる。
-    pub single: Vec<(String, Proposal)>,
+    /// (提案しているインスタンスの ID, 提案)。値が 1 通りの項目は、
+    /// 同じ提案が複数あっても 1 件にまとめ、提案した全インスタンスを並べる。
+    pub single: Vec<(Vec<String>, Proposal)>,
     pub conflicts: Vec<ConflictGroup>,
 }
 
@@ -159,9 +160,13 @@ pub fn pending(ctx: &SyncCtx, profile_id: &str) -> Result<PendingProposals, Core
         let distinct: BTreeSet<&String> = entries.iter().map(|(_, v)| v).collect();
         if distinct.len() > 1 {
             out.conflicts.push(ConflictGroup { field_id, entries });
-        } else if let Some((instance_id, value)) = entries.into_iter().next() {
-            out.single.push((instance_id, Proposal { field_id, value }));
+            continue;
         }
+        let Some(value) = entries.first().map(|(_, v)| v.clone()) else {
+            continue;
+        };
+        let ids = entries.into_iter().map(|(id, _)| id).collect();
+        out.single.push((ids, Proposal { field_id, value }));
     }
     Ok(out)
 }
@@ -172,7 +177,7 @@ impl PendingProposals {
     pub fn count_for_instance(&self, instance_id: &str) -> usize {
         self.single
             .iter()
-            .filter(|(id, _)| id == instance_id)
+            .filter(|(ids, _)| ids.iter().any(|id| id == instance_id))
             .count()
             + self
                 .conflicts
@@ -493,7 +498,7 @@ mod tests {
         assert_eq!(
             got.single,
             vec![(
-                b.id.clone(),
+                vec![b.id.clone()],
                 Proposal {
                     field_id: "mouseSensitivity".into(),
                     value: "0.6".into()
@@ -522,6 +527,34 @@ mod tests {
     }
 
     #[test]
+    fn single_proposal_merges_instance_ids() {
+        let env = Env::new();
+        let (p, a, b) = two_members(&env, "0.9", "0.9");
+        let got = pending(&env.ctx(), &p.id).unwrap();
+        let mut ids = vec![a.id.clone(), b.id.clone()];
+        ids.sort();
+        assert_eq!(
+            got.single,
+            vec![(
+                ids.clone(),
+                Proposal {
+                    field_id: "fov".into(),
+                    value: "0.9".into()
+                }
+            )]
+        );
+        assert_eq!(got.count_for_instance(&a.id), 1);
+        assert_eq!(got.count_for_instance(&b.id), 1);
+        let view = crate::sync::wire::PendingView::from(got);
+        assert_eq!(view.single[0].instance_ids, ids);
+        // 解決は指定した 1 つだけ。もう 1 つの提案は残る
+        resolve(&env.ctx(), &a.id, "fov", Resolution::Ignore, None).unwrap();
+        let got = pending(&env.ctx(), &p.id).unwrap();
+        assert_eq!(got.single.len(), 1);
+        assert_eq!(got.single[0].0, vec![b.id.clone()]);
+    }
+
+    #[test]
     fn pending_hides_obsolete_excluded_and_disabled() {
         let env = Env::new();
         let (p, a, b) = two_members(&env, "0.9", "0.8");
@@ -530,7 +563,7 @@ mod tests {
         let got = pending(&env.ctx(), &p.id).unwrap();
         assert!(got.conflicts.is_empty());
         assert_eq!(got.single.len(), 1);
-        assert_eq!(got.single[0].0, b.id);
+        assert_eq!(got.single[0].0, vec![b.id.clone()]);
         store::set_excluded(&env.db, &b.id, &["fov".to_string()]).unwrap();
         assert_eq!(
             pending(&env.ctx(), &p.id).unwrap(),
@@ -759,7 +792,7 @@ fov:{fov}
         assert!(
             got.single
                 .iter()
-                .any(|(id, pr)| *id == a.id && pr.value == "0.5")
+                .any(|(ids, pr)| ids.contains(&a.id) && pr.value == "0.5")
         );
         // 上書きと同じ値の提案は有効ではない（共通の値と違っても）
         let membership = store::membership(&env.db, &a.id).unwrap().unwrap();

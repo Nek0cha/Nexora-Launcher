@@ -50,12 +50,13 @@ use crate::meta::write_atomic;
 use crate::net::{Depth, Http};
 use crate::paths::AppPaths;
 use crate::settings;
-use crate::sync::apply::{ApplyOutcome, apply_before_launch};
+use crate::sync::apply::{ApplyFailure, ApplyOutcome, FailReason, apply_before_launch};
 use crate::sync::proposals::{self, Resolution};
 use crate::sync::registry::Category;
 use crate::sync::store as sync_store;
 use crate::sync::wire::{
-    InstanceSync, JoinResult, LastApplied, PendingView, SyncMember, SyncProfileView,
+    InstanceSync, JoinResult, PendingView, SyncApplyFinishedEvent, SyncField, SyncFieldValue,
+    SyncProfileView,
 };
 use crate::sync::{self, JoinMode, SyncCtx};
 use crate::task::{TaskHandle, TaskManager, TaskPhase};
@@ -92,6 +93,8 @@ pub struct Launcher {
     env: InstallEnv,
     tasks: TaskManager,
     processes: GameProcesses,
+    /// ゲームの通知先。起動前の共通設定の適用の結果もここに送る。
+    notifier: Arc<dyn GameNotifier>,
     locks: InstanceLocks,
     auth: AuthService,
     /// reattach を一度だけ行うための印。二度目以降は監視を重ねないよう何もしない。
@@ -173,11 +176,12 @@ impl Launcher {
         probe: Arc<dyn JavaProbe>,
         auth: AuthService,
     ) -> Self {
-        let processes = GameProcesses::new(db.clone(), paths.clone(), notifier);
+        let processes = GameProcesses::new(db.clone(), paths.clone(), notifier.clone());
         Self {
             env: InstallEnv::new(paths, db, http, urls, probe),
             tasks,
             processes,
+            notifier,
             locks: InstanceLocks::default(),
             auth,
             reattached: Arc::new(AtomicBool::new(false)),
@@ -294,11 +298,35 @@ impl Launcher {
     }
 
     pub async fn list_sync_profiles(&self) -> Result<Vec<SyncProfileView>, CoreError> {
-        self.sync_blocking(|ctx| {
-            Ok(sync_store::list_profiles(ctx.db)?
-                .into_iter()
-                .map(SyncProfileView::from)
-                .collect())
+        self.sync_blocking(sync::list_profile_views).await
+    }
+
+    /// 登録表の項目の一覧（除外の画面のため）。
+    pub fn list_sync_fields(&self) -> Vec<SyncField> {
+        sync::list_fields()
+    }
+
+    /// 共通設定の値（提案の横に共通の値を出すため）。
+    pub async fn get_sync_profile_values(
+        &self,
+        profile_id: &str,
+    ) -> Result<Vec<SyncFieldValue>, CoreError> {
+        let profile_id = profile_id.to_string();
+        self.sync_blocking(move |ctx| sync::profile_values(ctx, &profile_id))
+            .await
+    }
+
+    /// インスタンスの例外（このインスタンスだけの値）を決める。`None` なら例外を外す。
+    pub async fn set_sync_override(
+        &self,
+        instance_id: &str,
+        field_id: &str,
+        value: Option<String>,
+    ) -> Result<(), CoreError> {
+        let (instance_id, field_id) = (instance_id.to_string(), field_id.to_string());
+        self.sync_blocking(move |ctx| {
+            instance::get(ctx.db, &instance_id)?;
+            sync::set_override(ctx, &instance_id, &field_id, value.as_deref())
         })
         .await
     }
@@ -311,7 +339,8 @@ impl Launcher {
     ) -> Result<SyncProfileView, CoreError> {
         let (instance_id, name) = (instance_id.to_string(), name.to_string());
         self.sync_blocking(move |ctx| {
-            sync::create_profile_from_instance(ctx, &instance_id, &name).map(SyncProfileView::from)
+            let profile = sync::create_profile_from_instance(ctx, &instance_id, &name)?;
+            sync::profile_view(ctx, profile)
         })
         .await
     }
@@ -387,43 +416,8 @@ impl Launcher {
     /// インスタンスの共通設定の状態。参加していなければ `profile` が `None`。
     pub async fn get_instance_sync(&self, instance_id: &str) -> Result<InstanceSync, CoreError> {
         let instance_id = instance_id.to_string();
-        self.sync_blocking(move |ctx| {
-            instance::get(ctx.db, &instance_id)?;
-            let Some(membership) = sync::membership(ctx, &instance_id)? else {
-                return Ok(InstanceSync {
-                    profile: None,
-                    members: Vec::new(),
-                    last_applied: None,
-                    pending_count: 0,
-                    profile_pending_count: 0,
-                    excluded: Vec::new(),
-                });
-            };
-            let profile = sync::find_profile(ctx, &membership.profile_id)?;
-            let mut members = Vec::new();
-            for id in sync_store::members(ctx.db, &profile.id)? {
-                if let Ok(inst) = instance::get(ctx.db, &id) {
-                    members.push(SyncMember {
-                        id,
-                        name: inst.name,
-                    });
-                }
-            }
-            let last_applied = sync_store::snapshot(ctx.db, &instance_id)?.map(|s| LastApplied {
-                state: s.state,
-                at_ms: s.updated_at,
-            });
-            let pending = proposals::pending(ctx, &profile.id)?;
-            Ok(InstanceSync {
-                members,
-                last_applied,
-                pending_count: clamp_count(pending.count_for_instance(&instance_id)),
-                profile_pending_count: clamp_count(pending.single.len() + pending.conflicts.len()),
-                excluded: membership.excluded,
-                profile: Some(profile.into()),
-            })
-        })
-        .await
+        self.sync_blocking(move |ctx| sync::instance_sync(ctx, &instance_id))
+            .await
     }
 
     pub async fn set_sync_excluded(
@@ -958,12 +952,12 @@ impl Launcher {
                 message: e.to_string(),
             })??;
 
-        // 共通設定の適用。結果は記録するだけで、失敗しても起動は止めない
+        // 共通設定の適用。結果は記録して通知するだけで、失敗しても起動は止めない
         {
             let db = env.db.clone();
             let paths = env.paths.clone();
             let inst = inst.clone();
-            match tokio::task::spawn_blocking(move || {
+            let outcome = match tokio::task::spawn_blocking(move || {
                 let ctx = SyncCtx {
                     db: &db,
                     paths: &paths,
@@ -972,15 +966,23 @@ impl Launcher {
             })
             .await
             {
-                Ok(ApplyOutcome::Failed(message)) => {
+                Ok(outcome) => outcome,
+                Err(e) => ApplyOutcome::Failed(ApplyFailure {
+                    reason: FailReason::Unexpected,
+                    message: format!("sync apply task failed: {e}"),
+                }),
+            };
+            match &outcome {
+                ApplyOutcome::Failed(failure) => {
+                    let message = &failure.message;
                     tracing::warn!(instance_id = id, %message, "failed to apply the sync profile");
                 }
-                Ok(outcome) => {
+                outcome => {
                     tracing::info!(instance_id = id, ?outcome, "sync profile apply finished");
                 }
-                Err(e) => {
-                    tracing::warn!(instance_id = id, "sync apply task failed: {e}");
-                }
+            }
+            if let Some(event) = SyncApplyFinishedEvent::from_outcome(id, &outcome) {
+                self.notifier.sync_apply_finished(&event);
             }
         }
 

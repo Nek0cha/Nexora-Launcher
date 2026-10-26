@@ -369,6 +369,7 @@ use std::sync::Mutex;
 
 use nexora_core::launch::log4j::LogRecord;
 use nexora_core::launch::process::{GameNotifier, RunningSession};
+use nexora_core::sync::wire::SyncApplyFinishedEvent;
 
 /// ゲームのイベントを記録する notifier。
 #[derive(Default)]
@@ -376,9 +377,13 @@ pub struct RecordingGame {
     pub started: Mutex<Vec<RunningSession>>,
     pub logs: Mutex<Vec<(String, LogRecord)>>,
     pub exits: Mutex<Vec<(String, Option<i32>)>>,
+    pub sync_applied: Mutex<Vec<SyncApplyFinishedEvent>>,
 }
 
 impl GameNotifier for RecordingGame {
+    fn sync_apply_finished(&self, event: &SyncApplyFinishedEvent) {
+        self.sync_applied.lock().unwrap().push(event.clone());
+    }
     fn started(&self, session: &RunningSession) {
         self.started.lock().unwrap().push(session.clone());
     }

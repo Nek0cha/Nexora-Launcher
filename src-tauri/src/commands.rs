@@ -25,7 +25,9 @@ use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::sync::JoinMode;
 use nexora_core::sync::proposals::Resolution;
 use nexora_core::sync::registry::Category;
-use nexora_core::sync::wire::{InstanceSync, JoinResult, PendingView, SyncProfileView};
+use nexora_core::sync::wire::{
+    InstanceSync, JoinResult, PendingView, SyncField, SyncFieldValue, SyncProfileView,
+};
 use nexora_core::task::TaskSnapshot;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -843,6 +845,42 @@ pub async fn set_sync_excluded(
     services
         .launcher
         .set_sync_excluded(&instance_id, field_ids)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 登録表の項目の一覧。キー名の表示名は UI が ID から決める。
+#[tauri::command]
+pub fn list_sync_fields(state: State<'_, AppState>) -> CmdResult<Vec<SyncField>> {
+    Ok(state.services()?.launcher.list_sync_fields())
+}
+
+/// 共通設定の値。
+#[tauri::command]
+pub async fn get_sync_profile_values(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> CmdResult<Vec<SyncFieldValue>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .get_sync_profile_values(&profile_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// インスタンスの例外を決める。`value` が `null` なら例外を外す。
+#[tauri::command]
+pub async fn set_sync_override(
+    state: State<'_, AppState>,
+    instance_id: String,
+    field_id: String,
+    value: Option<String>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .set_sync_override(&instance_id, &field_id, value)
         .await
         .map_err(ErrorPayload::from)
 }

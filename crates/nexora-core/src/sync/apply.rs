@@ -3,6 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::PathBuf;
+
+use serde::Serialize;
+use ts_rs::TS;
 
 use super::SyncCtx;
 use super::options::{OptionsFile, write_atomic};
@@ -11,6 +15,7 @@ use super::store::{self, Snapshot, SnapshotState};
 use super::version::read_data_version;
 use crate::instance::{self, Instance};
 use crate::meta::mojang::manifest::client_jar_path;
+use crate::paths::AppPaths;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApplyOutcome {
@@ -23,7 +28,7 @@ pub enum ApplyOutcome {
     /// 適用する値はあるが、すべてインスタンスの値と同じ。ファイルには触れない。
     UpToDate,
     Skipped(SkipReason),
-    Failed(String),
+    Failed(ApplyFailure),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,11 +39,131 @@ pub enum SkipReason {
     NothingToApply,
 }
 
+impl SkipReason {
+    /// 記録と UI に渡す分類の文字列。
+    pub fn code(self) -> &'static str {
+        match self {
+            SkipReason::NoOptionsFile => "noOptionsFile",
+            SkipReason::NoDataVersion => "noDataVersion",
+            SkipReason::VersionMismatch => "versionMismatch",
+            SkipReason::NothingToApply => "nothingToApply",
+        }
+    }
+
+    /// この理由のときの、適用の前提の状態。
+    fn applicability(self) -> Applicability {
+        match self {
+            SkipReason::NoOptionsFile => Applicability::NeedsFirstLaunch,
+            SkipReason::NoDataVersion => Applicability::VersionUnreadable,
+            SkipReason::VersionMismatch => Applicability::VersionMismatch,
+            // 前提は満たしていて、書く値が無いだけ
+            SkipReason::NothingToApply => Applicability::Ready,
+        }
+    }
+}
+
+/// 失敗の分類。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailReason {
+    /// options.txt を読めない（UTF-8 でないものを含む）。
+    ReadFailed,
+    /// options.txt を書けない。
+    WriteFailed,
+    /// options.txt は書いたが、記録を残せなかった。
+    RecordFailed,
+    /// DB の読み出しの失敗など、それ以外。
+    Unexpected,
+}
+
+impl FailReason {
+    /// 記録と UI に渡す分類の文字列。
+    pub fn code(self) -> &'static str {
+        match self {
+            FailReason::ReadFailed => "readFailed",
+            FailReason::WriteFailed => "writeFailed",
+            FailReason::RecordFailed => "recordFailed",
+            FailReason::Unexpected => "unexpected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplyFailure {
+    pub reason: FailReason,
+    /// ログに残す説明。
+    pub message: String,
+}
+
+fn failure(reason: FailReason, message: String) -> ApplyFailure {
+    ApplyFailure { reason, message }
+}
+
+/// インスタンスに共通設定を適用できる状態か。参加の有無とは関係なく、ファイルと版だけで決まる。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum Applicability {
+    Ready,
+    /// options.txt が無い（一度も起動していない）。
+    NeedsFirstLaunch,
+    /// クライアントの jar から版（DataVersion）を読めない。options.txt を読めないときも含む。
+    VersionUnreadable,
+    /// options.txt の `version` の行が、ゲームの版と一致しない（行が無いときも含む）。
+    VersionMismatch,
+}
+
+/// 適用の前提（ファイルと版）を調べた結果。
+enum Prerequisite {
+    Ready { path: PathBuf, file: OptionsFile },
+    NotReady(SkipReason),
+}
+
+/// options.txt を読み、ゲームの版と合うかを調べる。何も書かない。
+/// `Err` は options.txt を読めないとき。
+fn check_prerequisites(paths: &AppPaths, inst: &Instance) -> Result<Prerequisite, String> {
+    let path = instance::game_dir(paths, inst).join("options.txt");
+    // UTF-8 として厳密に読む。読めなければ何も書かない
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Prerequisite::NotReady(SkipReason::NoOptionsFile));
+        }
+        Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
+    };
+    let text =
+        String::from_utf8(bytes).map_err(|_| format!("{} is not valid UTF-8", path.display()))?;
+    let file = OptionsFile::parse(&text);
+
+    let Some(data_version) = read_data_version(&client_jar_path(paths, &inst.mc_version)) else {
+        return Ok(Prerequisite::NotReady(SkipReason::NoDataVersion));
+    };
+    if file.version() != Some(data_version) {
+        return Ok(Prerequisite::NotReady(SkipReason::VersionMismatch));
+    }
+    Ok(Prerequisite::Ready { path, file })
+}
+
+/// 今のファイルと版で、共通設定を適用できるか。`apply_before_launch` と同じ前提で判定する。
+/// options.txt を読めないときは `VersionUnreadable` にする。何も書かない。
+pub fn applicability(paths: &AppPaths, inst: &Instance) -> Applicability {
+    match check_prerequisites(paths, inst) {
+        Ok(Prerequisite::Ready { .. }) => Applicability::Ready,
+        Ok(Prerequisite::NotReady(reason)) => reason.applicability(),
+        Err(message) => {
+            tracing::warn!(instance_id = %inst.id, %message, "could not check the sync prerequisites");
+            Applicability::VersionUnreadable
+        }
+    }
+}
+
 /// 起動前に共通設定を適用する。`Result` を返さず、パニックもしない。
 pub fn apply_before_launch(ctx: &SyncCtx, inst: &Instance) -> ApplyOutcome {
     match catch_unwind(AssertUnwindSafe(|| run(ctx, inst))) {
         Ok(outcome) => outcome,
-        Err(_) => ApplyOutcome::Failed("sync apply panicked".to_string()),
+        Err(_) => ApplyOutcome::Failed(failure(
+            FailReason::Unexpected,
+            "sync apply panicked".to_string(),
+        )),
     }
 }
 
@@ -46,51 +171,61 @@ fn run(ctx: &SyncCtx, inst: &Instance) -> ApplyOutcome {
     let membership = match store::membership(ctx.db, &inst.id) {
         Ok(Some(m)) => m,
         Ok(None) => return ApplyOutcome::NotMember,
-        Err(e) => return ApplyOutcome::Failed(format!("failed to read membership: {e}")),
+        Err(e) => {
+            return ApplyOutcome::Failed(failure(
+                FailReason::Unexpected,
+                format!("failed to read membership: {e}"),
+            ));
+        }
     };
     match apply_member(ctx, inst, &membership) {
         Ok(outcome) => outcome,
-        Err(message) => {
-            record_state(ctx, &inst.id, SnapshotState::Failed);
-            ApplyOutcome::Failed(message)
+        Err(failure) => {
+            record_state(
+                ctx,
+                &inst.id,
+                SnapshotState::Failed,
+                Some(failure.reason.code()),
+            );
+            ApplyOutcome::Failed(failure)
         }
     }
 }
 
-/// 適用の本体。ここでの `Err` は `Failed` のメッセージになる。
+/// 適用の本体。ここでの `Err` は `Failed` になる。
 fn apply_member(
     ctx: &SyncCtx,
     inst: &Instance,
     membership: &store::Membership,
-) -> Result<ApplyOutcome, String> {
-    let path = instance::game_dir(ctx.paths, inst).join("options.txt");
-    // UTF-8 として厳密に読む。読めなければ何も書かない
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(skipped(ctx, &inst.id, SkipReason::NoOptionsFile));
-        }
-        Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
+) -> Result<ApplyOutcome, ApplyFailure> {
+    let (path, mut file) = match check_prerequisites(ctx.paths, inst)
+        .map_err(|message| failure(FailReason::ReadFailed, message))?
+    {
+        Prerequisite::Ready { path, file } => (path, file),
+        Prerequisite::NotReady(reason) => return Ok(skipped(ctx, &inst.id, reason)),
     };
-    let text =
-        String::from_utf8(bytes).map_err(|_| format!("{} is not valid UTF-8", path.display()))?;
-    let mut file = OptionsFile::parse(&text);
-
-    let Some(data_version) = read_data_version(&client_jar_path(ctx.paths, &inst.mc_version))
-    else {
-        return Ok(skipped(ctx, &inst.id, SkipReason::NoDataVersion));
-    };
-    if file.version() != Some(data_version) {
-        return Ok(skipped(ctx, &inst.id, SkipReason::VersionMismatch));
-    }
 
     let profile = store::list_profiles(ctx.db)
-        .map_err(|e| format!("failed to read profiles: {e}"))?
+        .map_err(|e| {
+            failure(
+                FailReason::Unexpected,
+                format!("failed to read profiles: {e}"),
+            )
+        })?
         .into_iter()
         .find(|p| p.id == membership.profile_id)
-        .ok_or_else(|| format!("sync profile {} was not found", membership.profile_id))?;
-    let profile_values = store::values(ctx.db, &profile.id)
-        .map_err(|e| format!("failed to read profile values: {e}"))?;
+        .ok_or_else(|| {
+            failure(
+                FailReason::Unexpected,
+                format!("sync profile {} was not found", membership.profile_id),
+            )
+        })?;
+    let profile_values = store::values(ctx.db, &profile.id).map_err(|e| {
+        failure(
+            FailReason::Unexpected,
+            format!("failed to read profile values: {e}"),
+        )
+    })?;
 
     // 管理対象 = 有効なカテゴリで、除外されておらず、インスタンスに行がある項目。
     // (field_id, options.txt のキー, 適用する値, 現在値)
@@ -159,8 +294,12 @@ fn apply_member(
     }
 
     file.set_all(&updates);
-    write_atomic(&path, &ctx.paths.backups_dir(), &inst.id, &file.render())
-        .map_err(|e| format!("failed to write options.txt: {e}"))?;
+    write_atomic(&path, &ctx.paths.backups_dir(), &inst.id, &file.render()).map_err(|e| {
+        failure(
+            FailReason::WriteFailed,
+            format!("failed to write options.txt: {e}"),
+        )
+    })?;
     save_keeping_proposals(
         ctx.db,
         &inst.id,
@@ -168,7 +307,12 @@ fn apply_member(
         &baseline,
         SnapshotState::Applied,
     )
-    .map_err(|e| format!("options.txt was updated but the sync record failed: {e}"))?;
+    .map_err(|e| {
+        failure(
+            FailReason::RecordFailed,
+            format!("options.txt was updated but the sync record failed: {e}"),
+        )
+    })?;
     Ok(ApplyOutcome::Applied {
         changed: updates.len(),
     })
@@ -179,7 +323,12 @@ fn is_current(snapshot: &Snapshot, revision: i64) -> bool {
 }
 
 fn skipped(ctx: &SyncCtx, instance_id: &str, reason: SkipReason) -> ApplyOutcome {
-    record_state(ctx, instance_id, SnapshotState::Skipped);
+    record_state(
+        ctx,
+        instance_id,
+        SnapshotState::Skipped,
+        Some(reason.code()),
+    );
     ApplyOutcome::Skipped(reason)
 }
 
@@ -195,13 +344,15 @@ fn save_keeping_proposals(
     store::save_snapshot_keeping_proposals(db, instance_id, applied_revision, baseline, state)
 }
 
-/// 状態だけを記録する。既にある基準値、revision、提案は消さない。
+/// 状態と理由だけを記録する。既にある基準値、revision、提案は消さない。
 /// 記録がまだ無いときは、空の基準値と revision 0 で作る。
-fn record_state(ctx: &SyncCtx, instance_id: &str, state: SnapshotState) {
+fn record_state(ctx: &SyncCtx, instance_id: &str, state: SnapshotState, reason: Option<&str>) {
+    let reason = reason.map(str::to_string);
     let result = store::update_snapshot(ctx.db, instance_id, |existing| {
         Ok(Some(match existing {
             Some(s) => store::SnapshotEdit {
                 state,
+                reason,
                 ..store::SnapshotEdit::of(&s, true)
             },
             None => store::SnapshotEdit {
@@ -209,6 +360,7 @@ fn record_state(ctx: &SyncCtx, instance_id: &str, state: SnapshotState) {
                 baseline: BTreeMap::new(),
                 proposals: Vec::new(),
                 state,
+                reason,
                 touch: true,
             },
         }))
@@ -733,6 +885,136 @@ mod tests {
         );
         let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
         assert_eq!(snap.baseline.keys().collect::<Vec<_>>(), ["key_key.use"]);
+    }
+
+    #[test]
+    fn applicability_covers_each_case() {
+        let env = Env::new();
+        let p = env.profile(&[("fov", "0.9")]);
+        let state = |inst: &Instance| crate::sync::instance_sync(&env.ctx(), &inst.id).unwrap();
+        // ファイル無し
+        let bare = env.instance("A", None);
+        env.join(&bare, &p);
+        assert_eq!(
+            applicability(&env.paths, &bare),
+            Applicability::NeedsFirstLaunch
+        );
+        assert_eq!(state(&bare).applicability, Applicability::NeedsFirstLaunch);
+        // version 行が不一致
+        let other = SAMPLE.replace("version:4325", "version:4000");
+        let old = env.instance("B", Some(other.as_bytes()));
+        assert_eq!(
+            applicability(&env.paths, &old),
+            Applicability::VersionMismatch
+        );
+        // 準備完了（未参加でも判定できる）
+        let ready = env.instance("C", Some(SAMPLE.as_bytes()));
+        assert_eq!(applicability(&env.paths, &ready), Applicability::Ready);
+        assert_eq!(state(&ready).applicability, Applicability::Ready);
+        // jar から版が読めない
+        env.jar(None);
+        assert_eq!(
+            applicability(&env.paths, &ready),
+            Applicability::VersionUnreadable
+        );
+        // 判定は何も書かない
+        assert_eq!(env.read(&ready), SAMPLE);
+        assert!(store::snapshot(&env.db, &bare.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn up_to_date_follows_revision() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.9")]);
+        let up_to_date = || {
+            crate::sync::instance_sync(&env.ctx(), &inst.id)
+                .unwrap()
+                .up_to_date
+        };
+        assert!(!up_to_date());
+        env.join(&inst, &p);
+        assert!(!up_to_date());
+        apply_before_launch(&env.ctx(), &inst);
+        assert!(up_to_date());
+        store::set_values(&env.db, &p.id, &[("fov".into(), "0.7".into())]).unwrap();
+        assert!(!up_to_date());
+        apply_before_launch(&env.ctx(), &inst);
+        assert!(up_to_date());
+    }
+
+    #[test]
+    fn apply_records_skip_reason() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        let last = || {
+            crate::sync::instance_sync(&env.ctx(), &inst.id)
+                .unwrap()
+                .last_applied
+                .unwrap()
+        };
+        apply_before_launch(&env.ctx(), &inst);
+        assert_eq!(
+            store::snapshot(&env.db, &inst.id)
+                .unwrap()
+                .unwrap()
+                .reason
+                .as_deref(),
+            Some("noOptionsFile")
+        );
+        assert_eq!(last().reason.as_deref(), Some("noOptionsFile"));
+        let other = SAMPLE.replace("version:4325", "version:4000");
+        std::fs::write(env.options(&inst), &other).unwrap();
+        apply_before_launch(&env.ctx(), &inst);
+        assert_eq!(last().reason.as_deref(), Some("versionMismatch"));
+        // 適用できれば理由は消える
+        std::fs::write(env.options(&inst), SAMPLE).unwrap();
+        apply_before_launch(&env.ctx(), &inst);
+        let applied = last();
+        assert_eq!(applied.state, SnapshotState::Applied);
+        assert_eq!(applied.reason, None);
+        // 失敗も分類を残す
+        store::set_values(&env.db, &p.id, &[("fov".into(), "0.1".into())]).unwrap();
+        let mut tmp = env.options(&inst).into_os_string();
+        tmp.push(".tmp");
+        std::fs::create_dir(&tmp).unwrap();
+        let outcome = apply_before_launch(&env.ctx(), &inst);
+        assert!(
+            matches!(&outcome, ApplyOutcome::Failed(f) if f.reason == FailReason::WriteFailed),
+            "{outcome:?}"
+        );
+        let failed = last();
+        assert_eq!(failed.state, SnapshotState::Failed);
+        assert_eq!(failed.reason.as_deref(), Some("writeFailed"));
+    }
+
+    #[test]
+    fn up_to_date_clears_an_earlier_skip_reason() {
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.5")]);
+        env.join(&inst, &p);
+        env.jar(None);
+        apply_before_launch(&env.ctx(), &inst);
+        assert_eq!(
+            store::snapshot(&env.db, &inst.id)
+                .unwrap()
+                .unwrap()
+                .reason
+                .as_deref(),
+            Some("noDataVersion")
+        );
+        env.jar(Some("{\"world_version\":4325}"));
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::UpToDate
+        );
+        assert_eq!(
+            store::snapshot(&env.db, &inst.id).unwrap().unwrap().reason,
+            None
+        );
     }
 
     #[test]

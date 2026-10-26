@@ -22,6 +22,9 @@ use crate::paths::AppPaths;
 use self::options::OptionsFile;
 use self::registry::{Category, KeyCodec, field_for_key, key_codec};
 use self::store::{Membership, SyncProfile};
+use self::wire::{
+    InstanceSync, LastApplied, SyncField, SyncFieldValue, SyncMember, SyncProfileView,
+};
 
 /// 同期の処理が使う入口。DB とアプリのパスを借りる。
 pub struct SyncCtx<'a> {
@@ -237,10 +240,115 @@ pub fn membership(ctx: &SyncCtx, instance_id: &str) -> Result<Option<Membership>
     store::membership(ctx.db, instance_id)
 }
 
+/// 共通設定に参加しているインスタンス。行の消えたインスタンスは飛ばす。
+fn members_of(ctx: &SyncCtx, profile_id: &str) -> Result<Vec<SyncMember>, CoreError> {
+    let mut members = Vec::new();
+    for id in store::members(ctx.db, profile_id)? {
+        match instance::get(ctx.db, &id) {
+            Ok(inst) => members.push(SyncMember {
+                id,
+                name: inst.name,
+            }),
+            Err(CoreError::InstanceNotFound { .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(members)
+}
+
+/// UI に渡す共通設定。参加しているインスタンスの一覧を付ける。
+pub fn profile_view(ctx: &SyncCtx, profile: SyncProfile) -> Result<SyncProfileView, CoreError> {
+    let members = members_of(ctx, &profile.id)?;
+    Ok(SyncProfileView::new(profile, members))
+}
+
+/// 共通設定の一覧（UI 向け）。
+pub fn list_profile_views(ctx: &SyncCtx) -> Result<Vec<SyncProfileView>, CoreError> {
+    store::list_profiles(ctx.db)?
+        .into_iter()
+        .map(|p| profile_view(ctx, p))
+        .collect()
+}
+
+/// 登録表の項目の一覧。Mod 由来のキー割り当ては含まない。
+pub fn list_fields() -> Vec<SyncField> {
+    registry::fields()
+        .iter()
+        .map(|f| SyncField {
+            id: f.id.to_string(),
+            category: f.category,
+        })
+        .collect()
+}
+
+/// 共通設定の値。項目の ID の順。
+pub fn profile_values(ctx: &SyncCtx, profile_id: &str) -> Result<Vec<SyncFieldValue>, CoreError> {
+    find_profile(ctx, profile_id)?;
+    Ok(store::values(ctx.db, profile_id)?
+        .into_iter()
+        .map(|(field_id, value)| SyncFieldValue { field_id, value })
+        .collect())
+}
+
+/// インスタンスの共通設定の状態。参加していなければ `profile` が `None`。
+pub fn instance_sync(ctx: &SyncCtx, instance_id: &str) -> Result<InstanceSync, CoreError> {
+    let inst = instance::get(ctx.db, instance_id)?;
+    let has_options = options_path(ctx, instance_id)?.is_file();
+    let applicability = apply::applicability(ctx.paths, &inst);
+    let Some(membership) = store::membership(ctx.db, instance_id)? else {
+        return Ok(InstanceSync {
+            profile: None,
+            members: Vec::new(),
+            last_applied: None,
+            pending_count: 0,
+            profile_pending_count: 0,
+            excluded: Vec::new(),
+            has_options,
+            applicability,
+            up_to_date: false,
+            overrides: Vec::new(),
+        });
+    };
+    let profile = find_profile(ctx, &membership.profile_id)?;
+    let snapshot = store::snapshot(ctx.db, instance_id)?;
+    let up_to_date = snapshot
+        .as_ref()
+        .is_some_and(|s| s.applied_revision == profile.revision);
+    let last_applied = snapshot.map(|s| LastApplied {
+        state: s.state,
+        at_ms: s.updated_at,
+        reason: s.reason,
+    });
+    let pending = proposals::pending(ctx, &profile.id)?;
+    let view = profile_view(ctx, profile)?;
+    Ok(InstanceSync {
+        members: view.members.clone(),
+        last_applied,
+        pending_count: clamp_count(pending.count_for_instance(instance_id)),
+        profile_pending_count: clamp_count(pending.single.len() + pending.conflicts.len()),
+        excluded: membership.excluded,
+        has_options,
+        applicability,
+        up_to_date,
+        overrides: membership
+            .overrides
+            .into_iter()
+            .map(|(field_id, value)| SyncFieldValue { field_id, value })
+            .collect(),
+        profile: Some(view),
+    })
+}
+
+/// 件数を u32 に収める。
+fn clamp_count(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::instance::NewInstance;
+    use crate::sync::apply::Applicability;
 
     struct Env {
         _t: tempfile::TempDir,
@@ -507,6 +615,141 @@ fov:0.5
         assert!(membership(&env.ctx(), &id).unwrap().is_none());
         set_categories(&env.ctx(), &p.id, &[Category::Mouse]).unwrap();
         assert_eq!(preview_join(&env.ctx(), &id, &p.id).unwrap(), 0);
+    }
+
+    #[test]
+    fn has_options_reflects_the_file() {
+        let env = Env::new();
+        let bare = env.instance("A", None);
+        let with = env.instance("B", Some(SAMPLE.as_bytes()));
+        assert!(!instance_sync(&env.ctx(), &bare).unwrap().has_options);
+        assert!(instance_sync(&env.ctx(), &with).unwrap().has_options);
+        // 参加中でも同じ。ファイルを置けば変わる
+        let p = create_profile_from_instance(&env.ctx(), &with, "共通").unwrap();
+        join_instance(&env.ctx(), &bare, &p.id, JoinMode::KeepProfile).unwrap();
+        assert!(!instance_sync(&env.ctx(), &bare).unwrap().has_options);
+        std::fs::write(env.options(&bare), SAMPLE).unwrap();
+        assert!(instance_sync(&env.ctx(), &bare).unwrap().has_options);
+    }
+
+    #[test]
+    fn overrides_are_returned_and_clearable() {
+        let env = Env::new();
+        let id = env.instance("A", Some(SAMPLE.as_bytes()));
+        assert_eq!(
+            set_override(&env.ctx(), &id, "fov", Some("0.1"))
+                .unwrap_err()
+                .code(),
+            "sync.not_member"
+        );
+        create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
+        assert!(instance_sync(&env.ctx(), &id).unwrap().overrides.is_empty());
+        set_override(&env.ctx(), &id, "fov", Some("0.1")).unwrap();
+        set_override(&env.ctx(), &id, "gamma", Some("2.0")).unwrap();
+        assert_eq!(
+            instance_sync(&env.ctx(), &id).unwrap().overrides,
+            vec![
+                SyncFieldValue {
+                    field_id: "fov".into(),
+                    value: "0.1".into()
+                },
+                SyncFieldValue {
+                    field_id: "gamma".into(),
+                    value: "2.0".into()
+                },
+            ]
+        );
+        set_override(&env.ctx(), &id, "fov", None).unwrap();
+        assert_eq!(
+            instance_sync(&env.ctx(), &id).unwrap().overrides,
+            vec![SyncFieldValue {
+                field_id: "gamma".into(),
+                value: "2.0".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn profile_view_lists_members() {
+        let env = Env::new();
+        let a = env.instance("A", Some(SAMPLE.as_bytes()));
+        let b = env.instance("B", None);
+        let _outsider = env.instance("C", None);
+        let p = create_profile_from_instance(&env.ctx(), &a, "共通").unwrap();
+        join_instance(&env.ctx(), &b, &p.id, JoinMode::KeepProfile).unwrap();
+        let views = list_profile_views(&env.ctx()).unwrap();
+        assert_eq!(views.len(), 1);
+        let mut members: Vec<(String, String)> = views[0]
+            .members
+            .iter()
+            .map(|m| (m.id.clone(), m.name.clone()))
+            .collect();
+        members.sort_by(|x, y| x.1.cmp(&y.1));
+        assert_eq!(
+            members,
+            vec![(a.clone(), "A".to_string()), (b.clone(), "B".to_string())]
+        );
+        // インスタンスの状態に付く共通設定にも、同じ一覧が入る
+        let sync = instance_sync(&env.ctx(), &b).unwrap();
+        assert_eq!(sync.profile.unwrap().members.len(), 2);
+        leave_instance(&env.ctx(), &b).unwrap();
+        assert_eq!(list_profile_views(&env.ctx()).unwrap()[0].members.len(), 1);
+    }
+
+    #[test]
+    fn list_sync_fields_has_unique_ids_and_categories() {
+        let fields = list_fields();
+        assert_eq!(fields.len(), registry::fields().len());
+        let ids: std::collections::BTreeSet<&str> = fields.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids.len(), fields.len());
+        let fov = fields.iter().find(|f| f.id == "fov").unwrap();
+        assert_eq!(fov.category, Category::Graphics);
+        let jump = fields.iter().find(|f| f.id == "key_key.jump").unwrap();
+        assert_eq!(jump.category, Category::Keys);
+        // すべてのカテゴリに項目がある
+        for category in ALL_CATEGORIES {
+            assert!(
+                fields.iter().any(|f| f.category == category),
+                "{category:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn profile_values_are_listed_by_field() {
+        let env = Env::new();
+        let id = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
+        let values = profile_values(&env.ctx(), &p.id).unwrap();
+        assert_eq!(
+            values
+                .iter()
+                .map(|v| (v.field_id.as_str(), v.value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("fov", "0.5"),
+                ("key_key.jump", "key.keyboard.space"),
+                ("mouseSensitivity", "0.3"),
+            ]
+        );
+        assert_eq!(
+            profile_values(&env.ctx(), "nope").unwrap_err().code(),
+            "sync.profile_not_found"
+        );
+    }
+
+    #[test]
+    fn non_member_sync_state_is_empty() {
+        let env = Env::new();
+        let id = env.instance("A", None);
+        let sync = instance_sync(&env.ctx(), &id).unwrap();
+        assert!(sync.profile.is_none() && sync.members.is_empty());
+        assert!(!sync.up_to_date && sync.overrides.is_empty());
+        assert_eq!(sync.applicability, Applicability::NeedsFirstLaunch);
+        assert_eq!(
+            instance_sync(&env.ctx(), "nope").unwrap_err().code(),
+            "instance.not_found"
+        );
     }
 
     #[test]

@@ -20,6 +20,7 @@ use crate::install::now_ms;
 use crate::instance;
 use crate::net::io_err;
 use crate::paths::AppPaths;
+use crate::sync::wire::SyncApplyFinishedEvent;
 
 /// Windows でコンソールの窓を出さないためのフラグ。
 #[cfg(windows)]
@@ -30,6 +31,8 @@ pub trait GameNotifier: Send + Sync {
     fn started(&self, session: &RunningSession);
     fn log(&self, instance_id: &str, record: &LogRecord);
     fn exited(&self, instance_id: &str, exit_code: Option<i32>);
+    /// 起動前の共通設定の適用が終わった（参加中のインスタンスだけ）。
+    fn sync_apply_finished(&self, event: &SyncApplyFinishedEvent);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -474,6 +477,7 @@ mod tests {
         fn started(&self, _: &RunningSession) {}
         fn log(&self, _: &str, _: &LogRecord) {}
         fn exited(&self, _: &str, _: Option<i32>) {}
+        fn sync_apply_finished(&self, _: &SyncApplyFinishedEvent) {}
     }
 
     #[test]

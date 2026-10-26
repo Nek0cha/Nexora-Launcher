@@ -72,6 +72,8 @@ pub struct Snapshot {
     pub state: SnapshotState,
     /// 最後に記録した時刻（unix ミリ秒）。時刻を持たない古い記録は `None`。
     pub updated_at: Option<i64>,
+    /// スキップや失敗の理由の分類（`noOptionsFile` など）。適用できたときと古い記録は `None`。
+    pub reason: Option<String>,
 }
 
 fn now_millis() -> i64 {
@@ -404,7 +406,7 @@ pub fn set_override(
     })
 }
 
-/// 適用の結果を記録する。提案は空に戻る。
+/// 適用の結果を記録する。提案は空に戻り、理由は消える。
 pub fn save_snapshot(
     db: &Db,
     instance_id: &str,
@@ -416,14 +418,15 @@ pub fn save_snapshot(
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO sync_snapshots
-                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
-             VALUES (?1, ?2, ?3, '[]', ?4, ?5)
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at, reason)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5, NULL)
              ON CONFLICT(instance_id) DO UPDATE SET
                  applied_revision = excluded.applied_revision,
                  baseline = excluded.baseline,
                  proposals = '[]',
                  state = excluded.state,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 reason = NULL",
             params![
                 instance_id,
                 applied_revision,
@@ -446,7 +449,7 @@ fn read_snapshot(
 ) -> Result<Option<Snapshot>, CoreError> {
     let row = conn
         .query_row(
-            "SELECT applied_revision, baseline, proposals, state, updated_at
+            "SELECT applied_revision, baseline, proposals, state, updated_at, reason
              FROM sync_snapshots WHERE instance_id = ?1",
             [instance_id],
             |row| {
@@ -456,12 +459,13 @@ fn read_snapshot(
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             },
         )
         .optional()?;
     row.map(
-        |(applied_revision, baseline, proposals, state, updated_at)| {
+        |(applied_revision, baseline, proposals, state, updated_at, reason)| {
             Ok(Snapshot {
                 instance_id: instance_id.to_string(),
                 applied_revision,
@@ -469,6 +473,7 @@ fn read_snapshot(
                 proposals: from_json(&proposals)?,
                 state: SnapshotState::parse(&state)?,
                 updated_at,
+                reason,
             })
         },
     )
@@ -482,6 +487,8 @@ pub struct SnapshotEdit {
     pub baseline: BTreeMap<String, String>,
     pub proposals: Vec<Proposal>,
     pub state: SnapshotState,
+    /// スキップや失敗の理由の分類。
+    pub reason: Option<String>,
     /// `true` なら「最後に記録した時刻」を今にする。`false` なら既存の時刻を変えない
     /// （記録がまだ無いときは今にする）。提案の解決や収集は `false`。
     pub touch: bool,
@@ -495,6 +502,7 @@ impl SnapshotEdit {
             baseline: snapshot.baseline.clone(),
             proposals: snapshot.proposals.clone(),
             state: snapshot.state,
+            reason: snapshot.reason.clone(),
             touch,
         }
     }
@@ -515,15 +523,16 @@ pub fn update_snapshot(
         };
         tx.execute(
             "INSERT INTO sync_snapshots
-                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at, reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?8)
              ON CONFLICT(instance_id) DO UPDATE SET
                  applied_revision = excluded.applied_revision,
                  baseline = excluded.baseline,
                  proposals = excluded.proposals,
                  state = excluded.state,
                  updated_at = CASE WHEN ?7 THEN excluded.updated_at
-                                   ELSE sync_snapshots.updated_at END",
+                                   ELSE sync_snapshots.updated_at END,
+                 reason = excluded.reason",
             params![
                 instance_id,
                 edit.applied_revision,
@@ -532,6 +541,7 @@ pub fn update_snapshot(
                 edit.state.as_str(),
                 now_millis(),
                 edit.touch,
+                edit.reason,
             ],
         )?;
         tx.commit()?;
@@ -539,7 +549,7 @@ pub fn update_snapshot(
     })
 }
 
-/// 適用の結果を記録する。未解決の提案には触れない（1 文の UPSERT なので原子的）。
+/// 適用の結果を記録する。未解決の提案には触れず、理由は消える（1 文の UPSERT なので原子的）。
 pub fn save_snapshot_keeping_proposals(
     db: &Db,
     instance_id: &str,
@@ -551,13 +561,14 @@ pub fn save_snapshot_keeping_proposals(
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO sync_snapshots
-                 (instance_id, applied_revision, baseline, proposals, state, updated_at)
-             VALUES (?1, ?2, ?3, '[]', ?4, ?5)
+                 (instance_id, applied_revision, baseline, proposals, state, updated_at, reason)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5, NULL)
              ON CONFLICT(instance_id) DO UPDATE SET
                  applied_revision = excluded.applied_revision,
                  baseline = excluded.baseline,
                  state = excluded.state,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 reason = NULL",
             params![
                 instance_id,
                 applied_revision,
@@ -832,6 +843,41 @@ mod tests {
         })
         .unwrap();
         assert_eq!(count(&db, "sync_snapshots"), 1);
+    }
+
+    #[test]
+    fn reason_is_kept_by_edits_and_cleared_by_saves() {
+        let db = db_with_instances(&["i1"]);
+        update_snapshot(&db, "i1", |_| {
+            Ok(Some(SnapshotEdit {
+                applied_revision: 0,
+                baseline: BTreeMap::new(),
+                proposals: Vec::new(),
+                state: SnapshotState::Skipped,
+                reason: Some("noOptionsFile".into()),
+                touch: true,
+            }))
+        })
+        .unwrap();
+        let reason = |db: &Db| snapshot(db, "i1").unwrap().unwrap().reason;
+        assert_eq!(reason(&db).as_deref(), Some("noOptionsFile"));
+        // 提案の解決などの編集は理由を引き継ぐ
+        update_snapshot(&db, "i1", |s| {
+            Ok(Some(SnapshotEdit::of(&s.unwrap(), false)))
+        })
+        .unwrap();
+        assert_eq!(reason(&db).as_deref(), Some("noOptionsFile"));
+        save_snapshot_keeping_proposals(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied)
+            .unwrap();
+        assert_eq!(reason(&db), None);
+        update_snapshot(&db, "i1", |s| {
+            let mut edit = SnapshotEdit::of(&s.unwrap(), true);
+            edit.reason = Some("writeFailed".into());
+            Ok(Some(edit))
+        })
+        .unwrap();
+        save_snapshot(&db, "i1", 1, &BTreeMap::new(), SnapshotState::Applied).unwrap();
+        assert_eq!(reason(&db), None);
     }
 
     #[test]

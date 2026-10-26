@@ -19,6 +19,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("../migrations/0005_operations_backups.sql")),
         M::up(include_str!("../migrations/0006_sync.sql")),
         M::up(include_str!("../migrations/0007_sync_snapshot_time.sql")),
+        M::up(include_str!("../migrations/0008_sync_snapshot_reason.sql")),
     ])
 }
 
@@ -148,6 +149,7 @@ mod tests {
             M::up(include_str!("../migrations/0005_operations_backups.sql")),
             M::up(include_str!("../migrations/0006_sync.sql")),
             M::up(include_str!("../migrations/0007_sync_snapshot_time.sql")),
+            M::up(include_str!("../migrations/0008_sync_snapshot_reason.sql")),
             M::up("CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;"),
         ]);
         let result = Db::open_with(&path, &broken);
@@ -161,7 +163,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
     }
 
     #[test]

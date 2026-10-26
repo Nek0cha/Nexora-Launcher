@@ -32,6 +32,8 @@ import type { JoinResult } from "../bindings/JoinResult";
 import type { PendingView } from "../bindings/PendingView";
 import type { Resolution } from "../bindings/Resolution";
 import type { SyncProfile } from "../bindings/SyncProfile";
+import type { SyncField } from "../bindings/SyncField";
+import type { SyncFieldValue } from "../bindings/SyncFieldValue";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -121,6 +123,11 @@ export const leaveSyncProfile = (instanceId: string) => call<null>("leave_sync_p
 export const getInstanceSync = (instanceId: string) => call<InstanceSync>("get_instance_sync", { instanceId });
 export const setSyncExcluded = (instanceId: string, fieldIds: string[]) =>
   call<null>("set_sync_excluded", { instanceId, fieldIds });
+export const listSyncFields = () => call<SyncField[]>("list_sync_fields");
+export const getSyncProfileValues = (profileId: string) =>
+  call<SyncFieldValue[]>("get_sync_profile_values", { profileId });
+export const setSyncOverride = (instanceId: string, fieldId: string, value: string | null) =>
+  call<null>("set_sync_override", { instanceId, fieldId, value });
 export const pendingSyncProposals = (profileId: string) =>
   call<PendingView>("pending_sync_proposals", { profileId });
 export const resolveSyncProposal = (
