@@ -36,14 +36,35 @@ pub struct Field {
     pub key: &'static str,
     pub category: Category,
     pub kind: ValueKind,
+    /// この項目を扱う最小の DataVersion。`0` は制限なし。
+    pub min_data_version: i64,
+}
+
+impl Field {
+    /// この DataVersion のゲームで、項目を扱ってよいか。
+    pub fn applies_to(&self, data_version: i64) -> bool {
+        data_version >= self.min_data_version
+    }
 }
 
 const fn f(key: &'static str, category: Category, kind: ValueKind) -> Field {
+    f_since(key, category, kind, 0)
+}
+
+/// `min_data_version` 以上のゲームでだけ扱う項目。
+#[allow(dead_code)]
+pub(crate) const fn f_since(
+    key: &'static str,
+    category: Category,
+    kind: ValueKind,
+    min_data_version: i64,
+) -> Field {
     Field {
         id: key,
         key,
         category,
         kind,
+        min_data_version,
     }
 }
 
@@ -203,6 +224,29 @@ pub fn key_codec(value: &str) -> KeyCodec {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn applies_to_respects_the_floor() {
+        let x = f_since("x", C::Graphics, K::Int, 819);
+        assert!(!x.applies_to(818));
+        assert!(x.applies_to(819));
+        assert!(x.applies_to(4325));
+        let free = f("y", C::Graphics, K::Int);
+        assert!(free.applies_to(0));
+    }
+
+    #[test]
+    fn existing_fields_have_no_floor() {
+        for x in fields() {
+            assert_eq!(x.min_data_version, 0, "{}", x.id);
+        }
+        assert_eq!(
+            field_for_key("key_some_mod.action")
+                .unwrap()
+                .min_data_version,
+            0
+        );
+    }
 
     #[test]
     fn registry_has_unique_ids() {

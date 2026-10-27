@@ -10,7 +10,7 @@ use ts_rs::TS;
 
 use super::SyncCtx;
 use super::options::{OptionsFile, write_atomic};
-use super::registry::{Category, KeyCodec, field_for_key, key_codec};
+use super::registry::{Category, Field, KeyCodec, field_for_key, key_codec};
 use super::store::{self, Snapshot, SnapshotState};
 use super::version::read_data_version;
 use crate::instance::{self, Instance};
@@ -114,7 +114,12 @@ pub enum Applicability {
 
 /// 適用の前提（ファイルと版）を調べた結果。
 enum Prerequisite {
-    Ready { path: PathBuf, file: OptionsFile },
+    Ready {
+        path: PathBuf,
+        file: OptionsFile,
+        /// 判定に使ったクライアント jar の DataVersion。
+        data_version: i64,
+    },
     NotReady(SkipReason),
 }
 
@@ -140,7 +145,11 @@ fn check_prerequisites(paths: &AppPaths, inst: &Instance) -> Result<Prerequisite
     if file.version() != Some(data_version) {
         return Ok(Prerequisite::NotReady(SkipReason::VersionMismatch));
     }
-    Ok(Prerequisite::Ready { path, file })
+    Ok(Prerequisite::Ready {
+        path,
+        file,
+        data_version,
+    })
 }
 
 /// 今のファイルと版で、共通設定を適用できるか。`apply_before_launch` と同じ前提で判定する。
@@ -198,10 +207,24 @@ fn apply_member(
     inst: &Instance,
     membership: &store::Membership,
 ) -> Result<ApplyOutcome, ApplyFailure> {
-    let (path, mut file) = match check_prerequisites(ctx.paths, inst)
+    apply_member_with(ctx, inst, membership, &field_for_key)
+}
+
+/// `apply_member` の本体。項目の引き方を差し替えられる（下限付きの項目をテストで注入するため）。
+fn apply_member_with(
+    ctx: &SyncCtx,
+    inst: &Instance,
+    membership: &store::Membership,
+    resolve: &dyn Fn(&str) -> Option<Field>,
+) -> Result<ApplyOutcome, ApplyFailure> {
+    let (path, mut file, data_version) = match check_prerequisites(ctx.paths, inst)
         .map_err(|message| failure(FailReason::ReadFailed, message))?
     {
-        Prerequisite::Ready { path, file } => (path, file),
+        Prerequisite::Ready {
+            path,
+            file,
+            data_version,
+        } => (path, file, data_version),
         Prerequisite::NotReady(reason) => return Ok(skipped(ctx, &inst.id, reason)),
     };
 
@@ -231,9 +254,13 @@ fn apply_member(
     // (field_id, options.txt のキー, 適用する値, 現在値)
     let mut managed: Vec<(String, &'static str, String, String)> = Vec::new();
     for (id, profile_value) in &profile_values {
-        let Some(field) = field_for_key(id) else {
+        let Some(field) = resolve(id) else {
             continue;
         };
+        // このゲームの版では扱わない項目は、管理対象にも基準値にも入れない
+        if !field.applies_to(data_version) {
+            continue;
+        }
         if !profile.categories.contains(&field.category) || membership.excluded.contains(id) {
             continue;
         }
@@ -1058,5 +1085,30 @@ mod tests {
         apply_before_launch(&env.ctx(), &outsider);
         assert!(env.read(&member).contains("fov:0.9"));
         assert_eq!(env.read(&outsider), SAMPLE);
+    }
+
+    #[test]
+    fn apply_skips_fields_below_their_floor() {
+        use crate::sync::registry::{Field, ValueKind, f_since};
+        let env = Env::new();
+        let inst = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = env.profile(&[("fov", "0.9"), ("mouseSensitivity", "0.7")]);
+        env.join(&inst, &p);
+        let membership = store::membership(&env.db, &inst.id).unwrap().unwrap();
+        // 下限が版（4325）より高い項目は書かず、基準値にも入れない
+        let resolve = |id: &str| -> Option<Field> {
+            if id == "fov" {
+                Some(f_since("fov", C::Graphics, ValueKind::Float, VERSION + 1))
+            } else {
+                field_for_key(id)
+            }
+        };
+        apply_member_with(&env.ctx(), &inst, &membership, &resolve).unwrap();
+        let text = env.read(&inst);
+        assert!(text.contains("fov:0.5"), "{text}");
+        assert!(text.contains("mouseSensitivity:0.7"), "{text}");
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert!(!snap.baseline.contains_key("fov"));
+        assert!(snap.baseline.contains_key("mouseSensitivity"));
     }
 }

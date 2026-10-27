@@ -6,10 +6,13 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use serde::Deserialize;
 use ts_rs::TS;
 
-use super::registry::{Category, KeyCodec, field_for_key, key_codec};
+use super::registry::{Category, Field, KeyCodec, field_for_key, key_codec};
 use super::store::{self, Membership, Proposal, SyncProfile};
+use super::version::read_data_version;
 use super::{ALL_CATEGORIES, SyncCtx, find_profile, options_path, read_options, registered_values};
 use crate::error::CoreError;
+use crate::instance;
+use crate::meta::mojang::manifest::client_jar_path;
 
 /// 同じ項目に、異なる値を提案しているインスタンスの組。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +55,15 @@ pub fn collect_proposals(ctx: &SyncCtx, instance_id: &str) {
 }
 
 fn collect(ctx: &SyncCtx, instance_id: &str) -> Result<(), CoreError> {
+    collect_with(ctx, instance_id, &field_for_key)
+}
+
+/// `collect` の本体。項目の引き方を差し替えられる（下限付きの項目をテストで注入するため）。
+fn collect_with(
+    ctx: &SyncCtx,
+    instance_id: &str,
+    resolve: &dyn Fn(&str) -> Option<Field>,
+) -> Result<(), CoreError> {
     if store::membership(ctx.db, instance_id)?.is_none() {
         return Ok(());
     }
@@ -60,6 +72,10 @@ fn collect(ctx: &SyncCtx, instance_id: &str) -> Result<(), CoreError> {
         return Ok(());
     };
     let current = registered_values(&file, &ALL_CATEGORIES);
+    // 版を読めないときは 0 とみなし、下限のある項目は提案にしない
+    let inst = instance::get(ctx.db, instance_id)?;
+    let data_version =
+        read_data_version(&client_jar_path(ctx.paths, &inst.mc_version)).unwrap_or(0);
 
     // 読み出しから書き込みまでを 1 つのトランザクションにして、同時の解決を失わない
     store::update_snapshot(ctx.db, instance_id, |snapshot| {
@@ -80,6 +96,9 @@ fn collect(ctx: &SyncCtx, instance_id: &str) -> Result<(), CoreError> {
                 continue;
             };
             if now == base || !is_syncable_proposal(field_id, now) {
+                continue;
+            }
+            if !resolve(field_id).is_some_and(|f| f.applies_to(data_version)) {
                 continue;
             }
             // キー割り当ては、基準値も `key.keyboard.*` の書式のときだけ比べる
@@ -916,5 +935,45 @@ fov:{fov}
         assert_eq!(got.count_for_instance(&a.id), 1);
         assert_eq!(got.count_for_instance(&b.id), 2);
         assert_eq!(got.count_for_instance("other"), 0);
+    }
+
+    #[test]
+    fn collect_ignores_fields_below_their_floor() {
+        use crate::sync::registry::{ValueKind, f_since};
+        let env = Env::new();
+        let inst = env.instance("A", BASE);
+        let p = env.profile(&[("fov", "0.5"), ("mouseSensitivity", "0.3")]);
+        env.member(&inst, &p);
+        std::fs::write(
+            env.options(&inst),
+            "version:4325
+fov:0.9
+mouseSensitivity:0.8
+key_key.jump:key.keyboard.space
+",
+        )
+        .unwrap();
+        let floored = |id: &str| -> Option<Field> {
+            if id == "fov" {
+                Some(f_since("fov", Category::Graphics, ValueKind::Float, 4326))
+            } else {
+                field_for_key(id)
+            }
+        };
+        collect_with(&env.ctx(), &inst.id, &floored).unwrap();
+        assert_eq!(env.proposals(&inst), vec![pair("mouseSensitivity", "0.8")]);
+        // 下限が版以下なら提案になる
+        let open = |id: &str| -> Option<Field> {
+            if id == "fov" {
+                Some(f_since("fov", Category::Graphics, ValueKind::Float, 4325))
+            } else {
+                field_for_key(id)
+            }
+        };
+        collect_with(&env.ctx(), &inst.id, &open).unwrap();
+        assert_eq!(
+            env.proposals(&inst),
+            vec![pair("fov", "0.9"), pair("mouseSensitivity", "0.8")]
+        );
     }
 }
