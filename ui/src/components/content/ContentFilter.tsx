@@ -22,8 +22,12 @@ export function isKnownCategory(slug: string): boolean {
 }
 
 // 選べる値の札。選んだ札は面を明るくし、色だけに頼らないようチェックの印も付ける
+// 寸法は状態で変えない。読み込み中の場所取り（ChipSkeleton）と共有し、折り返しまで本物と同じにする
+const chipGeometry =
+  "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs whitespace-nowrap";
+
 const chipClass = [
-  "inline-flex h-7 shrink-0 cursor-default items-center gap-1 rounded-full border border-line px-2.5 text-xs whitespace-nowrap text-text-muted",
+  `${chipGeometry} cursor-default border-line text-text-muted`,
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
   "selected:border-line-strong selected:bg-surface-3 selected:text-text-strong",
@@ -169,37 +173,49 @@ export function ContentFilter(props: {
   );
 }
 
-function ChipGroupSkeleton({ chips, widths }: { chips: number; widths?: string }) {
+/** 札と同じ寸法の場所取り。文字は見えないが同じ幅を取るので、折り返しも本物と同じになる */
+export function ChipSkeleton({ label }: { label: string }) {
+  return (
+    <div aria-hidden className={`${chipGeometry} border-transparent bg-surface-2 motion-safe:animate-pulse`}>
+      <span className="-ml-0.5 size-3.5 shrink-0" />
+      <span className="invisible">{label}</span>
+    </div>
+  );
+}
+
+function ChipGroupSkeleton({ labels }: { labels: string[] }) {
   return (
     <div className="flex flex-col gap-2">
       <Skeleton className="h-[18px] w-16" />
       <div className="flex flex-wrap gap-1.5">
-        {Array.from({ length: chips }, (_, i) => (
-          <Skeleton key={i} className={`h-7 ${widths ?? "w-12"}`} />
+        {labels.map((label) => (
+          <ChipSkeleton key={label} label={label} />
         ))}
       </div>
     </div>
   );
 }
 
+// Modrinth の MOD のカテゴリ。完成形の折り返しに近づけるための並び（取得できたものと違っても、高さはほぼ同じ）
+const skeletonCategories = [
+  "adventure", "cursed", "decoration", "economy", "equipment", "food", "game-mechanics", "library", "magic",
+  "management", "minigame", "mobs", "optimization", "social", "storage", "technology", "transportation",
+  "utility", "worldgen",
+];
+
 /**
  * 絞り込みの列と同じ並びと寸法のスケルトン。見出しと札の数は、完成形（クライアント、サーバー、カテゴリ、状態）に合わせる。
- * カテゴリは 2 列で 8 行ほど（実際の完成形の高さに近い）。
+ * 札は本物と同じ幅の場所取りで、折り返しも同じになる。
  */
 export function FilterSkeleton({ status }: { status: boolean }) {
+  const { t } = useTranslation();
+  const sideLabels = sides.map((id) => t(`content.filter.side.${id}`));
   return (
     <div className="flex flex-col gap-4">
-      <ChipGroupSkeleton chips={3} />
-      <ChipGroupSkeleton chips={3} />
-      <div className="flex flex-col gap-2">
-        <Skeleton className="h-[18px] w-16" />
-        <div className="grid grid-cols-2 gap-1.5">
-          {Array.from({ length: 16 }, (_, i) => (
-            <Skeleton key={i} className="h-7" />
-          ))}
-        </div>
-      </div>
-      {status && <ChipGroupSkeleton chips={3} />}
+      <ChipGroupSkeleton labels={sideLabels} />
+      <ChipGroupSkeleton labels={sideLabels} />
+      <ChipGroupSkeleton labels={skeletonCategories.map(categoryLabel)} />
+      {status && <ChipGroupSkeleton labels={defaultStatuses.map((id) => t(`content.filter.statusValue.${id}`))} />}
     </div>
   );
 }

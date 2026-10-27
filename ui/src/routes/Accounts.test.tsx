@@ -98,6 +98,27 @@ describe("Accounts", () => {
     expect(within(await row("Jeb")).getByText("Ownership not confirmed")).toBeTruthy();
   });
 
+  it("keeps a same-size slot where Use is, so Change skin and Remove do not move when the row becomes active", async () => {
+    mount({
+      accounts: [account("a1", "Alex", { isActive: true }), account("a2", "Steve", { isActive: false })],
+      devOffline: null,
+    });
+    const active = await row("Alex");
+    const idle = await row("Steve");
+    const slot = active.querySelector("[data-action-slot]") as HTMLElement;
+    expect(slot).not.toBeNull();
+    expect(slot.getAttribute("aria-hidden")).toBe("true");
+    expect(idle.querySelector("[data-action-slot]")).toBeNull();
+    const use = within(idle).getByRole("button", { name: "Use" });
+    // 同じ寸法のクラス（高さ、余白、文字）で、同じ文字を持つ
+    const size = (el: HTMLElement) => el.className.split(/\s+/).filter((c) => /^(h-|px-|text-(xs|sm))/.test(c));
+    expect(size(slot)).toEqual(size(use));
+    expect(slot.textContent).toBe(use.textContent);
+    // ボタンの数ではなく、並びの数が同じ
+    const actions = (r: HTMLElement) => (r.querySelector("div.shrink-0") as HTMLElement).children.length;
+    expect(actions(active)).toBe(actions(idle));
+  });
+
   it("use, relogin and remove actions per row", async () => {
     // 「使う」は使用中でない行だけ、「ログインし直す」は needsLogin の行だけ
     vi.mocked(setActiveAccount).mockResolvedValue(null);

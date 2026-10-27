@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyFilter, type FilterState } from "../../features/content/contentFilter";
 import i18n from "../../i18n";
 import { sizeChangingStateClasses } from "../layoutStability";
-import { ChipGroup, ContentFilter } from "./ContentFilter";
+import { ChipGroup, ContentFilter, FilterSkeleton } from "./ContentFilter";
 
 function mount(
   props: { state?: FilterState; categories?: string[] | null; showStatus?: boolean; showSearch?: boolean } = {},
@@ -100,5 +100,20 @@ describe("ContentFilter", () => {
     rerender(<ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={["a"]} onChange={() => {}} />);
     expect(slot()?.className).toBe(frame);
     expect(slot()?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("the skeleton chips take the same size classes and label width as the real chips, so the filter does not change height", () => {
+    const { container } = render(<FilterSkeleton status />);
+    const skeletonChips = Array.from(container.querySelectorAll("[aria-hidden=true]")).filter((e) =>
+      e.className.includes("rounded-full"),
+    );
+    // クライアント 3、サーバー 3、カテゴリ、状態 3
+    expect(skeletonChips.length).toBeGreaterThan(9);
+    const first = skeletonChips[0] as HTMLElement;
+    for (const token of ["h-7", "px-2.5", "gap-1", "text-xs", "whitespace-nowrap", "border"]) {
+      expect(first.className.split(/\s+/)).toContain(token);
+    }
+    expect(first.querySelector('[class~="size-3.5"]')).not.toBeNull();
+    expect(first.textContent).toBe("Required");
   });
 });

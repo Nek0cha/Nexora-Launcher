@@ -513,7 +513,7 @@ const SKELETON_ROWS = 8;
 function KindSkeleton({ withUpdates }: { withUpdates: boolean }) {
   return (
     <div data-testid="content-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
-      <div className="min-h-0 overflow-hidden pr-1">
+      <div className="scroll-thin min-h-0 overflow-hidden pr-1 [scrollbar-gutter:stable]">
         <FilterSkeleton status />
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
@@ -595,7 +595,7 @@ function KindBody(props: Parameters<typeof KindPanel>[0] & { categories: ReturnT
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
       {/* 項目の絞り込みは左の列に置く（Modrinth の検索画面と同じ並び）。長いときはこの列の中でスクロールする */}
-      <div data-testid="content-facets" className="scroll-thin min-h-0 overflow-auto pr-1">
+      <div data-testid="content-facets" className="scroll-thin min-h-0 overflow-auto pr-1 [scrollbar-gutter:stable]">
         <ContentFilter
           state={filter}
           onChange={props.onFilterChange}

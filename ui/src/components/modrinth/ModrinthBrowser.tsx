@@ -35,7 +35,7 @@ import { useDebouncedValue } from "../../features/modrinth/useDebounced";
 import { useInstallContent, useModrinthSearch, usePreviewInstall } from "../../features/modrinth/useModrinth";
 import { SETTINGS_KEY, useSettings } from "../../features/settings/useSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { ChipGroup, ContentFilter, ContentSearchField, FilterSkeleton } from "../content/ContentFilter";
+import { ChipGroup, ChipSkeleton, ContentFilter, ContentSearchField, FilterSkeleton } from "../content/ContentFilter";
 import { FailureNotice } from "../FailureNotice";
 import { ReadyGate, useLatchedPending } from "../ReadyGate";
 import { Skeleton } from "../Skeleton";
@@ -173,9 +173,10 @@ const SKELETON_HITS = 8;
  * 完成形の数と大きさに近づけて置く。
  */
 function BrowserSkeleton({ fixed }: { fixed: boolean }) {
+  const { t } = useTranslation();
   return (
     <div data-testid="modrinth-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
-      <div className="flex min-h-0 flex-col gap-4 overflow-hidden pr-1">
+      <div className="scroll-thin flex min-h-0 flex-col gap-4 overflow-hidden pr-1 [scrollbar-gutter:stable]">
         {fixed ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-[18px] w-16" />
@@ -190,8 +191,8 @@ function BrowserSkeleton({ fixed }: { fixed: boolean }) {
             <div className="flex flex-col gap-2">
               <Skeleton className="h-[18px] w-16" />
               <div className="flex flex-wrap gap-1.5">
-                {Array.from({ length: 4 }, (_, i) => (
-                  <Skeleton key={i} className="h-7 w-16" />
+                {loaderOptions.map((id) => (
+                  <ChipSkeleton key={id} label={t(`create.tab.${id}`)} />
                 ))}
               </div>
             </div>
@@ -420,7 +421,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
       <ReadyGate queries={[{ isPending: gatePending }]} skeleton={<BrowserSkeleton fixed={instance !== undefined} />}>
         <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
           {/* 絞り込みは左の列（コンテンツの一覧と同じ並び）。長いときはこの列の中でスクロールする */}
-          <div data-testid="modrinth-facets" className="scroll-thin flex min-h-0 flex-col gap-4 overflow-auto pr-1">
+          <div data-testid="modrinth-facets" className="scroll-thin flex min-h-0 flex-col gap-4 overflow-auto pr-1 [scrollbar-gutter:stable]">
             {instance ? (
               <div className="flex flex-col gap-2">
                 <span className="text-xs text-text-muted">{t("modrinth.fixedLabel")}</span>
