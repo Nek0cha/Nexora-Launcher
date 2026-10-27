@@ -141,6 +141,7 @@
     "reload": "Reload"
   },
   "startup": {
+    "loading": "Starting up",
     "title": "Nexora could not start",
     "body": "A problem occurred while loading data. Please include the details below when reporting it."
   },
