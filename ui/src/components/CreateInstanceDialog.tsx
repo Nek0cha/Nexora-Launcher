@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -129,7 +129,10 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
   );
 }
 
-/** 一覧が終わるのをこれより長くは待たない。回線が応えないときに、スケルトンのままにしないため */
+/**
+ * 一覧が終わるのをこれより長くは待たない。回線が応えないときに、スケルトンのままにしないため。
+ * 意図した例外: 待ちの上限を過ぎてから届いた一覧のタブは、読み込み中の無効から有効へ変わる（回線が切れたまま待ち続けるより良いとする）。
+ */
 const MAX_WAIT_MS = 8000;
 
 /** 指定の時間が過ぎたら true になる */
@@ -155,7 +158,11 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const neoforgeGames = useLoaderGameVersions("neoforge", true);
   const quiltGames = useLoaderGameVersions("quilt", true);
   const giveUp = useElapsed(MAX_WAIT_MS);
-  const queries = [versions, fabricGames, forgeGames, neoforgeGames, quiltGames].map((q) => ({ isPending: q.isPending && !giveUp }));
+  // 一度中身を出したら、再試行などで一覧が pending に戻っても枠は戻さない（入力が消えないように）
+  const passed = useRef(false);
+  const pending = !passed.current && !giveUp && [versions, fabricGames, forgeGames, neoforgeGames, quiltGames].some((q) => q.isPending);
+  if (!pending) passed.current = true;
+  const queries = [{ isPending: pending }];
   return (
     <ReadyGate queries={queries} skeleton={<CreateSkeleton />}>
       <CreateFormBody
@@ -180,9 +187,13 @@ function CreateSkeleton() {
       </Heading>
       <div className="min-h-0 flex-1">
         <div className="px-5 pt-4">
-          <div className="flex h-[calc(2rem+2px)] items-start gap-5 border-b border-line">
+          {/* 実際のタブと同じ文字の高さ・余白で並べ、見えない文字で行の高さを同じにする */}
+          <div className="flex gap-5 border-b border-line" aria-hidden>
             {["w-14", "w-12", "w-12", "w-16", "w-12"].map((w, i) => (
-              <Skeleton key={i} className={`h-5 ${w} ${onPanel}`} />
+              <span key={i} className={`relative -mb-px border-b-2 border-transparent px-1 pb-2 text-sm ${w}`}>
+                <span className="invisible">Vanilla</span>
+                <Skeleton className={`absolute top-0 left-0 h-5 w-full ${onPanel}`} />
+              </span>
             ))}
           </div>
           <div className="flex flex-col gap-3 pt-4 pb-5">

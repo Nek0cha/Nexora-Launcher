@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,5 +93,19 @@ describe("usePrefetch", () => {
     await waitFor(() => expect(h.pending.length).toBe(3));
     expect(client.getQueryState(["loader-game-versions", "fabric"])?.status).toBe("pending");
     expect(client.getQueryState(["loader-game-versions", "fabric"])?.error).toBeNull();
+  });
+
+  it("does not reset a failed list that an open dialog is watching", async () => {
+    const h = hold();
+    const { client, wrapper } = setup({ state: "ready" });
+    const key = ["loader-game-versions", "fabric"];
+    const observer = new QueryObserver(client, { queryKey: key, enabled: false });
+    const unsubscribe = observer.subscribe(() => {});
+    renderHook(() => usePrefetch(), { wrapper });
+    await waitFor(() => expect(h.pending.length).toBe(2));
+    act(() => h.pending[1]?.done.reject());
+    await waitFor(() => expect(h.pending.length).toBe(3));
+    expect(client.getQueryState(key)?.status).toBe("error");
+    unsubscribe();
   });
 });

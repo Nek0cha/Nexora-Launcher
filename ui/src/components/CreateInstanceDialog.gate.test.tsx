@@ -218,4 +218,97 @@ describe("CreateInstanceDialog shows everything at once", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps the form and the typed name when a retry sends a list back to pending", async () => {
+    vi.mocked(listVersions).mockRejectedValueOnce(offline());
+    vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) => {
+      if (loader === "forge") throw offline();
+      return GAME_VERSIONS[loader] ?? [];
+    });
+    mount();
+    const dialog = await open();
+    await waitFor(() => expect(tabs().length).toBe(5));
+    fireEvent.change(nameInput(dialog), { target: { value: "My World" } });
+    // 再試行は終わらない。問い合わせが pending に戻っても、枠もスケルトンも出ない
+    vi.mocked(listVersions).mockReturnValue(new Promise(() => {}));
+    vi.mocked(listLoaderGameVersions).mockReturnValue(new Promise(() => {}));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Retry" })));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Retry loading loaders" })));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(within(dialog).queryByTestId("create-skeleton")).toBeNull();
+    expect(tabs().length).toBe(5);
+    expect(nameInput(dialog).value).toBe("My World");
+  });
+
+  it("keeps the form when a prefetch reset puts a failed list back to pending while open", async () => {
+    vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) => {
+      if (loader === "forge") throw offline();
+      return GAME_VERSIONS[loader] ?? [];
+    });
+    mount();
+    const dialog = await open();
+    await waitFor(() => expect(tabs().length).toBe(5));
+    fireEvent.change(nameInput(dialog), { target: { value: "Keep me" } });
+    vi.mocked(listLoaderGameVersions).mockReturnValue(new Promise(() => {}));
+    // 取り直しは終わらないので待たない
+    act(() => {
+      void client.resetQueries({ queryKey: ["loader-game-versions", "forge"], exact: true });
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(within(dialog).queryByTestId("create-skeleton")).toBeNull();
+    expect(nameInput(dialog).value).toBe("Keep me");
+  });
+
+  it("enables a tab cleanly when its list arrives after the give-up", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const quilt = deferred<string[]>();
+      vi.mocked(listLoaderGameVersions).mockImplementation((loader) =>
+        loader === "quilt" ? quilt.promise : Promise.resolve(GAME_VERSIONS[loader] ?? []),
+      );
+      mount();
+      const dialog = await open();
+      for (let i = 0; i < 40; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(500);
+        });
+      }
+      expect(isDisabledTab(tab(dialog, "Quilt"))).toBe(true);
+      await act(async () => quilt.resolve(GAME_VERSIONS.quilt ?? []));
+      await waitFor(() => expect(isDisabledTab(tab(dialog, "Quilt"))).toBe(false));
+      expect(within(dialog).queryByTestId("create-skeleton")).toBeNull();
+      expect(nameInput(dialog).value).toBe("1.21.5");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("mounts without a version at the give-up and fills version and name when the list arrives", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const versions = deferred<typeof VERSIONS>();
+      vi.mocked(listVersions).mockReturnValue(versions.promise);
+      mount();
+      const dialog = await open();
+      for (let i = 0; i < 40; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(500);
+        });
+      }
+      expect(tabs().length).toBe(5);
+      expect(nameInput(dialog).value).toBe("");
+      expect(createButton(dialog).disabled).toBe(true);
+      for (const name of ["Fabric", "Forge", "NeoForge", "Quilt"]) expect(isDisabledTab(tab(dialog, name))).toBe(true);
+      await act(async () => versions.resolve(VERSIONS));
+      await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+      await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false));
+      expect(createButton(dialog).disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

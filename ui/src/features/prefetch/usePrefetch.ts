@@ -33,7 +33,9 @@ export function usePrefetch() {
       for (let job = queue.shift(); job && !cancelled; job = queue.shift()) {
         await job.run(client);
         // prefetchQuery は失敗を握りつぶして失敗の状態を残す。ダイアログが失敗から始まらないよう、元に戻す
-        if (client.getQueryState(job.key)?.status === "error") await client.resetQueries({ queryKey: job.key, exact: true });
+        // 開いているダイアログが見ている問い合わせは、自動で取り直さない（利用者の再試行に任せる）
+        const query = client.getQueryCache().find({ queryKey: job.key, exact: true });
+        if (query?.state.status === "error" && query.getObserversCount() === 0) await client.resetQueries({ queryKey: job.key, exact: true });
       }
     };
     for (let i = 0; i < CONCURRENCY; i++) void worker();
