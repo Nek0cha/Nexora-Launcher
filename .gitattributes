@@ -1,1 +1,4 @@
 ui/src/bindings/** text eol=lf
+
+# options.txt の見本は改行を変えないため、CRLF を含めて取得時に変換させない
+crates/nexora-core/tests/fixtures/options/* -text

@@ -3,6 +3,7 @@
 use nexora_core::auth::login::{LoginNotifier, LoginProgressEvent, UrlOpener};
 use nexora_core::launch::log4j::LogRecord;
 use nexora_core::launch::process::{GameExitedEvent, GameLogEvent, GameNotifier, RunningSession};
+use nexora_core::sync::wire::SyncApplyFinishedEvent;
 use nexora_core::task::{TaskChange, TaskChangedEvent, TaskNotifier};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_opener::OpenerExt;
@@ -13,6 +14,8 @@ pub const GAME_EXITED: &str = "game://exited";
 pub const GAME_LOG: &str = "game://log";
 pub const ACCOUNTS_CHANGED: &str = "accounts://changed";
 pub const LOGIN_PROGRESS: &str = "login://progress";
+/// 起動前の共通設定の適用の結果（参加中のインスタンスだけ）。
+pub const SYNC_APPLY_FINISHED: &str = "sync-apply-finished";
 
 /// アカウントの一覧が変わったことを UI に知らせる（ペイロードなし）。
 pub fn emit_accounts_changed(app: &AppHandle) {
@@ -124,5 +127,9 @@ impl GameNotifier for TauriGameNotifier {
                 exit_code,
             },
         );
+    }
+
+    fn sync_apply_finished(&self, event: &SyncApplyFinishedEvent) {
+        self.emit(SYNC_APPLY_FINISHED, event.clone());
     }
 }

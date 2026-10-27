@@ -25,6 +25,15 @@ import type { InstallPreview } from "../bindings/InstallPreview";
 import type { UpdateCheck } from "../bindings/UpdateCheck";
 import type { ContentTaskReport } from "../bindings/ContentTaskReport";
 import type { VersionChoice } from "../bindings/VersionChoice";
+import type { Category } from "../bindings/Category";
+import type { InstanceSync } from "../bindings/InstanceSync";
+import type { JoinMode } from "../bindings/JoinMode";
+import type { JoinResult } from "../bindings/JoinResult";
+import type { PendingView } from "../bindings/PendingView";
+import type { Resolution } from "../bindings/Resolution";
+import type { SyncProfile } from "../bindings/SyncProfile";
+import type { SyncField } from "../bindings/SyncField";
+import type { SyncFieldValue } from "../bindings/SyncFieldValue";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -97,3 +106,33 @@ export const changeContentVersion = (instanceId: string, relPath: string, versio
 export const contentTaskReport = (taskId: string) =>
   call<ContentTaskReport | null>("content_task_report", { taskId });
 export const openModrinthProject = (slug: string) => call<null>("open_modrinth_project", { slug });
+
+export const listSyncProfiles = () => call<SyncProfile[]>("list_sync_profiles");
+export const createSyncProfileFromInstance = (instanceId: string, name: string) =>
+  call<SyncProfile>("create_sync_profile_from_instance", { instanceId, name });
+export const renameSyncProfile = (profileId: string, name: string) =>
+  call<null>("rename_sync_profile", { profileId, name });
+export const deleteSyncProfile = (profileId: string) => call<null>("delete_sync_profile", { profileId });
+export const setSyncCategories = (profileId: string, categories: Category[]) =>
+  call<null>("set_sync_categories", { profileId, categories });
+export const previewJoinSyncProfile = (instanceId: string, profileId: string) =>
+  call<number>("preview_join_sync_profile", { instanceId, profileId });
+export const joinSyncProfile = (instanceId: string, profileId: string, mode: JoinMode) =>
+  call<JoinResult>("join_sync_profile", { instanceId, profileId, mode });
+export const leaveSyncProfile = (instanceId: string) => call<null>("leave_sync_profile", { instanceId });
+export const getInstanceSync = (instanceId: string) => call<InstanceSync>("get_instance_sync", { instanceId });
+export const setSyncExcluded = (instanceId: string, fieldIds: string[]) =>
+  call<null>("set_sync_excluded", { instanceId, fieldIds });
+export const listSyncFields = () => call<SyncField[]>("list_sync_fields");
+export const getSyncProfileValues = (profileId: string) =>
+  call<SyncFieldValue[]>("get_sync_profile_values", { profileId });
+export const setSyncOverride = (instanceId: string, fieldId: string, value: string | null) =>
+  call<null>("set_sync_override", { instanceId, fieldId, value });
+export const pendingSyncProposals = (profileId: string) =>
+  call<PendingView>("pending_sync_proposals", { profileId });
+export const resolveSyncProposal = (
+  instanceId: string,
+  fieldId: string,
+  resolution: Resolution,
+  chosenValue?: string,
+) => call<null>("resolve_sync_proposal", { instanceId, fieldId, resolution, chosenValue: chosenValue ?? null });

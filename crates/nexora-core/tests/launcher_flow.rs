@@ -20,6 +20,7 @@ use nexora_core::instance::{
 use nexora_core::launcher::{DUPLICATE_KIND, INSTALL_KIND, LAUNCH_KIND, Launcher};
 use nexora_core::meta::loader::LoaderKind;
 use nexora_core::paths::AppPaths;
+use nexora_core::sync::JoinMode;
 use nexora_core::task::{TaskManager, TaskPhase, TaskSnapshot, TaskState};
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -1318,4 +1319,320 @@ async fn fabric_instance_launches_with_the_loader_main_class() {
         .join("1.99-test.jar");
     assert!(cp.contains(&library.display().to_string()), "{cp}");
     assert!(cp.contains(&client.display().to_string()), "{cp}");
+}
+
+/// 起動の前に、参加中のインスタンスの options.txt だけが共通設定で書き換わる。
+#[tokio::test]
+async fn launch_applies_the_sync_profile_to_members_only() {
+    use nexora_core::sync::registry::Category;
+    use nexora_core::sync::store;
+    use std::io::Write;
+
+    const OPTIONS: &str = "version:4325\nfov:0.5\nlastServer:x\n";
+    // クライアント jar は、DataVersion を持つ version.json だけの zip にする
+    let mut jar = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut jar));
+        zip.start_file("version.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(br#"{"world_version":4325}"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let fake = FakeMojang::start_with_client(&jar).await;
+    let h = harness(&fake).await;
+    let member = h.installed().await;
+    let outsider = h
+        .installed_with(&NewInstance::vanilla("y", "1.99-test"))
+        .await;
+    let paths = AppPaths::from_root(h._temp.path());
+
+    let options_of = |id: &str| {
+        let inst = instance::get(h.launcher.db(), id).unwrap();
+        instance::game_dir(&paths, &inst).join("options.txt")
+    };
+    std::fs::write(options_of(&member), OPTIONS).unwrap();
+    std::fs::write(options_of(&outsider), OPTIONS).unwrap();
+
+    let profile = store::create_profile(
+        h.launcher.db(),
+        "共通",
+        &[Category::Mouse, Category::Graphics],
+    )
+    .unwrap();
+    store::set_values(
+        h.launcher.db(),
+        &profile.id,
+        &[("fov".to_string(), "0.9".to_string())],
+    )
+    .unwrap();
+    store::join(h.launcher.db(), &member, &profile.id).unwrap();
+
+    for id in [&member, &outsider] {
+        let task = h.launcher.launch_instance(id, false).unwrap();
+        assert_reached_spawn(&wait(&h.tasks, &task).await);
+    }
+    assert_eq!(
+        std::fs::read_to_string(options_of(&member)).unwrap(),
+        "version:4325\nfov:0.9\nlastServer:x\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(options_of(&outsider)).unwrap(),
+        OPTIONS
+    );
+}
+
+/// 起動前の適用の結果を、参加中のインスタンスについてだけ通知する。
+#[tokio::test]
+async fn apply_emits_finished_event() {
+    use nexora_core::sync::registry::Category;
+    use nexora_core::sync::store;
+    use nexora_core::sync::wire::{SyncApplyFinishedEvent, SyncApplyOutcome};
+    use std::io::Write;
+
+    let mut jar = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut jar));
+        zip.start_file("version.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(br#"{"world_version":4325}"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let fake = FakeMojang::start_with_client(&jar).await;
+    let h = harness(&fake).await;
+    let applied = h.installed().await;
+    let skipped = h
+        .installed_with(&NewInstance::vanilla("y", "1.99-test"))
+        .await;
+    let outsider = h
+        .installed_with(&NewInstance::vanilla("z", "1.99-test"))
+        .await;
+    let paths = AppPaths::from_root(h._temp.path());
+    let options_of = |id: &str| {
+        let inst = instance::get(h.launcher.db(), id).unwrap();
+        instance::game_dir(&paths, &inst).join("options.txt")
+    };
+    std::fs::write(options_of(&applied), "version:4325\nfov:0.5\n").unwrap();
+    // 版の合わない設定ファイルはスキップする（ファイルが無ければ種を作って適用する）
+    std::fs::write(options_of(&skipped), "version:4000\nfov:0.5\n").unwrap();
+    std::fs::write(options_of(&outsider), "version:4325\nfov:0.5\n").unwrap();
+
+    let profile = store::create_profile(h.launcher.db(), "共通", &[Category::Graphics]).unwrap();
+    store::set_values(
+        h.launcher.db(),
+        &profile.id,
+        &[("fov".to_string(), "0.9".to_string())],
+    )
+    .unwrap();
+    store::join(h.launcher.db(), &applied, &profile.id).unwrap();
+    store::join(h.launcher.db(), &skipped, &profile.id).unwrap();
+
+    for id in [&applied, &skipped, &outsider] {
+        let task = h.launcher.launch_instance(id, false).unwrap();
+        assert_reached_spawn(&wait(&h.tasks, &task).await);
+    }
+    let events = h.game.sync_applied.lock().unwrap().clone();
+    assert_eq!(
+        events,
+        vec![
+            SyncApplyFinishedEvent {
+                instance_id: applied.clone(),
+                outcome: SyncApplyOutcome::Applied,
+                reason: None,
+            },
+            SyncApplyFinishedEvent {
+                instance_id: skipped.clone(),
+                outcome: SyncApplyOutcome::Skipped,
+                reason: Some("versionMismatch".to_string()),
+            },
+        ]
+    );
+}
+
+/// 一度も起動していない参加中のインスタンスには、起動の前に種の options.txt を作って適用する。
+#[tokio::test]
+async fn first_launch_seeds_options_and_emits_applied_once() {
+    use nexora_core::sync::registry::Category;
+    use nexora_core::sync::store;
+    use nexora_core::sync::wire::{SyncApplyFinishedEvent, SyncApplyOutcome};
+    use std::io::Write;
+
+    let mut jar = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut jar));
+        zip.start_file("version.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(br#"{"world_version":4325}"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let fake = FakeMojang::start_with_client(&jar).await;
+    let h = harness(&fake).await;
+    let member = h.installed().await;
+    let paths = AppPaths::from_root(h._temp.path());
+    let options = {
+        let inst = instance::get(h.launcher.db(), &member).unwrap();
+        instance::game_dir(&paths, &inst).join("options.txt")
+    };
+    assert!(!options.exists());
+
+    let profile = store::create_profile(h.launcher.db(), "共通", &[Category::Graphics]).unwrap();
+    store::set_values(
+        h.launcher.db(),
+        &profile.id,
+        &[
+            ("fov".to_string(), "0.9".to_string()),
+            ("lastServer".to_string(), "x".to_string()),
+        ],
+    )
+    .unwrap();
+    store::join(h.launcher.db(), &member, &profile.id).unwrap();
+
+    let task = h.launcher.launch_instance(&member, false).unwrap();
+    assert_reached_spawn(&wait(&h.tasks, &task).await);
+    let eol = if cfg!(windows) { "\r\n" } else { "\n" };
+    assert_eq!(
+        std::fs::read_to_string(&options).unwrap(),
+        format!("version:4325{eol}fov:0.9{eol}")
+    );
+    let events = h.game.sync_applied.lock().unwrap().clone();
+    assert_eq!(
+        events,
+        vec![SyncApplyFinishedEvent {
+            instance_id: member.clone(),
+            outcome: SyncApplyOutcome::Applied,
+            reason: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn sync_profile_create_join_and_leave() {
+    let fake = FakeMojang::start().await;
+    let h = harness(&fake).await;
+    let a = h.installed().await;
+    let b = h
+        .installed_with(&NewInstance::vanilla("y", "1.99-test"))
+        .await;
+    let dir = |id: &str| {
+        let inst = instance::get(h.launcher.db(), id).unwrap();
+        instance::game_dir(&AppPaths::from_root(h._temp.path()), &inst)
+    };
+
+    // options.txt が無いと作れない
+    let err = h
+        .launcher
+        .create_sync_profile_from_instance(&a, "shared")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "sync.no_options");
+
+    std::fs::write(
+        dir(&a).join("options.txt"),
+        "fov:0.5\nsoundCategory_master:0.3\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir(&b).join("options.txt"),
+        "fov:0.9\nsoundCategory_master:0.3\n",
+    )
+    .unwrap();
+    let profile = h
+        .launcher
+        .create_sync_profile_from_instance(&a, "shared")
+        .await
+        .unwrap();
+    assert_eq!(h.launcher.list_sync_profiles().await.unwrap().len(), 1);
+
+    assert_eq!(
+        h.launcher
+            .preview_join_sync_profile(&b, &profile.id)
+            .await
+            .unwrap(),
+        1
+    );
+    let joined = h
+        .launcher
+        .join_sync_profile(&b, &profile.id, JoinMode::KeepProfile)
+        .await
+        .unwrap();
+    assert_eq!(joined.differing, 1);
+
+    let sync = h.launcher.get_instance_sync(&b).await.unwrap();
+    assert_eq!(
+        sync.profile.as_ref().map(|p| p.id.as_str()),
+        Some(profile.id.as_str())
+    );
+    let mut names: Vec<_> = sync.members.iter().map(|m| m.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["x", "y"]);
+    assert_eq!(sync.pending_count, 0);
+
+    h.launcher
+        .set_sync_excluded(&b, vec!["fov".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        h.launcher.get_instance_sync(&b).await.unwrap().excluded,
+        ["fov"]
+    );
+
+    // 項目の一覧、共通の値、例外
+    assert!(h.launcher.list_sync_fields().iter().any(|f| f.id == "fov"));
+    let values = h
+        .launcher
+        .get_sync_profile_values(&profile.id)
+        .await
+        .unwrap();
+    assert!(
+        values
+            .iter()
+            .any(|v| v.field_id == "fov" && v.value == "0.5")
+    );
+    assert_eq!(
+        h.launcher.list_sync_profiles().await.unwrap()[0]
+            .members
+            .len(),
+        2
+    );
+    h.launcher
+        .set_sync_override(&b, "fov", Some("0.7".into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        h.launcher.get_instance_sync(&b).await.unwrap().overrides[0].value,
+        "0.7"
+    );
+    h.launcher.set_sync_override(&b, "fov", None).await.unwrap();
+    assert!(
+        h.launcher
+            .get_instance_sync(&b)
+            .await
+            .unwrap()
+            .overrides
+            .is_empty()
+    );
+    assert!(
+        h.launcher
+            .set_sync_override("nope", "fov", None)
+            .await
+            .is_err()
+    );
+
+    h.launcher.leave_sync_profile(&b).await.unwrap();
+    let left = h.launcher.get_instance_sync(&b).await.unwrap();
+    assert!(left.profile.is_none() && left.members.is_empty());
+    assert_eq!(
+        h.launcher
+            .get_instance_sync(&a)
+            .await
+            .unwrap()
+            .members
+            .len(),
+        1
+    );
+
+    // 存在しない ID は通常のエラー
+    assert!(h.launcher.delete_sync_profile("nope").await.is_err());
+    assert!(h.launcher.get_instance_sync("nope").await.is_err());
+    h.launcher.delete_sync_profile(&profile.id).await.unwrap();
+    assert!(h.launcher.list_sync_profiles().await.unwrap().is_empty());
 }

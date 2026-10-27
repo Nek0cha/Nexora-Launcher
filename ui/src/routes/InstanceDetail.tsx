@@ -25,6 +25,7 @@ import type { Instance } from "../bindings/Instance";
 import { FailureNotice } from "../components/FailureNotice";
 import { InstanceAdvancedFields } from "../components/InstanceAdvancedFields";
 import { controlWidth, inputBase, Notice, Row } from "../components/settingsLayout";
+import { SyncCard } from "../components/sync/SyncCard";
 import { useToast } from "../components/toast/useToast";
 import { tooltipClass } from "../components/tooltip";
 import {
@@ -230,33 +231,37 @@ function SettingsTab({ instance, running }: { instance: Instance; running: boole
   };
 
   return (
-    <form
-      className="flex flex-col gap-6"
-      onSubmit={(e) => {
-        e.preventDefault();
-        save();
-      }}
-    >
-      {running && <Notice tone="info">{t("instances.detail.nextLaunch")}</Notice>}
-      <div className="flex flex-col divide-y divide-line border-y border-line">
-        <Row>
-          <TextField
-            value={form.name}
-            onChange={(name) => change({ name })}
-            maxLength={64}
-            className="flex items-center justify-between gap-4"
-          >
-            <Label className="text-text">{t("instances.detail.name")}</Label>
-            <Input className={`${inputBase} ${controlWidth}`} />
-          </TextField>
-        </Row>
-        <InstanceAdvancedFields form={form} onChange={change} />
-      </div>
-      <div className="flex items-center gap-3">
-        <Button type="submit" isDisabled={!canSave} isPending={update.isPending} className={saveButton}>
-          {t("instances.detail.save")}
-        </Button>
-      </div>
-    </form>
+    <div className="flex flex-col gap-8">
+      {/* 共通設定はインスタンスの設定の保存とは別に、操作したときに決まる */}
+      <SyncCard instance={instance} running={running} />
+      <form
+        className="flex flex-col gap-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        {running && <Notice tone="info">{t("instances.detail.nextLaunch")}</Notice>}
+        <div className="flex flex-col divide-y divide-line border-y border-line">
+          <Row>
+            <TextField
+              value={form.name}
+              onChange={(name) => change({ name })}
+              maxLength={64}
+              className="flex items-center justify-between gap-4"
+            >
+              <Label className="text-text">{t("instances.detail.name")}</Label>
+              <Input className={`${inputBase} ${controlWidth}`} />
+            </TextField>
+          </Row>
+          <InstanceAdvancedFields form={form} onChange={change} />
+        </div>
+        <div className="flex items-center gap-3">
+          <Button type="submit" isDisabled={!canSave} isPending={update.isPending} className={saveButton}>
+            {t("instances.detail.save")}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

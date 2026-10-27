@@ -20,6 +20,7 @@ use crate::install::now_ms;
 use crate::instance;
 use crate::net::io_err;
 use crate::paths::AppPaths;
+use crate::sync::wire::SyncApplyFinishedEvent;
 
 /// Windows でコンソールの窓を出さないためのフラグ。
 #[cfg(windows)]
@@ -30,6 +31,8 @@ pub trait GameNotifier: Send + Sync {
     fn started(&self, session: &RunningSession);
     fn log(&self, instance_id: &str, record: &LogRecord);
     fn exited(&self, instance_id: &str, exit_code: Option<i32>);
+    /// 起動前の共通設定の適用が終わった（参加中のインスタンスだけ）。
+    fn sync_apply_finished(&self, event: &SyncApplyFinishedEvent);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -361,6 +364,14 @@ impl GameProcesses {
         if let Err(err) = instance::add_play_time(&self.db, instance_id, play_ms) {
             tracing::warn!(instance_id, code = err.code(), "failed to add play time");
         }
+        // 終了後の提案を集める。起動中の記録を消す前に行う。失敗しても終了処理は続ける（内部で握りつぶす）
+        crate::sync::proposals::collect_proposals(
+            &crate::sync::SyncCtx {
+                db: &self.db,
+                paths: &self.paths,
+            },
+            instance_id,
+        );
         if let Err(err) = self.db.with_conn(|conn| {
             conn.execute(
                 "DELETE FROM running_sessions WHERE instance_id = ?1 AND pid = ?2",
@@ -459,6 +470,78 @@ mod tests {
         assert_eq!(closed_play_time(1_000, Some(61_000)), 60_000);
         assert_eq!(closed_play_time(1_000, Some(500)), 0);
         assert_eq!(closed_play_time(1_000, None), 0);
+    }
+
+    struct NoopNotifier;
+    impl GameNotifier for NoopNotifier {
+        fn started(&self, _: &RunningSession) {}
+        fn log(&self, _: &str, _: &LogRecord) {}
+        fn exited(&self, _: &str, _: Option<i32>) {}
+        fn sync_apply_finished(&self, _: &SyncApplyFinishedEvent) {}
+    }
+
+    #[test]
+    fn finish_collects_sync_proposals_before_clearing_the_session() {
+        use crate::instance::NewInstance;
+        use crate::sync::store;
+
+        let t = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(t.path().join("data"));
+        paths.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let inst = instance::create(&db, &paths, &NewInstance::vanilla("A", "1.21.5"), 1).unwrap();
+        std::fs::write(
+            instance::game_dir(&paths, &inst).join("options.txt"),
+            "version:4325
+fov:0.9
+",
+        )
+        .unwrap();
+        let profile = store::create_profile(&db, "P", &crate::sync::ALL_CATEGORIES).unwrap();
+        store::join(&db, &inst.id, &profile.id).unwrap();
+        let baseline = [("fov".to_string(), "0.5".to_string())].into();
+        store::save_snapshot(&db, &inst.id, 0, &baseline, store::SnapshotState::Applied).unwrap();
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO running_sessions
+                 (instance_id, pid, process_started_at, launched_at, account_id, log_path)
+                 VALUES (?1, 7, 0, 0, 'a', 'x')",
+                [&inst.id],
+            )?;
+            // 提案の保存時点で、起動中の記録がまだ残っているかを残す
+            conn.execute_batch(
+                "CREATE TABLE seen (sessions INTEGER);
+                 CREATE TRIGGER seen_on_save AFTER UPDATE ON sync_snapshots
+                 BEGIN
+                     INSERT INTO seen SELECT count(*) FROM running_sessions;
+                 END;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        GameProcesses::new(db.clone(), paths, Arc::new(NoopNotifier)).finish(
+            &inst.id,
+            7,
+            0,
+            Some(0),
+        );
+
+        let seen: Vec<i64> = db
+            .with_conn(|conn| {
+                let mut stmt = conn.prepare("SELECT sessions FROM seen")?;
+                Ok(stmt
+                    .query_map([], |r| r.get(0))?
+                    .collect::<Result<_, _>>()?)
+            })
+            .unwrap();
+        assert_eq!(seen, vec![1]);
+        let left: i64 = db
+            .with_conn(|conn| {
+                Ok(conn.query_row("SELECT count(*) FROM running_sessions", [], |r| r.get(0))?)
+            })
+            .unwrap();
+        assert_eq!(left, 0);
     }
 
     #[test]

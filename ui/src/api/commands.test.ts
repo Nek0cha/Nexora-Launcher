@@ -29,6 +29,21 @@ import {
   changeContentVersion,
   contentTaskReport,
   openModrinthProject,
+  listSyncProfiles,
+  createSyncProfileFromInstance,
+  renameSyncProfile,
+  deleteSyncProfile,
+  setSyncCategories,
+  previewJoinSyncProfile,
+  joinSyncProfile,
+  leaveSyncProfile,
+  getInstanceSync,
+  setSyncExcluded,
+  pendingSyncProposals,
+  resolveSyncProposal,
+  listSyncFields,
+  getSyncProfileValues,
+  setSyncOverride,
 } from "./commands";
 import type { SearchQuery } from "../bindings/SearchQuery";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
@@ -170,5 +185,67 @@ describe("modrinth commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("content_task_report", { taskId: "t1" });
     await openModrinthProject("sodium");
     expect(invoke).toHaveBeenLastCalledWith("open_modrinth_project", { slug: "sodium" });
+  });
+});
+
+describe("sync commands", () => {
+  it("passes the command names and camelCase arguments", async () => {
+    await listSyncProfiles();
+    expect(invoke).toHaveBeenLastCalledWith("list_sync_profiles", undefined);
+    await createSyncProfileFromInstance("i1", "Shared");
+    expect(invoke).toHaveBeenLastCalledWith("create_sync_profile_from_instance", { instanceId: "i1", name: "Shared" });
+    await renameSyncProfile("p1", "New");
+    expect(invoke).toHaveBeenLastCalledWith("rename_sync_profile", { profileId: "p1", name: "New" });
+    await deleteSyncProfile("p1");
+    expect(invoke).toHaveBeenLastCalledWith("delete_sync_profile", { profileId: "p1" });
+    await setSyncCategories("p1", ["keys", "sound"]);
+    expect(invoke).toHaveBeenLastCalledWith("set_sync_categories", { profileId: "p1", categories: ["keys", "sound"] });
+    await previewJoinSyncProfile("i1", "p1");
+    expect(invoke).toHaveBeenLastCalledWith("preview_join_sync_profile", { instanceId: "i1", profileId: "p1" });
+    await joinSyncProfile("i1", "p1", "adoptInstance");
+    expect(invoke).toHaveBeenLastCalledWith("join_sync_profile", {
+      instanceId: "i1",
+      profileId: "p1",
+      mode: "adoptInstance",
+    });
+    await leaveSyncProfile("i1");
+    expect(invoke).toHaveBeenLastCalledWith("leave_sync_profile", { instanceId: "i1" });
+    await getInstanceSync("i1");
+    expect(invoke).toHaveBeenLastCalledWith("get_instance_sync", { instanceId: "i1" });
+    await setSyncExcluded("i1", ["fov"]);
+    expect(invoke).toHaveBeenLastCalledWith("set_sync_excluded", { instanceId: "i1", fieldIds: ["fov"] });
+    await pendingSyncProposals("p1");
+    expect(invoke).toHaveBeenLastCalledWith("pending_sync_proposals", { profileId: "p1" });
+    await resolveSyncProposal("i1", "fov", "applyToProfile", "70");
+    expect(invoke).toHaveBeenLastCalledWith("resolve_sync_proposal", {
+      instanceId: "i1",
+      fieldId: "fov",
+      resolution: "applyToProfile",
+      chosenValue: "70",
+    });
+    await resolveSyncProposal("i1", "fov", "ignore");
+    expect(invoke).toHaveBeenLastCalledWith("resolve_sync_proposal", {
+      instanceId: "i1",
+      fieldId: "fov",
+      resolution: "ignore",
+      chosenValue: null,
+    });
+    await joinSyncProfile("i2", "p1", "keepProfile");
+    expect(invoke).toHaveBeenLastCalledWith("join_sync_profile", {
+      instanceId: "i2",
+      profileId: "p1",
+      mode: "keepProfile",
+    });
+  });
+
+  it("passes the arguments of the field, value and override commands", async () => {
+    await listSyncFields();
+    expect(invoke).toHaveBeenLastCalledWith("list_sync_fields", undefined);
+    await getSyncProfileValues("p1");
+    expect(invoke).toHaveBeenLastCalledWith("get_sync_profile_values", { profileId: "p1" });
+    await setSyncOverride("i1", "fov", "0.5");
+    expect(invoke).toHaveBeenLastCalledWith("set_sync_override", { instanceId: "i1", fieldId: "fov", value: "0.5" });
+    await setSyncOverride("i1", "fov", null);
+    expect(invoke).toHaveBeenLastCalledWith("set_sync_override", { instanceId: "i1", fieldId: "fov", value: null });
   });
 });

@@ -1,0 +1,15 @@
+version:3465
+autoJump:false
+renderDistance:12
+fov:0.5
+mouseSensitivity:0.5
+
+lastServer:play.example.com:25565
+resourcePacks:["vanilla","file/pack.zip"]
+soundCategory_master:1.0
+soundCategory_music:0.4
+key_key.attack:key.mouse.left
+key_key.forward:key.keyboard.w
+fullscreen:false
+mod_unknown_key:a:b:c
+fov:0.7

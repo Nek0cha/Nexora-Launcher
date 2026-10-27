@@ -8,6 +8,7 @@ import InstanceDetail from "../routes/InstanceDetail";
 import InstanceModrinth from "../routes/InstanceModrinth";
 import Instances from "../routes/Instances";
 import Settings from "../routes/Settings";
+import SyncProfiles from "../routes/SyncProfiles";
 
 export const router = createHashRouter([
   {
@@ -20,6 +21,7 @@ export const router = createHashRouter([
       { path: "instances", element: <Instances /> },
       { path: "instances/:id", element: <InstanceDetail /> },
       { path: "instances/:id/modrinth", element: <InstanceModrinth /> },
+      { path: "sync", element: <SyncProfiles /> },
       { path: "browse", element: <Browse /> },
       { path: "accounts", element: <Accounts /> },
       { path: "settings", element: <Settings /> },

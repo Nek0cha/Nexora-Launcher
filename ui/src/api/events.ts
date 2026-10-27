@@ -3,6 +3,7 @@ import type { TaskChangedEvent } from "../bindings/TaskChangedEvent";
 import type { GameExitedEvent } from "../bindings/GameExitedEvent";
 import type { LoginProgressEvent } from "../bindings/LoginProgressEvent";
 import type { RunningSession } from "../bindings/RunningSession";
+import type { SyncApplyFinishedEvent } from "../bindings/SyncApplyFinishedEvent";
 
 export const TASK_CHANGED = "task://changed";
 
@@ -27,6 +28,13 @@ export const LOGIN_PROGRESS = "login://progress";
 
 export async function onAccountsChanged(handler: () => void): Promise<() => void> {
   return listen(ACCOUNTS_CHANGED, () => handler());
+}
+
+export const SYNC_APPLY_FINISHED = "sync-apply-finished";
+
+/** 参加中のインスタンスの、起動前の共通設定の適用が終わったとき。 */
+export async function onSyncApplyFinished(handler: (event: SyncApplyFinishedEvent) => void): Promise<() => void> {
+  return listen<SyncApplyFinishedEvent>(SYNC_APPLY_FINISHED, (e) => handler(e.payload));
 }
 
 export async function onLoginProgress(handler: (event: LoginProgressEvent) => void): Promise<() => void> {

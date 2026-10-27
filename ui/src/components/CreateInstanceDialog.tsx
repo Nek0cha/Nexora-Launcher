@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogTrigger,
   Disclosure,
@@ -18,6 +19,7 @@ import {
 } from "react-aria-components";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import IconCheck from "~icons/ph/check";
 import IconCaretRight from "~icons/ph/caret-right";
 import IconPlus from "~icons/ph/plus";
 import IconRetry from "~icons/ph/arrow-clockwise";
@@ -32,6 +34,7 @@ import {
   versionForLoader,
   versionsFor,
 } from "../features/instances/createLoader";
+import { useSyncProfiles } from "../features/sync/useSyncProfiles";
 import { defaultName, nextName } from "../features/instances/createName";
 import { isValid, MEMORY_DEFAULT_MB, type SettingsForm, toSettings } from "../features/instances/settingsForm";
 import {
@@ -135,6 +138,11 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const neoforgeGames = useLoaderGameVersions("neoforge", true);
   const quiltGames = useLoaderGameVersions("quilt", true);
   const create = useCreateInstance();
+  const profiles = useSyncProfiles().data ?? [];
+  const [useShared, setUseShared] = useState(false);
+  const [chosenProfile, setChosenProfile] = useState<string | null>(null);
+  // 選んだ共通設定が消えていたら、先頭にする
+  const profileId = profiles.find((p) => p.id === chosenProfile)?.id ?? profiles[0]?.id ?? null;
   const [loader, setLoader] = useState<LoaderKind>("vanilla");
   const [version, setVersion] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -211,15 +219,18 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     const s = toSettings({ ...advanced, name: submitName });
     create.mutate(
       {
-        name: s.name,
-        mcVersion: version,
-        loader,
-        loaderVersion,
-        memoryMode: s.memoryMode,
-        memoryMb: s.memoryMb,
-        javaMode: s.javaMode,
-        javaPath: s.javaPath,
-        jvmArgs: s.jvmArgs,
+        request: {
+          name: s.name,
+          mcVersion: version,
+          loader,
+          loaderVersion,
+          memoryMode: s.memoryMode,
+          memoryMb: s.memoryMb,
+          javaMode: s.javaMode,
+          javaPath: s.javaPath,
+          jvmArgs: s.jvmArgs,
+        },
+        syncProfileId: useShared ? profileId : null,
       },
       { onSuccess: onDone },
     );
@@ -312,6 +323,31 @@ function CreateForm({ onDone }: { onDone: () => void }) {
             )}
           </TabPanel>
         </Tabs>
+        {profileId !== null && (
+          <div className="flex flex-col gap-3 border-t border-line px-5 py-3">
+            <Checkbox isSelected={useShared} onChange={setUseShared} className={`group flex w-fit items-center gap-2 text-text ${ring}`}>
+              <span
+                aria-hidden
+                className="flex size-4 items-center justify-center rounded-sm border border-line-control bg-surface-1 text-surface-0 group-data-selected:border-text-strong group-data-selected:bg-text-strong"
+              >
+                <IconCheck className="size-3 opacity-0 group-data-selected:opacity-100" />
+              </span>
+              {t("create.shared.use")}
+            </Checkbox>
+            {useShared && profiles.length > 1 && (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-text">{t("create.shared.profile")}</span>
+                <Select
+                  label={t("create.shared.profile")}
+                  value={profileId}
+                  options={profiles.map((p) => ({ id: p.id, label: p.name }))}
+                  onChange={setChosenProfile}
+                  triggerClassName={controlWidth}
+                />
+              </div>
+            )}
+          </div>
+        )}
         <Disclosure isExpanded={advancedOpen} onExpandedChange={setAdvancedOpen} className="group border-t border-line">
           <h3>
             <Button slot="trigger" className={disclosureButton}>

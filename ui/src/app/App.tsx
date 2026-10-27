@@ -12,6 +12,7 @@ import { Sidebar } from "../components/Sidebar";
 import { ToastRegion } from "../components/toast/ToastRegion";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
+import { useSyncEvents } from "../features/sync/useSyncEvents";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
 import { useIsWindows } from "./platform";
@@ -33,6 +34,7 @@ function useForcedColors(): boolean {
 export function App() {
   useTaskSync();
   useGameSync();
+  useSyncEvents();
   const { i18n } = useTranslation();
   const { data: settings } = useSettings();
   const update = useUpdateSetting();

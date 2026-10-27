@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSkin, listAccounts } from "../api/commands";
@@ -63,5 +63,18 @@ describe("Sidebar", () => {
     mount({ accounts: [account({ isActive: false })], devOffline: null });
     const link = await screen.findByRole("link", { name: "Sign in" });
     expect(link.getAttribute("href")).toBe("/accounts");
+  });
+
+  it("has an item for the shared settings after the instances", async () => {
+    mount({ accounts: [account()], devOffline: null });
+    const nav = screen.getByRole("navigation");
+    const link = within(nav).getByRole("link", { name: "Shared settings" });
+    expect(link.getAttribute("href")).toBe("/sync");
+    const names = within(nav).getAllByRole("link").map((l) => l.textContent);
+    expect(names.indexOf("Shared settings")).toBe(names.indexOf("Instances") + 1);
+    await act(async () => {
+      await i18n.changeLanguage("ja");
+    });
+    expect(within(nav).getByRole("link", { name: "共通設定" })).toBeTruthy();
   });
 });

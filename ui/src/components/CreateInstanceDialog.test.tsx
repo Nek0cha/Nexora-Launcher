@@ -1,12 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createInstance, listLoaderGameVersions, listLoaderVersions, listVersions } from "../api/commands";
+import {
+  createInstance,
+  joinSyncProfile,
+  listLoaderGameVersions,
+  listLoaderVersions,
+  listSyncProfiles,
+  listVersions,
+} from "../api/commands";
 import { IpcError } from "../api/ipc";
 import type { CreatedInstance } from "../bindings/CreatedInstance";
 import type { LoaderKind } from "../bindings/LoaderKind";
+import type { SyncProfile } from "../bindings/SyncProfile";
 import { INSTANCES_KEY } from "../features/instances/useInstances";
 import i18n from "../i18n";
+import { clearToasts } from "./toast/useToast";
+import { ToastRegion } from "./toast/ToastRegion";
 import { CreateInstanceDialog } from "./CreateInstanceDialog";
 
 vi.mock("../api/commands", () => ({
@@ -16,6 +26,8 @@ vi.mock("../api/commands", () => ({
   listLoaderGameVersions: vi.fn(),
   listLoaderVersions: vi.fn(),
   systemMemoryMb: vi.fn().mockResolvedValue(16384),
+  listSyncProfiles: vi.fn(),
+  joinSyncProfile: vi.fn(),
 }));
 
 const VERSIONS = [
@@ -64,6 +76,7 @@ function mount() {
   render(
     <QueryClientProvider client={client}>
       <CreateInstanceDialog trigger="quiet" />
+      <ToastRegion />
     </QueryClientProvider>,
   );
 }
@@ -84,6 +97,7 @@ beforeEach(async () => {
   await i18n.changeLanguage("en");
   vi.mocked(listLoaderGameVersions).mockImplementation(async (loader) => GAME_VERSIONS[loader] ?? []);
   vi.mocked(listLoaderVersions).mockResolvedValue(FABRIC_VERSIONS);
+  vi.mocked(listSyncProfiles).mockResolvedValue([]);
 });
 
 const tab = (dialog: HTMLElement, name: string) => within(dialog).getByRole("tab", { name });
@@ -108,6 +122,7 @@ async function openWithLoaders() {
 
 afterEach(() => {
   cleanup();
+  clearToasts();
   vi.clearAllMocks();
 });
 
@@ -451,5 +466,78 @@ describe("CreateInstanceDialog", () => {
     await waitFor(() => expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false));
     expect(isDisabledTab(tab(dialog, "Quilt"))).toBe(false);
     expect(within(dialog).queryByText("Can't connect to the internet")).toBeNull();
+  });
+});
+
+const shared = (id: string, name: string): SyncProfile => ({ id, name, revision: 1, categories: ["keys"], members: [] });
+const sharedCheckbox = (dialog: HTMLElement) => within(dialog).queryByRole("checkbox", { name: "Use shared settings" });
+
+describe("CreateInstanceDialog shared settings", () => {
+  it("hides the checkbox when there are no shared settings", async () => {
+    vi.mocked(listVersions).mockResolvedValue(VERSIONS);
+    mount();
+    const dialog = await open();
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+    await waitFor(() => expect(listSyncProfiles).toHaveBeenCalled());
+    expect(sharedCheckbox(dialog)).toBeNull();
+  });
+
+  it("shows the checkbox with no picker for a single shared setting, and joins after creating", async () => {
+    vi.mocked(listVersions).mockResolvedValue(VERSIONS);
+    vi.mocked(listSyncProfiles).mockResolvedValue([shared("p1", "Main")]);
+    vi.mocked(createInstance).mockResolvedValue(created);
+    vi.mocked(joinSyncProfile).mockResolvedValue({ adopted: 0 } as never);
+    mount();
+    const dialog = await open();
+    const box = await within(dialog).findByRole("checkbox", { name: "Use shared settings" });
+    expect((box as HTMLInputElement).checked).toBe(false);
+    expect(within(dialog).queryByRole("button", { name: /Shared settings to join/ })).toBeNull();
+    fireEvent.click(box);
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+    await act(async () => fireEvent.click(createButton(dialog)));
+    await waitFor(() => expect(joinSyncProfile).toHaveBeenCalledWith("i1", "p1", "keepProfile"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("does not join when the checkbox is left unchecked", async () => {
+    vi.mocked(listVersions).mockResolvedValue(VERSIONS);
+    vi.mocked(listSyncProfiles).mockResolvedValue([shared("p1", "Main")]);
+    vi.mocked(createInstance).mockResolvedValue(created);
+    mount();
+    const dialog = await open();
+    await within(dialog).findByRole("checkbox", { name: "Use shared settings" });
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+    await act(async () => fireEvent.click(createButton(dialog)));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(joinSyncProfile).not.toHaveBeenCalled();
+  });
+
+  it("lets the user pick one of several shared settings", async () => {
+    vi.mocked(listVersions).mockResolvedValue(VERSIONS);
+    vi.mocked(listSyncProfiles).mockResolvedValue([shared("p1", "Main"), shared("p2", "Speedrun")]);
+    vi.mocked(createInstance).mockResolvedValue(created);
+    vi.mocked(joinSyncProfile).mockResolvedValue({ adopted: 0 } as never);
+    mount();
+    const dialog = await open();
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "Use shared settings" }));
+    await choose(dialog, /Shared settings to join/, "Speedrun");
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+    await act(async () => fireEvent.click(createButton(dialog)));
+    await waitFor(() => expect(joinSyncProfile).toHaveBeenCalledWith("i1", "p2", "keepProfile"));
+  });
+
+  it("keeps the creation successful and shows a toast when joining fails", async () => {
+    vi.mocked(listVersions).mockResolvedValue(VERSIONS);
+    vi.mocked(listSyncProfiles).mockResolvedValue([shared("p1", "Main")]);
+    vi.mocked(createInstance).mockResolvedValue(created);
+    vi.mocked(joinSyncProfile).mockRejectedValue(new IpcError({ code: "db.failed", params: {}, detail: null }));
+    mount();
+    const dialog = await open();
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "Use shared settings" }));
+    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
+    await act(async () => fireEvent.click(createButton(dialog)));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await screen.findByText(/could not join the shared settings/)).toBeTruthy();
+    expect(client.getQueryState(INSTANCES_KEY)?.isInvalidated).toBe(true);
   });
 });

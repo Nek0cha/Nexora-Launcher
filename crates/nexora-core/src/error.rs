@@ -122,6 +122,24 @@ pub enum CoreError {
     ContentVersionUnavailable { name: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
+    /// options.txt が無い（ゲームを一度も起動していない）ので、共通設定を作れない。
+    #[error("the instance has no options.txt yet")]
+    SyncNoOptions,
+    /// 共通設定が見つからない。
+    #[error("the sync profile was not found")]
+    SyncProfileNotFound,
+    /// インスタンスが共通設定に参加していない。
+    #[error("the instance is not in a sync profile")]
+    SyncNotMember,
+    /// 解決する提案が無い。
+    #[error("there is no such sync proposal")]
+    SyncNoProposal,
+    /// 競合している項目で、採用する値が選ばれていない、または提案にない値だった。
+    #[error("a proposed value must be chosen for the conflicting field")]
+    SyncNeedsChosenValue,
+    /// 共通設定の名前が空、または長すぎる。
+    #[error("the sync profile name is invalid")]
+    SyncInvalidName,
     #[error("unexpected error: {message}")]
     Unexpected { message: String },
 }
@@ -226,6 +244,12 @@ impl CoreError {
             CoreError::ContentNoLoader => "content.no_loader",
             CoreError::ContentVersionUnavailable { .. } => "content.version_unavailable",
             CoreError::InvalidSkin { .. } => "skin.invalid",
+            CoreError::SyncNoOptions => "sync.no_options",
+            CoreError::SyncProfileNotFound => "sync.profile_not_found",
+            CoreError::SyncNotMember => "sync.not_member",
+            CoreError::SyncNoProposal => "sync.no_proposal",
+            CoreError::SyncNeedsChosenValue => "sync.needs_chosen_value",
+            CoreError::SyncInvalidName => "sync.invalid_name",
             CoreError::Unexpected { .. } => "app.unexpected",
         }
     }
@@ -795,6 +819,18 @@ mod tests {
             Some(&ParamValue::Str("mods/a.jar".into()))
         );
         assert_eq!(CoreError::ContentNoLoader.code(), "content.no_loader");
+        assert_eq!(CoreError::SyncNoOptions.code(), "sync.no_options");
+        assert_eq!(
+            CoreError::SyncProfileNotFound.code(),
+            "sync.profile_not_found"
+        );
+        assert_eq!(CoreError::SyncNotMember.code(), "sync.not_member");
+        assert_eq!(CoreError::SyncNoProposal.code(), "sync.no_proposal");
+        assert_eq!(
+            CoreError::SyncNeedsChosenValue.code(),
+            "sync.needs_chosen_value"
+        );
+        assert_eq!(CoreError::SyncInvalidName.code(), "sync.invalid_name");
         let err = CoreError::ContentVersionUnavailable {
             name: "Sodium".into(),
         };
