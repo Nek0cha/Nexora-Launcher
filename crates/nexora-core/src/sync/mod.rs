@@ -82,13 +82,15 @@ fn read_options(path: &Path) -> Result<Option<OptionsFile>, CoreError> {
 
 /// 登録表にある項目の値を、読んだままの文字列で取り出す。
 /// キー割り当てのうち、`key.keyboard.*` / `key.mouse.*` の書式でないもの（旧式の整数コードを含む）は入れない。
+/// ファイルの版（`version` の行）が項目の下限に届かないものも入れない。版の行が無ければ 0 とみなす。
 fn registered_values(file: &OptionsFile, categories: &[Category]) -> BTreeMap<String, String> {
+    let data_version = file.version().unwrap_or(0);
     let mut out = BTreeMap::new();
     for (key, value) in file.entries() {
         let Some(field) = field_for_key(key) else {
             continue;
         };
-        if !categories.contains(&field.category) {
+        if !categories.contains(&field.category) || !field.applies_to(data_version) {
             continue;
         }
         if field.category == Category::Keys && key_codec(value) != KeyCodec::Keyboard {
@@ -468,6 +470,76 @@ key_key.jump:key.keyboard.space
         let values = store::values(&env.db, &p.id).unwrap();
         assert!(!values.contains_key("key_key.drop"));
         assert!(values.contains_key("key_key.jump") && values.contains_key("fov"));
+    }
+
+    /// 1.11 より前（DataVersion 819 未満）の options.txt と、版の行が無い options.txt。
+    const PRE_FLOOR_SOURCES: [&str; 2] = [
+        "version:512\nfov:0.5\nlang:ja_JP\n",
+        "fov:0.5\nlang:ja_JP\n",
+    ];
+
+    #[test]
+    fn create_from_instance_drops_floored_fields_below_the_floor() {
+        for text in PRE_FLOOR_SOURCES {
+            let env = Env::new();
+            let id = env.instance("A", Some(text.as_bytes()));
+            let p = create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
+            let values = store::values(&env.db, &p.id).unwrap();
+            assert!(!values.contains_key("lang"), "{text:?}");
+            assert_eq!(values["fov"], "0.5", "{text:?}");
+        }
+    }
+
+    #[test]
+    fn create_from_instance_keeps_floored_fields_at_or_above_the_floor() {
+        for version in [819, 4325] {
+            let env = Env::new();
+            let text = format!("version:{version}\nfov:0.5\nlang:ja_jp\n");
+            let id = env.instance("A", Some(text.as_bytes()));
+            let p = create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
+            let values = store::values(&env.db, &p.id).unwrap();
+            assert_eq!(values["lang"], "ja_jp", "{version}");
+        }
+    }
+
+    #[test]
+    fn adopt_drops_floored_fields_below_the_floor() {
+        for text in PRE_FLOOR_SOURCES {
+            let env = Env::new();
+            let id = env.instance("A", Some(text.as_bytes()));
+            let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+            join_instance(&env.ctx(), &id, &p.id, JoinMode::AdoptInstance).unwrap();
+            let values = store::values(&env.db, &p.id).unwrap();
+            assert!(!values.contains_key("lang"), "{text:?}");
+            assert_eq!(values["fov"], "0.5", "{text:?}");
+        }
+    }
+
+    #[test]
+    fn adopt_keeps_floored_fields_at_or_above_the_floor() {
+        let env = Env::new();
+        let id = env.instance("A", Some(b"version:4325\nlang:ja_jp\n"));
+        let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+        join_instance(&env.ctx(), &id, &p.id, JoinMode::AdoptInstance).unwrap();
+        assert_eq!(store::values(&env.db, &p.id).unwrap()["lang"], "ja_jp");
+    }
+
+    #[test]
+    fn preview_ignores_floored_fields_below_the_floor() {
+        for text in PRE_FLOOR_SOURCES {
+            let env = Env::new();
+            let id = env.instance("A", Some(text.as_bytes()));
+            let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+            store::set_values(&env.db, &p.id, &[("lang".to_string(), "en_us".to_string())])
+                .unwrap();
+            assert_eq!(preview_join(&env.ctx(), &id, &p.id).unwrap(), 0, "{text:?}");
+        }
+        // 下限以上なら数える
+        let env = Env::new();
+        let id = env.instance("A", Some(b"version:4325\nlang:ja_jp\n"));
+        let p = store::create_profile(&env.db, "P", &ALL_CATEGORIES).unwrap();
+        store::set_values(&env.db, &p.id, &[("lang".to_string(), "en_us".to_string())]).unwrap();
+        assert_eq!(preview_join(&env.ctx(), &id, &p.id).unwrap(), 1);
     }
 
     #[test]
