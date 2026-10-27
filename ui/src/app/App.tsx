@@ -10,6 +10,7 @@ import { RunningPill } from "../components/appbar/RunningPill";
 import { CommandPalette } from "../components/CommandPalette";
 import { Sidebar } from "../components/Sidebar";
 import { ToastRegion } from "../components/toast/ToastRegion";
+import { usePrefetch } from "../features/prefetch/usePrefetch";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
 import { useSyncEvents } from "../features/sync/useSyncEvents";
@@ -35,6 +36,8 @@ export function App() {
   useTaskSync();
   useGameSync();
   useSyncEvents();
+  // 起動が終わったら、作成ダイアログの一覧を先に取っておく
+  usePrefetch();
   const { i18n } = useTranslation();
   const { data: settings } = useSettings();
   const update = useUpdateSetting();

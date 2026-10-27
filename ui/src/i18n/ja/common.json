@@ -66,6 +66,7 @@
       "quilt": "Quilt"
     },
     "tabNoVersions": "対応するバージョンがありません",
+    "tabFailed": "取得できませんでした",
     "loadingLoaderVersions": "ローダーを読み込んでいます",
     "noLoaderVersions": "このMinecraftのバージョンに対応するローダーのバージョンがありません",
     "retryLoaders": "ローダーの一覧を再試行",

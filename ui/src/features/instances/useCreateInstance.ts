@@ -7,17 +7,23 @@ import { useToast } from "../../components/toast/useToast";
 import { SYNC_KEY } from "../sync/useInstanceSync";
 import { INSTANCES_KEY } from "./useInstances";
 
+const LIST_STALE_MS = 10 * 60 * 1000;
+
+// 先読み（usePrefetch）とダイアログで同じ問い合わせにするため、設定はここにまとめる
+export const versionsQuery = () => ({ queryKey: ["versions"] as const, queryFn: listVersions, staleTime: LIST_STALE_MS });
+
+export const loaderGameVersionsQuery = (loader: LoaderKind) => ({
+  queryKey: ["loader-game-versions", loader] as const,
+  queryFn: () => listLoaderGameVersions(loader),
+  staleTime: LIST_STALE_MS,
+});
+
 export function useVersions(enabled: boolean) {
-  return useQuery({ queryKey: ["versions"], queryFn: listVersions, enabled, staleTime: 10 * 60 * 1000 });
+  return useQuery({ ...versionsQuery(), enabled });
 }
 
 export function useLoaderGameVersions(loader: LoaderKind, enabled: boolean) {
-  return useQuery({
-    queryKey: ["loader-game-versions", loader],
-    queryFn: () => listLoaderGameVersions(loader),
-    enabled,
-    staleTime: 10 * 60 * 1000,
-  });
+  return useQuery({ ...loaderGameVersionsQuery(loader), enabled });
 }
 
 export function useLoaderVersions(loader: LoaderKind, mcVersion: string | null, enabled: boolean) {

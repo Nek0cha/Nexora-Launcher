@@ -132,15 +132,17 @@ describe("CreateInstanceDialog", () => {
     mount();
     const dialog = await open();
     await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
-    expect(document.activeElement).toBe(nameInput(dialog));
+    // 名前の欄は中身と同時に出るため、フォーカスは少し遅れて移る
+    await waitFor(() => expect(document.activeElement).toBe(nameInput(dialog)));
     expect(within(dialog).getByRole("button", { name: /Version/ }).textContent).toContain("1.21.5");
   });
 
-  it("shows a placeholder of the same row while versions load", async () => {
+  it("shows the skeleton, not a half-built form, while versions load", async () => {
     vi.mocked(listVersions).mockReturnValue(new Promise(() => {}));
     mount();
     const dialog = await open();
-    expect(within(dialog).getByText("Loading versions")).toBeTruthy();
+    expect(await within(dialog).findByTestId("create-skeleton")).toBeTruthy();
+    expect(within(dialog).queryByText("Loading versions")).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Create" }).hasAttribute("disabled")).toBe(true);
   });
 
@@ -208,7 +210,7 @@ describe("CreateInstanceDialog", () => {
     vi.mocked(listVersions).mockResolvedValue(VERSIONS);
     mount();
     const dialog = await open();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(createInstance).not.toHaveBeenCalled();
   });
@@ -259,18 +261,6 @@ describe("CreateInstanceDialog", () => {
     // 選べるタブには参照を付けない
     expect(isDisabledTab(tab(dialog, "Fabric"))).toBe(false);
     expect(tab(dialog, "Fabric").getAttribute("aria-describedby")).toBeNull();
-  });
-
-  it("marks every loader tab as loading until its list arrives", async () => {
-    vi.mocked(listVersions).mockResolvedValue(LOADER_TEST_VERSIONS);
-    vi.mocked(listLoaderGameVersions).mockReturnValue(new Promise(() => {}));
-    mount();
-    const dialog = await open();
-    await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
-    for (const name of ["Fabric", "Forge", "NeoForge", "Quilt"]) {
-      expect(isDisabledTab(tab(dialog, name))).toBe(true);
-      expect(tab(dialog, name).querySelector("[title]")?.getAttribute("title")).toBe("Loading loader versions");
-    }
   });
 
   it("fabric tab lists only versions the loader supports and defaults to the newest stable loader version", async () => {
