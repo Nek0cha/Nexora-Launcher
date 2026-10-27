@@ -8,6 +8,7 @@ import {
   previewJoinSyncProfile,
 } from "../../api/commands";
 import { IpcError } from "../../api/ipc";
+import type { Applicability } from "../../bindings/Applicability";
 import type { SyncProfile } from "../../bindings/SyncProfile";
 import i18n from "../../i18n";
 import { JoinSyncDialog } from "./JoinSyncDialog";
@@ -33,6 +34,7 @@ function mount({
   profiles = [] as SyncProfile[],
   hasOptions = true,
   running = false,
+  applicability = undefined as Applicability | undefined,
 } = {}) {
   vi.mocked(listSyncProfiles).mockResolvedValue(profiles);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -41,6 +43,7 @@ function mount({
       <JoinSyncDialog
         instanceId="i1"
         hasOptions={hasOptions}
+        applicability={applicability}
         running={running}
         isOpen
         onOpenChange={onOpenChange}
@@ -101,6 +104,32 @@ describe("JoinSyncDialog", () => {
     expect(dialog.textContent).toContain("一度起動すると、設定を読み取れるようになります。");
     expect(dialog.textContent).not.toContain("次の起動時に反映されます。");
     expect((screen.getByRole("button", { name: "作成する" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // ready で設定ファイルが無い = 起動前に設定ファイルを作れる（種）
+  it("promises the next launch when joining an instance whose settings file can be created", async () => {
+    mount({ profiles: [profile("p1", "いつもの")], hasOptions: false, applicability: "ready" });
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(radio("既存の共通設定に参加する").checked).toBe(true));
+    expect(radio("このインスタンスの設定から新しい共通設定を作る").disabled).toBe(true);
+    expect(dialog.textContent).toContain("次の起動時に反映されます。");
+  });
+
+  it("asks for a first launch when the settings file cannot be created", async () => {
+    mount({ profiles: [profile("p1", "いつもの")], hasOptions: false, applicability: "needsFirstLaunch" });
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(radio("既存の共通設定に参加する").checked).toBe(true));
+    expect(dialog.textContent).toContain("一度起動すると、設定を読み取れるようになります。");
+    expect(dialog.textContent).not.toContain("次の起動時に反映されます。");
+    expect(dialog.textContent).not.toContain("いまのプレイが終わった後に反映されます。");
+  });
+
+  it("says why it cannot apply instead of promising the next launch", async () => {
+    mount({ profiles: [profile("p1", "いつもの")], applicability: "versionMismatch" });
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(await screen.findByRole("radio", { name: "既存の共通設定に参加する" }));
+    expect(dialog.textContent).toContain("設定ファイルが、このゲームのバージョンのものと合っていません。");
+    expect(dialog.textContent).not.toContain("次の起動時に反映されます。");
   });
 
   it("joins right away when nothing differs", async () => {

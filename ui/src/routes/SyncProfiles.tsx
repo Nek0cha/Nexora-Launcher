@@ -292,6 +292,7 @@ function CreateFromInstance({ instance, running, isOpen, onOpenChange }: {
       instanceId={instance.id}
       instanceName={instance.name}
       hasOptions={data.hasOptions}
+      applicability={data.applicability}
       running={running}
       isOpen={isOpen}
       onOpenChange={onOpenChange}

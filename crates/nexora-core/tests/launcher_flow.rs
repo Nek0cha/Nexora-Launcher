@@ -1412,6 +1412,8 @@ async fn apply_emits_finished_event() {
         instance::game_dir(&paths, &inst).join("options.txt")
     };
     std::fs::write(options_of(&applied), "version:4325\nfov:0.5\n").unwrap();
+    // 版の合わない設定ファイルはスキップする（ファイルが無ければ種を作って適用する）
+    std::fs::write(options_of(&skipped), "version:4000\nfov:0.5\n").unwrap();
     std::fs::write(options_of(&outsider), "version:4325\nfov:0.5\n").unwrap();
 
     let profile = store::create_profile(h.launcher.db(), "共通", &[Category::Graphics]).unwrap();
@@ -1440,9 +1442,65 @@ async fn apply_emits_finished_event() {
             SyncApplyFinishedEvent {
                 instance_id: skipped.clone(),
                 outcome: SyncApplyOutcome::Skipped,
-                reason: Some("noOptionsFile".to_string()),
+                reason: Some("versionMismatch".to_string()),
             },
         ]
+    );
+}
+
+/// 一度も起動していない参加中のインスタンスには、起動の前に種の options.txt を作って適用する。
+#[tokio::test]
+async fn first_launch_seeds_options_and_emits_applied_once() {
+    use nexora_core::sync::registry::Category;
+    use nexora_core::sync::store;
+    use nexora_core::sync::wire::{SyncApplyFinishedEvent, SyncApplyOutcome};
+    use std::io::Write;
+
+    let mut jar = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut jar));
+        zip.start_file("version.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(br#"{"world_version":4325}"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let fake = FakeMojang::start_with_client(&jar).await;
+    let h = harness(&fake).await;
+    let member = h.installed().await;
+    let paths = AppPaths::from_root(h._temp.path());
+    let options = {
+        let inst = instance::get(h.launcher.db(), &member).unwrap();
+        instance::game_dir(&paths, &inst).join("options.txt")
+    };
+    assert!(!options.exists());
+
+    let profile = store::create_profile(h.launcher.db(), "共通", &[Category::Graphics]).unwrap();
+    store::set_values(
+        h.launcher.db(),
+        &profile.id,
+        &[
+            ("fov".to_string(), "0.9".to_string()),
+            ("lastServer".to_string(), "x".to_string()),
+        ],
+    )
+    .unwrap();
+    store::join(h.launcher.db(), &member, &profile.id).unwrap();
+
+    let task = h.launcher.launch_instance(&member, false).unwrap();
+    assert_reached_spawn(&wait(&h.tasks, &task).await);
+    let eol = if cfg!(windows) { "\r\n" } else { "\n" };
+    assert_eq!(
+        std::fs::read_to_string(&options).unwrap(),
+        format!("version:4325{eol}fov:0.9{eol}")
+    );
+    let events = h.game.sync_applied.lock().unwrap().clone();
+    assert_eq!(
+        events,
+        vec![SyncApplyFinishedEvent {
+            instance_id: member.clone(),
+            outcome: SyncApplyOutcome::Applied,
+            reason: None,
+        }]
     );
 }
 

@@ -3,13 +3,13 @@
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use ts_rs::TS;
 
 use super::SyncCtx;
-use super::options::{OptionsFile, write_atomic};
+use super::options::{OptionsFile, seed_text, write_atomic};
 use super::registry::{Category, Field, KeyCodec, field_for_key, key_codec};
 use super::store::{self, Snapshot, SnapshotState};
 use super::version::read_data_version;
@@ -22,6 +22,7 @@ pub enum ApplyOutcome {
     /// 共通設定に参加していない。
     NotMember,
     /// options.txt を書き換えた。`changed` は値が変わった行の数。
+    /// options.txt が無く種を作ったときは、書いた項目の数（`version` の行は数えない）。
     Applied {
         changed: usize,
     },
@@ -103,14 +104,23 @@ fn failure(reason: FailReason, message: String) -> ApplyFailure {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum Applicability {
+    /// 適用できる。options.txt が無くても、起動前に種を作れるときはこれ。
     Ready,
-    /// options.txt が無い（一度も起動していない）。
+    /// options.txt が無く（一度も起動していない）、種も作れない（1.13 未満、または版をまだ読めない）。
     NeedsFirstLaunch,
     /// クライアントの jar から版（DataVersion）を読めない。options.txt を読めないときも含む。
     VersionUnreadable,
     /// options.txt の `version` の行が、ゲームの版と一致しない（行が無いときも含む）。
     VersionMismatch,
 }
+
+/// 種（options.txt が無いインスタンスに起動前に作るファイル）を作る DataVersion の下限（1.13）。
+/// キー割り当てが `key.keyboard.*` の書式になったのが 1.13 からで、登録表の他の項目の書式も
+/// この範囲でしか実機で確かめていないため、それ未満では作らない。
+const SEED_MIN_DATA_VERSION: i64 = 1519;
+
+/// 種の改行。プラットフォームの標準にする（ゲームは LF と CRLF のどちらも読める）。
+const SEED_EOL: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 
 /// 適用の前提（ファイルと版）を調べた結果。
 enum Prerequisite {
@@ -120,18 +130,41 @@ enum Prerequisite {
         /// 判定に使ったクライアント jar の DataVersion。
         data_version: i64,
     },
-    NotReady(SkipReason),
+    /// options.txt が無く、版が読めて種を作れる。
+    Seed { path: PathBuf, data_version: i64 },
+    NotReady {
+        reason: SkipReason,
+        /// options.txt が無いか。
+        missing_file: bool,
+    },
+}
+
+fn not_ready(reason: SkipReason, missing_file: bool) -> Prerequisite {
+    Prerequisite::NotReady {
+        reason,
+        missing_file,
+    }
+}
+
+fn options_path(paths: &AppPaths, inst: &Instance) -> PathBuf {
+    instance::game_dir(paths, inst).join("options.txt")
 }
 
 /// options.txt を読み、ゲームの版と合うかを調べる。何も書かない。
+/// options.txt が無いときは、版が読めて 1.13 以上なら `Seed`。
 /// `Err` は options.txt を読めないとき。
 fn check_prerequisites(paths: &AppPaths, inst: &Instance) -> Result<Prerequisite, String> {
-    let path = instance::game_dir(paths, inst).join("options.txt");
+    let path = options_path(paths, inst);
+    let data_version = || read_data_version(&client_jar_path(paths, &inst.mc_version));
     // UTF-8 として厳密に読む。読めなければ何も書かない
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Prerequisite::NotReady(SkipReason::NoOptionsFile));
+            return Ok(match data_version() {
+                None => not_ready(SkipReason::NoDataVersion, true),
+                Some(v) if v < SEED_MIN_DATA_VERSION => not_ready(SkipReason::NoOptionsFile, true),
+                Some(data_version) => Prerequisite::Seed { path, data_version },
+            });
         }
         Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
     };
@@ -139,11 +172,11 @@ fn check_prerequisites(paths: &AppPaths, inst: &Instance) -> Result<Prerequisite
         String::from_utf8(bytes).map_err(|_| format!("{} is not valid UTF-8", path.display()))?;
     let file = OptionsFile::parse(&text);
 
-    let Some(data_version) = read_data_version(&client_jar_path(paths, &inst.mc_version)) else {
-        return Ok(Prerequisite::NotReady(SkipReason::NoDataVersion));
+    let Some(data_version) = data_version() else {
+        return Ok(not_ready(SkipReason::NoDataVersion, false));
     };
     if file.version() != Some(data_version) {
-        return Ok(Prerequisite::NotReady(SkipReason::VersionMismatch));
+        return Ok(not_ready(SkipReason::VersionMismatch, false));
     }
     Ok(Prerequisite::Ready {
         path,
@@ -153,11 +186,16 @@ fn check_prerequisites(paths: &AppPaths, inst: &Instance) -> Result<Prerequisite
 }
 
 /// 今のファイルと版で、共通設定を適用できるか。`apply_before_launch` と同じ前提で判定する。
-/// options.txt を読めないときは `VersionUnreadable` にする。何も書かない。
+/// 種を作れるときも `Ready`。options.txt を読めないときは `VersionUnreadable` にする。何も書かない。
 pub fn applicability(paths: &AppPaths, inst: &Instance) -> Applicability {
     match check_prerequisites(paths, inst) {
-        Ok(Prerequisite::Ready { .. }) => Applicability::Ready,
-        Ok(Prerequisite::NotReady(reason)) => reason.applicability(),
+        Ok(Prerequisite::Ready { .. } | Prerequisite::Seed { .. }) => Applicability::Ready,
+        // ファイルが無く版も読めないのは、多くはまだ一度も起動しておらず jar が無いとき。
+        // 一度起動すれば読めるようになるので、版を読めないとは言わない
+        Ok(Prerequisite::NotReady {
+            missing_file: true, ..
+        }) => Applicability::NeedsFirstLaunch,
+        Ok(Prerequisite::NotReady { reason, .. }) => reason.applicability(),
         Err(message) => {
             tracing::warn!(instance_id = %inst.id, %message, "could not check the sync prerequisites");
             Applicability::VersionUnreadable
@@ -207,25 +245,44 @@ fn apply_member(
     inst: &Instance,
     membership: &store::Membership,
 ) -> Result<ApplyOutcome, ApplyFailure> {
-    apply_member_with(ctx, inst, membership, &field_for_key)
+    apply_member_with(ctx, inst, membership, &field_for_key, &|_| {})
 }
 
 /// `apply_member` の本体。項目の引き方を差し替えられる（下限付きの項目をテストで注入するため）。
+/// `before_seed` は種を書く直前の確認の前に呼ぶ（確認と書き込みの間にファイルが現れる場合をテストで再現するため）。
 fn apply_member_with(
     ctx: &SyncCtx,
     inst: &Instance,
     membership: &store::Membership,
     resolve: &dyn Fn(&str) -> Option<Field>,
+    before_seed: &dyn Fn(&Path),
 ) -> Result<ApplyOutcome, ApplyFailure> {
-    let (path, mut file, data_version) = match check_prerequisites(ctx.paths, inst)
+    apply_checked(ctx, inst, membership, resolve, before_seed, true)
+}
+
+/// `seed_allowed` が偽なら、種を作れる状態でも作らずにスキップする
+/// （種を書く直前にファイルが現れて通常の経路に戻したあと、種に戻り続けないため）。
+fn apply_checked(
+    ctx: &SyncCtx,
+    inst: &Instance,
+    membership: &store::Membership,
+    resolve: &dyn Fn(&str) -> Option<Field>,
+    before_seed: &dyn Fn(&Path),
+    seed_allowed: bool,
+) -> Result<ApplyOutcome, ApplyFailure> {
+    let (path, file, data_version) = match check_prerequisites(ctx.paths, inst)
         .map_err(|message| failure(FailReason::ReadFailed, message))?
     {
         Prerequisite::Ready {
             path,
             file,
             data_version,
-        } => (path, file, data_version),
-        Prerequisite::NotReady(reason) => return Ok(skipped(ctx, &inst.id, reason)),
+        } => (path, Some(file), data_version),
+        Prerequisite::Seed { path, data_version } if seed_allowed => (path, None, data_version),
+        Prerequisite::Seed { .. } => {
+            return Ok(skipped(ctx, &inst.id, SkipReason::NoOptionsFile));
+        }
+        Prerequisite::NotReady { reason, .. } => return Ok(skipped(ctx, &inst.id, reason)),
     };
 
     let profile = store::list_profiles(ctx.db)
@@ -250,52 +307,72 @@ fn apply_member_with(
         )
     })?;
 
-    // 管理対象 = 有効なカテゴリで、除外されておらず、インスタンスに行がある項目。
-    // (field_id, options.txt のキー, 適用する値, 現在値)
-    let mut managed: Vec<(String, &'static str, String, String)> = Vec::new();
-    for (id, profile_value) in &profile_values {
-        let Some(field) = resolve(id) else {
-            continue;
-        };
-        // このゲームの版では扱わない項目は、管理対象にも基準値にも入れない
-        if !field.applies_to(data_version) {
-            continue;
-        }
-        if !profile.categories.contains(&field.category) || membership.excluded.contains(id) {
-            continue;
-        }
-        // インスタンスの例外が共通設定の値より優先
-        let value = membership.overrides.get(id).unwrap_or(profile_value);
-        // 改行を含む値は行を壊すので書かない
-        if value.contains(['\n', '\r']) {
-            continue;
-        }
-        // 行が無い項目は足さない
-        let Some(current) = file.get(field.key) else {
-            continue;
-        };
-        // キー割り当ては、現在値も共通の値も `key.keyboard.*` / `key.mouse.*` の書式のものだけ。
-        // 旧式の整数コードや判定できない書式は、検出するだけで書き換えない
-        if field.category == Category::Keys
-            && (key_codec(current) != KeyCodec::Keyboard || key_codec(value) != KeyCodec::Keyboard)
-        {
-            continue;
-        }
-        managed.push((id.clone(), field.key, value.clone(), current.to_string()));
-    }
+    let managed = managed_fields(&ManagedInput {
+        profile: &profile,
+        profile_values: &profile_values,
+        membership,
+        data_version,
+        file: file.as_ref(),
+        resolve,
+    });
     if managed.is_empty() {
         return Ok(skipped(ctx, &inst.id, SkipReason::NothingToApply));
     }
-
-    let updates: Vec<(&str, String)> = managed
-        .iter()
-        .filter(|(_, _, value, current)| value != current)
-        .map(|(_, key, value, _)| (*key, value.clone()))
-        .collect();
     // 適用後に管理対象の項目が持つ値
     let baseline: BTreeMap<String, String> = managed
         .iter()
-        .map(|(id, _, value, _)| (id.clone(), value.clone()))
+        .map(|m| (m.id.clone(), m.value.clone()))
+        .collect();
+
+    let Some(mut file) = file else {
+        // options.txt が無い：種を作る
+        let lines: Vec<(&str, String)> = managed.iter().map(|m| (m.key, m.value.clone())).collect();
+        let text = seed_text(data_version, &lines, SEED_EOL);
+        // 新しいインスタンスでは、ゲームのディレクトリがまだ無いことがある
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| {
+                failure(
+                    FailReason::WriteFailed,
+                    format!("failed to create {}: {e}", dir.display()),
+                )
+            })?;
+        }
+        before_seed(&path);
+        // 書く直前にもう一度、何も無いことを確かめる。`write_atomic` はリネームで置き換えるため、
+        // 前提を調べた後にゲームなどが作ったファイルを上書きしないよう、あれば通常の経路に戻す。
+        // （リンクや読めないものも含め、何かあれば種は作らない）
+        if std::fs::symlink_metadata(&path).is_ok() {
+            tracing::info!(instance_id = %inst.id, "options.txt appeared before seeding; applying to it instead");
+            return apply_checked(ctx, inst, membership, resolve, before_seed, false);
+        }
+        write_atomic(&path, &ctx.paths.backups_dir(), &inst.id, &text).map_err(|e| {
+            failure(
+                FailReason::WriteFailed,
+                format!("failed to create options.txt: {e}"),
+            )
+        })?;
+        save_keeping_proposals(
+            ctx.db,
+            &inst.id,
+            profile.revision,
+            &baseline,
+            SnapshotState::Applied,
+        )
+        .map_err(|e| {
+            failure(
+                FailReason::RecordFailed,
+                format!("options.txt was created but the sync record failed: {e}"),
+            )
+        })?;
+        return Ok(ApplyOutcome::Applied {
+            changed: lines.len(),
+        });
+    };
+
+    let updates: Vec<(&str, String)> = managed
+        .iter()
+        .filter(|m| m.current.as_deref() != Some(m.value.as_str()))
+        .map(|m| (m.key, m.value.clone()))
         .collect();
 
     if updates.is_empty() {
@@ -343,6 +420,78 @@ fn apply_member_with(
     Ok(ApplyOutcome::Applied {
         changed: updates.len(),
     })
+}
+
+/// 管理対象の 1 項目。
+struct Managed {
+    id: String,
+    /// options.txt のキー。
+    key: &'static str,
+    /// 適用する値（例外があれば例外の値）。
+    value: String,
+    /// options.txt の現在値。種のときは `None`。
+    current: Option<String>,
+}
+
+struct ManagedInput<'a> {
+    profile: &'a store::SyncProfile,
+    profile_values: &'a BTreeMap<String, String>,
+    membership: &'a store::Membership,
+    data_version: i64,
+    /// 既存の options.txt。`None` は種を作るときで、ファイルに行が無い項目も足す。
+    file: Option<&'a OptionsFile>,
+    resolve: &'a dyn Fn(&str) -> Option<Field>,
+}
+
+/// 管理対象の項目を、共通設定の値の順（項目 ID の順）に選ぶ。通常の適用と種で同じ規則を使う。
+/// 管理対象 = 登録表にあり、このゲームの版で扱い、有効なカテゴリで、除外されておらず、
+/// 値が改行を含まず、キー割り当てなら `key.keyboard.*` の書式の項目。
+/// 既存のファイルがあるときは、さらにそのファイルに行がある項目だけ（行が無い項目は足さない）。
+fn managed_fields(input: &ManagedInput) -> Vec<Managed> {
+    let mut managed = Vec::new();
+    for (id, profile_value) in input.profile_values {
+        let Some(field) = (input.resolve)(id) else {
+            continue;
+        };
+        // このゲームの版では扱わない項目は、管理対象にも基準値にも入れない
+        if !field.applies_to(input.data_version) {
+            continue;
+        }
+        if !input.profile.categories.contains(&field.category)
+            || input.membership.excluded.contains(id)
+        {
+            continue;
+        }
+        // インスタンスの例外が共通設定の値より優先
+        let value = input.membership.overrides.get(id).unwrap_or(profile_value);
+        // 改行を含む値は行を壊すので書かない
+        if value.contains(['\n', '\r']) {
+            continue;
+        }
+        let current = match input.file {
+            // 既存のファイルでは、行が無い項目は足さない
+            Some(file) => match file.get(field.key) {
+                Some(current) => Some(current),
+                None => continue,
+            },
+            None => None,
+        };
+        // キー割り当ては、現在値も共通の値も `key.keyboard.*` / `key.mouse.*` の書式のものだけ。
+        // 旧式の整数コードや判定できない書式は、検出するだけで書き換えない
+        if field.category == Category::Keys
+            && (current.is_some_and(|c| key_codec(c) != KeyCodec::Keyboard)
+                || key_codec(value) != KeyCodec::Keyboard)
+        {
+            continue;
+        }
+        managed.push(Managed {
+            id: id.clone(),
+            key: field.key,
+            value: value.clone(),
+            current: current.map(str::to_string),
+        });
+    }
+    managed
 }
 
 /// 記録が共通設定の今の revision を適用済みか。スキップや失敗の記録は最新ではない。
@@ -579,6 +728,8 @@ mod tests {
     fn skips_when_options_file_missing() {
         let env = Env::new();
         let inst = env.instance("A", None);
+        // 種を作らない版（1.13 未満）
+        env.jar(Some("{\"world_version\":1343}"));
         let p = env.profile(&[("fov", "0.9")]);
         env.join(&inst, &p);
         assert_eq!(
@@ -921,14 +1072,11 @@ mod tests {
         let env = Env::new();
         let p = env.profile(&[("fov", "0.9")]);
         let state = |inst: &Instance| crate::sync::instance_sync(&env.ctx(), &inst.id).unwrap();
-        // ファイル無し
+        // ファイル無し（1.13 以上なので種を作れる）
         let bare = env.instance("A", None);
         env.join(&bare, &p);
-        assert_eq!(
-            applicability(&env.paths, &bare),
-            Applicability::NeedsFirstLaunch
-        );
-        assert_eq!(state(&bare).applicability, Applicability::NeedsFirstLaunch);
+        assert_eq!(applicability(&env.paths, &bare), Applicability::Ready);
+        assert_eq!(state(&bare).applicability, Applicability::Ready);
         // version 行が不一致
         let other = SAMPLE.replace("version:4325", "version:4000");
         let old = env.instance("B", Some(other.as_bytes()));
@@ -948,6 +1096,7 @@ mod tests {
         );
         // 判定は何も書かない
         assert_eq!(env.read(&ready), SAMPLE);
+        assert!(!env.options(&bare).exists());
         assert!(store::snapshot(&env.db, &bare.id).unwrap().is_none());
     }
 
@@ -1005,6 +1154,8 @@ mod tests {
     fn apply_records_skip_reason() {
         let env = Env::new();
         let inst = env.instance("A", None);
+        // 種を作らない版（1.13 未満）でファイル無し
+        env.jar(Some("{\"world_version\":1343}"));
         let p = env.profile(&[("fov", "0.9")]);
         env.join(&inst, &p);
         let last = || {
@@ -1023,6 +1174,7 @@ mod tests {
             Some("noOptionsFile")
         );
         assert_eq!(last().reason.as_deref(), Some("noOptionsFile"));
+        env.jar(Some(&format!("{{\"world_version\":{VERSION}}}")));
         let other = SAMPLE.replace("version:4325", "version:4000");
         std::fs::write(env.options(&inst), &other).unwrap();
         apply_before_launch(&env.ctx(), &inst);
@@ -1104,12 +1256,348 @@ mod tests {
                 field_for_key(id)
             }
         };
-        apply_member_with(&env.ctx(), &inst, &membership, &resolve).unwrap();
+        apply_member_with(&env.ctx(), &inst, &membership, &resolve, &|_| {}).unwrap();
         let text = env.read(&inst);
         assert!(text.contains("fov:0.5"), "{text}");
         assert!(text.contains("mouseSensitivity:0.7"), "{text}");
         let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
         assert!(!snap.baseline.contains_key("fov"));
         assert!(snap.baseline.contains_key("mouseSensitivity"));
+    }
+
+    // ---- 種（options.txt が無いインスタンスの初回起動） ----
+
+    /// 種の改行（このプラットフォームの標準）。
+    fn eol() -> &'static str {
+        if cfg!(windows) { "\r\n" } else { "\n" }
+    }
+
+    /// 改行を `eol()` にした本文。
+    fn lines(rows: &[&str]) -> String {
+        rows.iter().map(|r| format!("{r}{}", eol())).collect()
+    }
+
+    #[test]
+    fn seeds_options_for_a_member_without_the_file() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[
+            ("fov", "0.9"),
+            ("soundCategory_master", "0.4"),
+            ("key_key.jump", "key.keyboard.j"),
+        ]);
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 3 }
+        );
+        // version の行が先頭、項目は共通設定の値の順（項目 ID の順）
+        assert_eq!(
+            env.read(&inst),
+            lines(&[
+                "version:4325",
+                "fov:0.9",
+                "key_key.jump:key.keyboard.j",
+                "soundCategory_master:0.4",
+            ])
+        );
+        // 既存のファイルが無いのでバックアップも無い
+        assert!(!env.paths.backups_dir().join("sync").join(&inst.id).exists());
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.state, SnapshotState::Applied);
+        assert_eq!(snap.reason, None);
+        assert_eq!(snap.applied_revision, env.revision(&p));
+    }
+
+    #[test]
+    fn seed_contains_only_managed_fields() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[
+            ("fov", "0.9"),
+            // 除外する
+            ("gamma", "1.0"),
+            // 例外で置き換える
+            ("renderDistance", "8"),
+            // 無効なカテゴリ（音量）
+            ("soundCategory_master", "0.4"),
+            // 改行を含む値
+            ("chatScale", "1\nlastServer:evil"),
+            // 旧形式のキー割り当て
+            ("key_key.jump", "57"),
+            ("key_key.drop", "key.keyboard.x"),
+            // 判定できない書式のキー割り当て
+            ("key_key.chat", "scancode.4"),
+            // 登録表に無い個人の項目
+            ("lastServer", "play.example.com"),
+            ("resourcePacks", "[\"a\"]"),
+        ]);
+        store::set_categories(&env.db, &p.id, &[C::Graphics, C::Keys, C::Chat]).unwrap();
+        env.join(&inst, &p);
+        store::set_excluded(&env.db, &inst.id, &["gamma".to_string()]).unwrap();
+        store::set_override(&env.db, &inst.id, "renderDistance", Some("16")).unwrap();
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 3 }
+        );
+        assert_eq!(
+            env.read(&inst),
+            lines(&[
+                "version:4325",
+                "fov:0.9",
+                "key_key.drop:key.keyboard.x",
+                "renderDistance:16",
+            ])
+        );
+    }
+
+    #[test]
+    fn seed_skips_below_1_13() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        env.jar(Some("{\"world_version\":1343}"));
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NoOptionsFile)
+        );
+        assert!(!env.options(&inst).exists());
+        // 1.13 ちょうどなら作る
+        env.jar(Some("{\"world_version\":1519}"));
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(env.read(&inst), lines(&["version:1519", "fov:0.9"]));
+    }
+
+    #[test]
+    fn seed_skips_when_the_version_is_unreadable() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        env.jar(None);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NoDataVersion)
+        );
+        assert!(!env.options(&inst).exists());
+        // jar がまだ無い（ダウンロード前）ときも同じ
+        std::fs::remove_file(client_jar_path(&env.paths, "1.21.5")).unwrap();
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NoDataVersion)
+        );
+        assert!(!env.options(&inst).exists());
+    }
+
+    #[test]
+    fn seed_skips_with_nothing_to_apply() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        // 有効なカテゴリに値が無い
+        let p = env.profile(&[("soundCategory_master", "0.4"), ("lastServer", "x")]);
+        store::set_categories(&env.db, &p.id, &[C::Graphics]).unwrap();
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Skipped(SkipReason::NothingToApply)
+        );
+        assert!(!env.options(&inst).exists());
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(snap.state, SnapshotState::Skipped);
+        assert_eq!(snap.reason.as_deref(), Some("nothingToApply"));
+    }
+
+    #[test]
+    fn seed_does_not_overwrite_a_file_that_appeared() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9"), ("gamma", "1.0")]);
+        env.join(&inst, &p);
+        let membership = store::membership(&env.db, &inst.id).unwrap().unwrap();
+        // 前提を調べた後、書く直前にゲームがファイルを作った場合
+        let appear = |path: &std::path::Path| std::fs::write(path, SAMPLE).unwrap();
+        let outcome =
+            apply_member_with(&env.ctx(), &inst, &membership, &field_for_key, &appear).unwrap();
+        // 種は書かず、通常の経路（ある行だけを書き換える）に戻る。行が無い gamma は足さない
+        assert_eq!(outcome, ApplyOutcome::Applied { changed: 1 });
+        assert_eq!(env.read(&inst), SAMPLE.replace("fov:0.5", "fov:0.9"));
+        let dir = env.paths.backups_dir().join("sync").join(&inst.id);
+        assert_eq!(std::fs::read_dir(dir).unwrap().count(), 1);
+
+        // 現れたファイルの版が合わなければ、何も書かない
+        let other = env.instance("B", None);
+        env.join(&other, &p);
+        let membership = store::membership(&env.db, &other.id).unwrap().unwrap();
+        let mismatched = SAMPLE.replace("version:4325", "version:4000");
+        let appear = |path: &std::path::Path| std::fs::write(path, &mismatched).unwrap();
+        let outcome =
+            apply_member_with(&env.ctx(), &other, &membership, &field_for_key, &appear).unwrap();
+        assert_eq!(outcome, ApplyOutcome::Skipped(SkipReason::VersionMismatch));
+        assert_eq!(env.read(&other), mismatched);
+    }
+
+    #[test]
+    fn seed_leaves_an_unreadable_entry_that_appeared() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        let membership = store::membership(&env.db, &inst.id).unwrap().unwrap();
+        // 書く直前に、ファイルではないもの（ディレクトリ）が現れた場合。種に戻らず、置き換えもしない
+        let calls = std::cell::Cell::new(0);
+        let flicker = |path: &std::path::Path| {
+            calls.set(calls.get() + 1);
+            std::fs::create_dir_all(path).unwrap();
+        };
+        let outcome = apply_member_with(&env.ctx(), &inst, &membership, &field_for_key, &flicker);
+        assert_eq!(calls.get(), 1);
+        // ディレクトリは options.txt として読めないので、失敗として返る（書き込みはしない）
+        assert!(
+            matches!(&outcome, Err(f) if f.reason == FailReason::ReadFailed),
+            "{outcome:?}"
+        );
+        assert!(env.options(&inst).is_dir());
+    }
+
+    #[test]
+    fn seed_baseline_matches_written_values() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9"), ("key_key.jump", "key.keyboard.j")]);
+        env.join(&inst, &p);
+        apply_before_launch(&env.ctx(), &inst);
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(
+            snap.baseline,
+            BTreeMap::from([
+                ("fov".to_string(), "0.9".to_string()),
+                ("key_key.jump".to_string(), "key.keyboard.j".to_string()),
+            ])
+        );
+        // ゲームが保存時に既定値の項目を足しても、種の値が変わらなければ提案は 0 件
+        let mut saved = include_str!("../../tests/fixtures/options/real_modern.txt")
+            .lines()
+            .filter(|l| !l.starts_with("version:") && !l.starts_with("fov:"))
+            .filter(|l| !l.starts_with("key_key.jump:"))
+            .map(|l| format!("{l}\n"))
+            .collect::<String>();
+        saved = format!("version:4325\nfov:0.9\nkey_key.jump:key.keyboard.j\n{saved}");
+        std::fs::write(env.options(&inst), &saved).unwrap();
+        crate::sync::proposals::collect_proposals(&env.ctx(), &inst.id);
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert!(snap.proposals.is_empty(), "{:?}", snap.proposals);
+        // 利用者が変えた項目だけが提案になる
+        std::fs::write(env.options(&inst), saved.replace("fov:0.9", "fov:0.6")).unwrap();
+        crate::sync::proposals::collect_proposals(&env.ctx(), &inst.id);
+        let snap = store::snapshot(&env.db, &inst.id).unwrap().unwrap();
+        assert_eq!(
+            snap.proposals,
+            vec![store::Proposal {
+                field_id: "fov".to_string(),
+                value: "0.6".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn seed_then_profile_update_uses_the_normal_path() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        apply_before_launch(&env.ctx(), &inst);
+        // 2 回目は値が同じなので触れない
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::UpToDate
+        );
+        store::set_values(&env.db, &p.id, &[("fov".into(), "0.7".into())]).unwrap();
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(env.read(&inst), lines(&["version:4325", "fov:0.7"]));
+    }
+
+    #[test]
+    fn applicability_is_ready_when_seedable() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        assert_eq!(applicability(&env.paths, &inst), Applicability::Ready);
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        let sync = crate::sync::instance_sync(&env.ctx(), &inst.id).unwrap();
+        assert_eq!(sync.applicability, Applicability::Ready);
+        assert!(!sync.has_options);
+        // 判定は何も書かない
+        assert!(!env.options(&inst).exists());
+        assert!(store::snapshot(&env.db, &inst.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn applicability_needs_first_launch_below_1_13() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        env.jar(Some("{\"world_version\":1343}"));
+        assert_eq!(
+            applicability(&env.paths, &inst),
+            Applicability::NeedsFirstLaunch
+        );
+        // ファイルが無く jar もまだ無い（版を判定できない）ときも、一度起動すれば分かる
+        std::fs::remove_file(client_jar_path(&env.paths, "1.21.5")).unwrap();
+        assert_eq!(
+            applicability(&env.paths, &inst),
+            Applicability::NeedsFirstLaunch
+        );
+        assert!(!env.options(&inst).exists());
+    }
+
+    #[test]
+    fn seed_creates_the_missing_game_dir() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let dir = instance::game_dir(&env.paths, &inst);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        assert_eq!(
+            apply_before_launch(&env.ctx(), &inst),
+            ApplyOutcome::Applied { changed: 1 }
+        );
+        assert_eq!(env.read(&inst), lines(&["version:4325", "fov:0.9"]));
+    }
+
+    #[test]
+    fn seed_reports_write_failed_when_the_dir_cannot_be_created() {
+        let env = Env::new();
+        let inst = env.instance("A", None);
+        let dir = instance::game_dir(&env.paths, &inst);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        // ゲームのディレクトリの場所をファイルで塞ぐ
+        std::fs::write(&dir, b"").unwrap();
+        let p = env.profile(&[("fov", "0.9")]);
+        env.join(&inst, &p);
+        let outcome = apply_before_launch(&env.ctx(), &inst);
+        // Windows では options.txt が「無い」と読めてディレクトリの作成で失敗し、
+        // それ以外では options.txt の読み出しで失敗する。どちらでも起動は止めず、何も書かない
+        let want = if cfg!(windows) {
+            FailReason::WriteFailed
+        } else {
+            FailReason::ReadFailed
+        };
+        assert!(
+            matches!(&outcome, ApplyOutcome::Failed(f) if f.reason == want),
+            "{outcome:?}"
+        );
+        assert!(dir.is_file());
+        assert_eq!(std::fs::read(&dir).unwrap(), b"");
     }
 }

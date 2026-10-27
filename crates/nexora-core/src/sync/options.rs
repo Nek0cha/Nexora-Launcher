@@ -116,6 +116,23 @@ impl OptionsFile {
     }
 }
 
+/// options.txt が無いインスタンスに作る「種」の本文。1 行目を `version:<data_version>` にし、
+/// 続けて `key:value` を渡された順に並べ、各行を `eol` で終える。
+/// `set_all` と同じく、空のキーと改行を含む値は行を壊すので書かない。
+pub fn seed_text(data_version: i64, lines: &[(&str, String)], eol: &str) -> String {
+    let mut out = format!("version:{data_version}{eol}");
+    for (key, value) in lines {
+        if key.is_empty() || value.contains(['\n', '\r']) {
+            continue;
+        }
+        out.push_str(key);
+        out.push(':');
+        out.push_str(value);
+        out.push_str(eol);
+    }
+    out
+}
+
 fn io_err(path: &Path, source: std::io::Error) -> CoreError {
     CoreError::Io {
         path: path.display().to_string(),
@@ -313,6 +330,59 @@ mod tests {
         assert_eq!(OptionsFile::parse(CRLF).version(), Some(3465));
         assert_eq!(OptionsFile::parse(LEGACY).version(), None);
         assert_eq!(OptionsFile::parse("version:abc\n").version(), None);
+    }
+
+    #[test]
+    fn seed_text_starts_with_the_version_line() {
+        let text = seed_text(
+            3953,
+            &[
+                ("fov", "0.9".into()),
+                ("key_key.jump", "key.keyboard.j".into()),
+            ],
+            "\n",
+        );
+        assert_eq!(text, "version:3953\nfov:0.9\nkey_key.jump:key.keyboard.j\n");
+        // 項目が無くても version の行だけは書く
+        assert_eq!(seed_text(1519, &[], "\n"), "version:1519\n");
+    }
+
+    #[test]
+    fn seed_text_uses_the_given_eol() {
+        let text = seed_text(3953, &[("fov", "0.9".into())], "\r\n");
+        assert_eq!(text, "version:3953\r\nfov:0.9\r\n");
+        assert_eq!(text.matches('\n').count(), text.matches("\r\n").count());
+    }
+
+    #[test]
+    fn seed_text_round_trips_through_parse() {
+        let lines = [
+            ("fov", "0.9".to_string()),
+            ("lang", "ja_jp".to_string()),
+            ("key_key.jump", "key.keyboard.space".to_string()),
+        ];
+        for eol in ["\n", "\r\n"] {
+            let file = OptionsFile::parse(&seed_text(4325, &lines, eol));
+            assert_eq!(file.version(), Some(4325));
+            for (key, value) in &lines {
+                assert_eq!(file.get(key), Some(value.as_str()), "{key}");
+            }
+            assert_eq!(file.entries().len(), lines.len() + 1);
+        }
+    }
+
+    #[test]
+    fn seed_text_drops_entries_that_would_break_lines() {
+        let text = seed_text(
+            4325,
+            &[
+                ("fov", "1\nlastServer:evil".into()),
+                ("", "x".into()),
+                ("gamma", "1.0".into()),
+            ],
+            "\n",
+        );
+        assert_eq!(text, "version:4325\ngamma:1.0\n");
     }
 
     #[test]

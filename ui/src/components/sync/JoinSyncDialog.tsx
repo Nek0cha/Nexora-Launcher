@@ -15,8 +15,9 @@ import {
 import { useTranslation } from "react-i18next";
 import { createSyncProfileFromInstance, joinSyncProfile, previewJoinSyncProfile } from "../../api/commands";
 import { toErrorPayload } from "../../api/ipc";
+import type { Applicability } from "../../bindings/Applicability";
 import type { JoinMode } from "../../bindings/JoinMode";
-import { defaultProfileName } from "../../features/sync/syncText";
+import { applicabilityKey, defaultProfileName } from "../../features/sync/syncText";
 import { SYNC_KEY, useSyncProfiles } from "../../features/sync/useInstanceSync";
 import { FailureNotice } from "../FailureNotice";
 import { modalClass, overlayClass } from "../modal";
@@ -74,6 +75,11 @@ type JoinOptions = {
   /** インスタンスの名前。共通設定の画面から開くときに、どのインスタンスの話かを見出しで示す */
   instanceName?: string;
   /**
+   * 共通設定を適用できる状態か。省略すると ready とみなす。
+   * 設定ファイルが無くても ready なら、起動前に設定ファイルを作って反映できる。
+   */
+  applicability?: Applicability;
+  /**
    * 参加先と値の違いの件数が決まっているとき（共通設定の画面で、違いがあると分かった後）。
    * どちらに揃えるかだけを聞き、「キャンセル」で閉じる。
    */
@@ -106,7 +112,16 @@ export function JoinSyncDialog(props: {
   );
 }
 
-function JoinContent({ instanceId, hasOptions, running, close, instanceName, target, onJoined }: {
+function JoinContent({
+  instanceId,
+  hasOptions,
+  running,
+  close,
+  instanceName,
+  applicability = "ready",
+  target,
+  onJoined,
+}: {
   instanceId: string;
   hasOptions: boolean;
   running: boolean;
@@ -267,10 +282,17 @@ function JoinContent({ instanceId, hasOptions, running, close, instanceName, tar
         </div>
       )}
 
-      {/* 参加しても、その場では何も書き換えない。選べるものが無いときは何も約束しない */}
-      {chosenKind !== null && (
-        <Notice tone="info">{running ? t("sync.card.afterPlay") : t("sync.card.nextLaunch")}</Notice>
-      )}
+      {/* 参加しても、その場では何も書き換えない。選べるものが無いときは何も約束しない。
+          適用できない状態なら、反映の時期を約束せずに理由を出す。ただし作れない理由として
+          同じ「一度起動すると」を既に出しているときは重ねない */}
+      {chosenKind !== null &&
+        (applicability === "ready" ? (
+          <Notice tone="info">{running ? t("sync.card.afterPlay") : t("sync.card.nextLaunch")}</Notice>
+        ) : (
+          !(applicability === "needsFirstLaunch" && !hasOptions) && (
+            <Notice tone="info">{t(applicabilityKey(applicability))}</Notice>
+          )
+        ))}
 
       {error && (
         <div role="alert">

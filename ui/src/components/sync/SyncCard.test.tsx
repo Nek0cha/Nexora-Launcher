@@ -121,6 +121,37 @@ describe("SyncCard when not joined", () => {
     expect(create.disabled).toBe(true);
     expect(dialog.textContent).toContain("一度起動すると、設定を読み取れるようになります。");
   });
+
+  // 設定ファイルが無くても ready なら、起動前に設定ファイルを作れる（種）。参加すれば次の起動で反映される
+  it("promises the next launch when joining an instance that can be seeded", async () => {
+    mount({ ...notJoined, hasOptions: false, applicability: "ready" }, { profiles: [profile] });
+    fireEvent.click(await screen.findByRole("button", { name: "他のインスタンスと設定を揃える" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        (within(dialog).getByRole("radio", { name: "既存の共通設定に参加する" }) as HTMLInputElement).checked,
+      ).toBe(true),
+    );
+    // 作る側は、読み取る設定ファイルが無いので変わらず選べない
+    expect(
+      (within(dialog).getByRole("radio", { name: "このインスタンスの設定から新しい共通設定を作る" }) as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect(dialog.textContent).toContain("次の起動時に反映されます。");
+  });
+
+  it("does not promise the next launch when joining an instance that cannot be seeded", async () => {
+    mount({ ...notJoined, hasOptions: false, applicability: "needsFirstLaunch" }, { profiles: [profile] });
+    fireEvent.click(await screen.findByRole("button", { name: "他のインスタンスと設定を揃える" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        (within(dialog).getByRole("radio", { name: "既存の共通設定に参加する" }) as HTMLInputElement).checked,
+      ).toBe(true),
+    );
+    expect(dialog.textContent).toContain("一度起動すると、設定を読み取れるようになります。");
+    expect(dialog.textContent).not.toContain("次の起動時に反映されます。");
+  });
 });
 
 describe("SyncCard when joined", () => {
@@ -168,6 +199,20 @@ describe("SyncCard when joined", () => {
     await screen.findByText("共通設定「いつもの」を使っています");
     expect(card().textContent).toContain("このインスタンスにはまだ適用できません。");
     expect(card().textContent).toContain(text);
+  });
+
+  it("promises the next launch right after joining when the settings file can be created", async () => {
+    mount({ ...joined, hasOptions: false, applicability: "ready", upToDate: false, lastApplied: null });
+    expect(await screen.findByText("次の起動時に反映されます。")).toBeTruthy();
+    expect(card().textContent).not.toContain("まだ適用できません");
+    expect(card().textContent).not.toContain("一度起動すると");
+  });
+
+  it("keeps asking for a first launch when the settings file cannot be created", async () => {
+    mount({ ...joined, hasOptions: false, applicability: "needsFirstLaunch", upToDate: false, lastApplied: null });
+    await screen.findByText("共通設定「いつもの」を使っています");
+    expect(card().textContent).toContain("一度起動すると、設定を読み取れるようになります。");
+    expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
   it("does not promise the next launch when it cannot apply", async () => {

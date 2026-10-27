@@ -79,6 +79,7 @@ function NotJoined({ instanceId, sync, running }: { instanceId: string; sync: In
       <JoinSyncDialog
         instanceId={instanceId}
         hasOptions={sync.hasOptions}
+        applicability={sync.applicability}
         running={running}
         isOpen={open}
         onOpenChange={setOpen}
