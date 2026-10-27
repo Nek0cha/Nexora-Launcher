@@ -260,6 +260,12 @@ fn apply_member_with(
     apply_checked(ctx, inst, membership, resolve, before_seed, true)
 }
 
+/// 種を書く直前の確認の結果から、その場所に何も無いと言えるか。
+/// 「無い」（NotFound）と確かめられたときだけ真。あるときや、権限などで調べられないときは偽。
+fn seed_path_is_vacant(probe: &std::io::Result<std::fs::Metadata>) -> bool {
+    matches!(probe, Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+}
+
 /// `seed_allowed` が偽なら、種を作れる状態でも作らずにスキップする
 /// （種を書く直前にファイルが現れて通常の経路に戻したあと、種に戻り続けないため）。
 fn apply_checked(
@@ -340,8 +346,8 @@ fn apply_checked(
         before_seed(&path);
         // 書く直前にもう一度、何も無いことを確かめる。`write_atomic` はリネームで置き換えるため、
         // 前提を調べた後にゲームなどが作ったファイルを上書きしないよう、あれば通常の経路に戻す。
-        // （リンクや読めないものも含め、何かあれば種は作らない）
-        if std::fs::symlink_metadata(&path).is_ok() {
+        // （リンクや読めないもの、調べられないものも含め、無いと確かめられなければ種は作らない）
+        if !seed_path_is_vacant(&std::fs::symlink_metadata(&path)) {
             tracing::info!(instance_id = %inst.id, "options.txt appeared before seeding; applying to it instead");
             return apply_checked(ctx, inst, membership, resolve, before_seed, false);
         }
@@ -1438,6 +1444,26 @@ mod tests {
             apply_member_with(&env.ctx(), &other, &membership, &field_for_key, &appear).unwrap();
         assert_eq!(outcome, ApplyOutcome::Skipped(SkipReason::VersionMismatch));
         assert_eq!(env.read(&other), mismatched);
+    }
+
+    #[test]
+    fn seed_proceeds_only_when_the_path_is_not_found() {
+        let t = tempfile::tempdir().unwrap();
+        let missing = t.path().join("options.txt");
+        assert!(seed_path_is_vacant(&std::fs::symlink_metadata(&missing)));
+        std::fs::write(&missing, "x").unwrap();
+        assert!(!seed_path_is_vacant(&std::fs::symlink_metadata(&missing)));
+        // 「無い」以外の失敗（権限など）は、何かある扱いにして種を作らない
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::Other,
+            std::io::ErrorKind::InvalidInput,
+        ] {
+            assert!(
+                !seed_path_is_vacant(&Err(std::io::Error::from(kind))),
+                "{kind:?}"
+            );
+        }
     }
 
     #[test]
