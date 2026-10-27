@@ -121,8 +121,9 @@ describe("Instances", () => {
 
     const survival = await row("Survival");
     expect(within(survival).getByText("1.21.5")).toBeTruthy();
-    expect(within(survival).getByText("Ready")).toBeTruthy();
-    expect(within(survival).getByText("3 hr 12 min")).toBeTruthy();
+    // 使える状態の印は出さない
+    expect(within(survival).queryByText("Ready")).toBeNull();
+    expect(within(survival).getByText("3h 12m")).toBeTruthy();
     const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
     expect(within(survival).getByText(played)).toBeTruthy();
     // 名前、「コンテンツ」、「設定」のどれからも、そのインスタンスの詳細を開ける
@@ -341,14 +342,14 @@ describe("Instances", () => {
       mount([full()]);
       const meta = (await row("Survival")).querySelector("[data-meta]") as HTMLElement;
       const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
-      expect(meta.getAttribute("title")).toBe(`1.21.5 · Ready · Last played ${played} · Play time 3 hr 12 min`);
+      expect(meta.getAttribute("title")).toBe(`1.21.5 · Last played ${played} · Play time 3h 12m`);
     });
 
     it("also gives the full meta text to screen readers, not only the tooltip", async () => {
       mount([full()]);
       const li = await row("Survival");
       const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
-      const full_text = `1.21.5 · Ready · Last played ${played} · Play time 3 hr 12 min`;
+      const full_text = `1.21.5 · Last played ${played} · Play time 3h 12m`;
       const sr = Array.from(li.querySelectorAll(".sr-only")).find((el) => el.textContent === full_text);
       expect(sr).toBeTruthy();
       expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("aria-hidden")).toBe("true");
@@ -386,12 +387,33 @@ describe("Instances", () => {
         expect(text()).not.toContain("Last played");
         expect(text()).toContain("1.21.5");
         await resize(META_MIN_WIDTH.version - 1);
-        expect(text()).toBe("Ready");
-        expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("title")).toContain("Play time 3 hr 12 min");
+        expect(text()).toBe("");
+        expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("title")).toContain("Play time 3h 12m");
         expect(within(li).getByRole("link", { name: "Survival" })).toBeTruthy();
       } finally {
         spy.mockRestore();
         vi.unstubAllGlobals();
+      }
+    });
+
+    it("shows a state label beside the name only when the instance is not usable", async () => {
+      mount([
+        instance("i1", "Fine"),
+        instance("i2", "Hurt", { state: "broken" }),
+        instance("i3", "Fresh", { state: "installing" }),
+      ]);
+      const fine = await row("Fine");
+      expect(fine.querySelector("[data-state-label]")).toBeNull();
+      for (const [name, label] of [["Hurt", "Broken"], ["Fresh", "Preparing"]] as const) {
+        const li = await row(name);
+        const badge = li.querySelector("[data-state-label]") as HTMLElement;
+        expect(badge.textContent).toBe(label);
+        expect(badge.className).toContain("shrink-0");
+        // 名前と同じ行、名前のリンクの隣
+        expect(badge.parentElement).toBe(within(li).getByRole("link", { name }).parentElement);
+        // 重複して読み上げない（全文の方に含まれる）
+        expect(li.querySelector("[data-meta]")?.textContent).not.toContain(label);
+        expect(Array.from(li.querySelectorAll(".sr-only")).some((el) => el.textContent?.includes(label))).toBe(true);
       }
     });
 

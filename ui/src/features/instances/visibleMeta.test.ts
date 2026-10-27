@@ -3,12 +3,13 @@ import { META_MIN_WIDTH, visibleMeta } from "./visibleMeta";
 
 describe("visibleMeta", () => {
   it("shows everything in display order when there is room", () => {
-    expect(visibleMeta(10_000)).toEqual(["version", "state", "lastPlayed", "playTime"]);
+    expect(visibleMeta(10_000)).toEqual(["version", "lastPlayed", "playTime"]);
   });
 
-  it("always keeps the state, even with no room at all", () => {
-    expect(visibleMeta(0)).toEqual(["state"]);
-    expect(visibleMeta(-5)).toEqual(["state"]);
+  it("shows nothing when there is no room, and never the state", () => {
+    expect(visibleMeta(0)).toEqual([]);
+    expect(visibleMeta(-5)).toEqual([]);
+    expect(visibleMeta(10_000)).not.toContain("state");
   });
 
   it("hides play time first, then last played, then version", () => {

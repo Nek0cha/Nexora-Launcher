@@ -53,7 +53,7 @@ const contentLink = [
 
 // 名前のリンク。見た目は名前のまま、乗せたときだけ下線を出す
 const nameLink = [
-  "max-w-full min-w-0 self-start truncate rounded-sm text-text-strong underline-offset-2 hover:underline",
+  "max-w-full min-w-0 truncate rounded-sm text-text-strong underline-offset-2 hover:underline",
   ring,
 ].join(" ");
 
@@ -172,8 +172,8 @@ function useFormatters() {
   const lang = i18n.language;
   return useMemo(() => {
     const date = new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" });
-    const hours = new Intl.NumberFormat(lang, { style: "unit", unit: "hour", unitDisplay: "short" });
-    const minutes = new Intl.NumberFormat(lang, { style: "unit", unit: "minute", unitDisplay: "short" });
+    const hours = new Intl.NumberFormat(lang, { style: "unit", unit: "hour", unitDisplay: "narrow" });
+    const minutes = new Intl.NumberFormat(lang, { style: "unit", unit: "minute", unitDisplay: "narrow" });
     const duration = (ms: number) => {
       const total = Math.floor(Math.max(0, ms) / 60_000);
       const h = Math.floor(total / 60);
@@ -186,16 +186,16 @@ function useFormatters() {
   }, [lang]);
 }
 
-function StateLabel({ state }: { state: Instance["state"] }) {
+/** 使える状態のときは何も出さない。使えないときだけ、名前の横に出す（名前の方が切り詰められる） */
+function StateBadge({ state }: { state: Instance["state"] }) {
   const { t } = useTranslation();
-  if (state === "broken")
-    return (
-      <span className="flex items-center gap-1.5 text-text">
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />
-        <span>{t("instances.state.broken")}</span>
-      </span>
-    );
-  return <span>{t(`instances.state.${state}`)}</span>;
+  if (state === "ready") return null;
+  return (
+    <span data-state-label aria-hidden className="flex shrink-0 items-center gap-1.5 text-sm text-text">
+      {state === "broken" && <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />}
+      <span>{t(`instances.state.${state}`)}</span>
+    </span>
+  );
 }
 
 function InstanceRow({
@@ -225,31 +225,29 @@ function InstanceRow({
   const dot = (key: string) => <span key={key} aria-hidden className="text-text-faint">·</span>;
 
   // 行の高さを変えないよう 1 行に収め、入らない分は低い重要度から隠す。隠した分も含めて、すべてをツールチップで読めるようにする
-  const stateText = t(`instances.state.${instance.state}`);
   const lastPlayedText = instance.lastPlayedAt === null ? null : format.date(instance.lastPlayedAt);
   const playTimeText = format.duration(instance.playTimeMs);
   const title = [
     instance.mcVersion,
-    stateText,
+    ...(instance.state === "ready" ? [] : [t(`instances.state.${instance.state}`)]),
     lastPlayedText === null ? t("instances.neverPlayed") : `${t("instances.lastPlayed")} ${lastPlayedText}`,
     ...(lastPlayedText === null ? [] : [`${t("instances.playTime")} ${playTimeText}`]),
   ].join(" · ");
 
   const pieces: Record<MetaKey, ReactNode> = {
     version: <span className="tabular block max-w-28 truncate">{instance.mcVersion}</span>,
-    state: <StateLabel state={instance.state} />,
     lastPlayed:
       instance.lastPlayedAt === null ? (
         <span>{t("instances.neverPlayed")}</span>
       ) : (
-        <span className="flex gap-1.5 whitespace-nowrap">
+        <span className="flex gap-1 whitespace-nowrap">
           <span className="text-text-faint">{t("instances.lastPlayed")}</span>
           <time dateTime={new Date(instance.lastPlayedAt).toISOString()}>{lastPlayedText}</time>
         </span>
       ),
     playTime:
       instance.lastPlayedAt === null ? null : (
-        <span className="flex gap-1.5 whitespace-nowrap">
+        <span className="flex gap-1 whitespace-nowrap">
           <span className="text-text-faint">{t("instances.playTime")}</span>
           <span className="tabular">{playTimeText}</span>
         </span>
@@ -261,16 +259,19 @@ function InstanceRow({
     <li aria-labelledby={nameId} className="relative flex min-h-16 items-center gap-4 py-3">
       <div ref={metaRef} className="flex min-w-0 flex-1 flex-col gap-0.5">
         {/* 名前からも詳細（コンテンツのタブ）を開ける */}
-        <Link id={nameId} to={`/instances/${instance.id}`} className={nameLink}>
-          {instance.name}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link id={nameId} to={`/instances/${instance.id}`} className={nameLink}>
+            {instance.name}
+          </Link>
+          <StateBadge state={instance.state} />
+        </div>
         {/* 隠れた項目も含めた全文を読み上げ用に置く（見える方は重複するので読み上げから外す） */}
         <span className="sr-only">{title}</span>
         <span
           data-meta
           aria-hidden
           title={title}
-          className="flex items-center gap-x-2 overflow-hidden text-sm whitespace-nowrap text-text-muted"
+          className="flex items-center gap-x-1.5 overflow-hidden text-sm whitespace-nowrap text-text-muted"
         >
           {items.flatMap((key, i) => [
             ...(i === 0 ? [] : [dot(`dot-${key}`)]),

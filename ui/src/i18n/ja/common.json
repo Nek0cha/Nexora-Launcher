@@ -195,7 +195,7 @@
       "ready": "使用可能",
       "broken": "壊れている"
     },
-    "lastPlayed": "最後に遊んだ日時",
+    "lastPlayed": "最終プレイ",
     "playTime": "プレイ時間",
     "neverPlayed": "まだ遊んでいません",
     "duplicatingPercent": "複製中 {{percent}}%",
