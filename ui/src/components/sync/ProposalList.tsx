@@ -22,6 +22,7 @@ import {
 } from "../../features/sync/proposals";
 import { SYNC_KEY, useSyncProfileValues, useSyncProposals } from "../../features/sync/useInstanceSync";
 import { FailureNotice } from "../FailureNotice";
+import { RadioMark } from "../RadioMark";
 import { useToast } from "../toast/useToast";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -52,13 +53,6 @@ const radioClass = [
   "group flex cursor-default items-center gap-2.5 rounded-md py-1 text-sm text-text",
   "data-disabled:cursor-not-allowed data-disabled:opacity-60",
   "data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-accent",
-].join(" ");
-
-const radioMark = [
-  "size-4 shrink-0 rounded-full border border-line-control bg-surface-1",
-  "transition-[border-width,border-color] duration-(--duration-fast) ease-out-quint",
-  "group-data-selected:border-[5px] group-data-selected:border-accent",
-  "group-data-hovered:border-text-muted group-data-selected:group-data-hovered:border-accent",
 ].join(" ");
 
 type Scope = {
@@ -297,7 +291,7 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
       >
         {[...byValue].map(([value, ids]) => (
           <Radio key={value} value={value} className={radioClass}>
-            <span aria-hidden className={radioMark} />
+            <RadioMark />
             <span className="font-medium text-text-strong tabular-nums">{ctx.format(conflict.fieldId, value)}</span>
             <span className="text-text-muted"> {ctx.names(ids)}</span>
           </Radio>

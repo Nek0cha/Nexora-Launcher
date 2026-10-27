@@ -43,3 +43,19 @@ describe("InstanceChip", () => {
     expect(onDragStart).not.toHaveBeenCalled();
   });
 });
+
+describe("InstanceChip layout stability", () => {
+  const classOf = (dimmed: boolean) => {
+    const { container } = render(<InstanceChip name="Survival" onDragStart={() => {}} dimmed={dimmed} />);
+    const chip = container.firstElementChild as HTMLElement;
+    cleanup();
+    return chip.className.split(/\s+/).filter(Boolean);
+  };
+
+  it("a dimmed chip (the one being dragged) differs from a normal one only by opacity, so its place stays the same size", () => {
+    const normal = classOf(false);
+    const dimmed = classOf(true);
+    expect(dimmed.filter((c) => !normal.includes(c))).toEqual(["opacity-40"]);
+    expect(normal.filter((c) => !dimmed.includes(c))).toEqual([]);
+  });
+});

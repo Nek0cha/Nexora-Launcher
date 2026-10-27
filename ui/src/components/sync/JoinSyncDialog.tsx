@@ -21,6 +21,7 @@ import { applicabilityKey, defaultProfileName } from "../../features/sync/syncTe
 import { SYNC_KEY, useSyncProfiles } from "../../features/sync/useInstanceSync";
 import { FailureNotice } from "../FailureNotice";
 import { modalClass, overlayClass } from "../modal";
+import { RadioMark } from "../RadioMark";
 import { inputBase, Notice } from "../settingsLayout";
 import { StableLabel } from "../StableLabel";
 
@@ -47,14 +48,6 @@ const radioClass = [
   "data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-accent",
 ].join(" ");
 
-const radioMark = [
-  "mt-0.5 size-4 shrink-0 rounded-full border border-line-control bg-surface-1",
-  "transition-[border-width,border-color] duration-(--duration-fast) ease-out-quint",
-  "group-data-selected:border-[5px] group-data-selected:border-accent",
-  "group-data-hovered:border-text-muted group-data-selected:group-data-hovered:border-accent",
-  "group-data-disabled:border-line group-data-disabled:bg-surface-2",
-].join(" ");
-
 function Choice({ value, label, isDisabled, describedBy }: {
   value: string;
   label: string;
@@ -63,7 +56,7 @@ function Choice({ value, label, isDisabled, describedBy }: {
 }) {
   return (
     <Radio value={value} isDisabled={isDisabled} aria-describedby={describedBy} className={radioClass}>
-      <span aria-hidden className={radioMark} />
+      <RadioMark className="mt-0.5" />
       <span>{label}</span>
     </Radio>
   );

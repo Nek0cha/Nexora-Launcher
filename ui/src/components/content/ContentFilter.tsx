@@ -61,7 +61,10 @@ export function ChipGroup<T extends string>(props: {
           <ToggleButton key={o.id} id={o.id} className={chipClass}>
             {({ isSelected }) => (
               <>
-                {isSelected && <IconCheck aria-hidden className="-ml-0.5 size-3.5" />}
+                {/* チェックの場所は選ばれていない札でも確保し、選んでも幅が変わらないようにする */}
+                <span aria-hidden data-check-slot className="-ml-0.5 grid size-3.5 shrink-0 place-items-center">
+                  {isSelected && <IconCheck className="size-3.5" />}
+                </span>
                 <span>{o.label}</span>
               </>
             )}

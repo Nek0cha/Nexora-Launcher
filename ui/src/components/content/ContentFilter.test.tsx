@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyFilter, type FilterState } from "../../features/content/contentFilter";
 import i18n from "../../i18n";
-import { ContentFilter } from "./ContentFilter";
+import { sizeChangingStateClasses } from "../layoutStability";
+import { ChipGroup, ContentFilter } from "./ContentFilter";
 
 function mount(
   props: { state?: FilterState; categories?: string[] | null; showStatus?: boolean; showSearch?: boolean } = {},
@@ -77,5 +78,27 @@ describe("ContentFilter", () => {
     const onChange = mount({ showStatus: true });
     fireEvent.click(screen.getByRole("button", { name: "Dependency" }));
     expect(onChange).toHaveBeenLastCalledWith({ ...emptyFilter, status: ["dependency"] });
+  });
+
+  it("chips change only colour when selected: no size-changing state classes", () => {
+    mount();
+    for (const chip of screen.getAllByRole("button", { name: /Required|Optional|Unsupported/ })) {
+      expect(sizeChangingStateClasses(chip.className)).toEqual([]);
+    }
+  });
+
+  it("keeps a check slot in every chip so selecting does not change its width", () => {
+    const { rerender } = render(
+      <ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={[]} onChange={() => {}} />,
+    );
+    const slot = () => screen.getByRole("button", { name: "Alpha" }).querySelector("[data-check-slot]");
+    const before = slot();
+    expect(before).not.toBeNull();
+    expect(before?.getAttribute("aria-hidden")).toBe("true");
+    expect(before?.querySelector("svg")).toBeNull();
+    const frame = before?.className;
+    rerender(<ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={["a"]} onChange={() => {}} />);
+    expect(slot()?.className).toBe(frame);
+    expect(slot()?.querySelector("svg")).not.toBeNull();
   });
 });
