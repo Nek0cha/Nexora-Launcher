@@ -157,6 +157,8 @@ describe("SyncProfiles", () => {
     expect(within(side).getByText("Creative")).toBeTruthy();
     expect(within(side).getByText("Modded")).toBeTruthy();
     expect(screen.getByText(/次の起動時に反映されます。/)).toBeTruthy();
+    // ドラッグのやり方は上の説明にあるので、脇では繰り返さない
+    expect(within(side).queryByText("カードへドラッグすると参加します。")).toBeNull();
   });
 
   it("says when every instance has joined", async () => {

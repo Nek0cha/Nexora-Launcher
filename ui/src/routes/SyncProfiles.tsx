@@ -183,20 +183,17 @@ export default function SyncProfiles() {
         >
           <h2 className="text-xs font-medium tracking-[0.08em] text-text-muted">{t("sync.screen.unjoined")}</h2>
           {unjoined.length > 0 ? (
-            <>
-              <ul className="flex flex-wrap gap-1.5">
-                {unjoined.map((i) => (
-                  <li key={i.id} className="max-w-full">
-                    <InstanceChip
-                      name={i.name}
-                      onDragStart={(e) => start({ instanceId: i.id, profileId: null, name: i.name }, e)}
-                      dimmed={drag?.instanceId === i.id}
-                    />
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-text-muted">{t("sync.screen.unjoinedHint")}</p>
-            </>
+            <ul className="flex flex-wrap gap-1.5">
+              {unjoined.map((i) => (
+                <li key={i.id} className="max-w-full">
+                  <InstanceChip
+                    name={i.name}
+                    onDragStart={(e) => start({ instanceId: i.id, profileId: null, name: i.name }, e)}
+                    dimmed={drag?.instanceId === i.id}
+                  />
+                </li>
+              ))}
+            </ul>
           ) : (
             <p className="text-sm text-text-muted">{t("sync.screen.unjoinedNone")}</p>
           )}

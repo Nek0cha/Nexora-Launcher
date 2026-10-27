@@ -178,6 +178,8 @@ describe("LoginDialog", () => {
     await startLogin();
     progress({ stage: "waitingForBrowser", url: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?x" });
     expect(screen.getByText("Signing in with your browser…")).toBeTruthy();
+    // 開き直す・コードを使う手段はボタンにあるので、文では繰り返さない
+    expect(screen.queryByText(/open it again/)).toBeNull();
     await press("Open the browser again");
     expect(openExternal).toHaveBeenCalledWith("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?x");
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();

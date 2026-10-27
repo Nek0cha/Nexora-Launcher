@@ -179,9 +179,10 @@ describe("SyncCard when joined", () => {
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
-  it("says it applies after the current session while the game runs", async () => {
+  it("leaves the timing to the settings form while the game runs", async () => {
     mount({ ...joined, upToDate: false }, { running: true });
-    expect(await screen.findByText("いまのプレイが終わった後に反映されます。")).toBeTruthy();
+    await screen.findByText(/を使っています/);
+    expect(card().textContent).not.toContain("いまのプレイが終わった後に反映されます");
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
