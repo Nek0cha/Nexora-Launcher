@@ -40,6 +40,17 @@ export function useGateTiming(pending: boolean): GatePhase {
 }
 
 /**
+ * 一度「そろった」になったら、その後に問い合わせが pending に戻っても（取り直しや再試行）、そろったままにする。
+ * 中身を出したあとに枠へ戻すと、入力や並びが消えて跳ねる。
+ */
+export function useLatchedPending(pending: boolean): boolean {
+  const passed = useRef(false);
+  const latched = !passed.current && pending;
+  if (!latched) passed.current = true;
+  return latched;
+}
+
+/**
  * 最初の問い合わせがすべて終わるまで中身を出さず、同じ配置のスケルトンを見せる。
  * 失敗した問い合わせがあっても枠は外す（失敗の見せ方は子が決める）。
  */

@@ -19,10 +19,12 @@ import type { RejectReason } from "../bindings/RejectReason";
 import type { VersionChoice } from "../bindings/VersionChoice";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StableLabel } from "../components/StableLabel";
-import { ContentFilter, ContentSearchField } from "../components/content/ContentFilter";
+import { ContentFilter, ContentSearchField, FilterSkeleton } from "../components/content/ContentFilter";
 import { ContentList, type RowUpdates } from "../components/content/ContentList";
 import { ROW_SIZE, rowId } from "../components/content/ContentRow";
 import { FailureNotice } from "../components/FailureNotice";
+import { ReadyGate, useLatchedPending } from "../components/ReadyGate";
+import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/toast/useToast";
 import {
   applyFilter,
@@ -505,7 +507,43 @@ function rejectText(t: ReturnType<typeof useTranslation>["t"], reason: RejectRea
   return t(`content.reject.${reason}`);
 }
 
-/** 1 つの種類の、絞り込みと一覧。 */
+const SKELETON_ROWS = 8;
+
+/** 一覧と絞り込みの列と同じ並びと寸法のスケルトン。行は実際の行と同じ高さ（ROW_SIZE） */
+function KindSkeleton({ withUpdates }: { withUpdates: boolean }) {
+  return (
+    <div data-testid="content-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+      <div className="min-h-0 overflow-hidden pr-1">
+        <FilterSkeleton status />
+      </div>
+      <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
+        <div className="flex shrink-0 items-center gap-2 pb-1">
+          <Skeleton className="h-9 min-w-0 flex-1" />
+          {withUpdates && <Skeleton className="h-9 w-[158px] shrink-0" />}
+        </div>
+        {withUpdates && <Skeleton className="h-8 w-40 shrink-0 self-end" />}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+            <div key={i} className="flex shrink-0 items-center gap-3 px-3" style={{ height: ROW_SIZE }}>
+              <Skeleton className="size-9 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-64 max-w-full" />
+              </div>
+              <Skeleton className="h-5 w-8 shrink-0 rounded-full" />
+              <Skeleton className="size-8 shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 1 つの種類の、絞り込みと一覧。一覧とカテゴリがそろうまで中身を出さず、同じ配置のスケルトンを見せる。
+ * 一度そろったあとは、取り直しで pending に戻っても枠には戻さない。
+ */
 function KindPanel(props: {
   kind: ContentKind;
   query: ReturnType<typeof useContentList>;
@@ -520,9 +558,19 @@ function KindPanel(props: {
   /** 更新の部品（MOD のサブタブだけ）。無ければ更新の確認もボタンも出さない */
   updates?: UpdateControls;
 }) {
-  const { t } = useTranslation();
-  const { kind, query, filter, updates } = props;
+  const { kind, query, updates } = props;
   const categories = useCategories(kind);
+  const pending = useLatchedPending(query.isPending || categories.isPending);
+  return (
+    <ReadyGate queries={[{ isPending: pending }]} skeleton={<KindSkeleton withUpdates={updates !== undefined} />}>
+      <KindBody {...props} categories={categories} />
+    </ReadyGate>
+  );
+}
+
+function KindBody(props: Parameters<typeof KindPanel>[0] & { categories: ReturnType<typeof useCategories> }) {
+  const { t } = useTranslation();
+  const { kind, query, filter, updates, categories } = props;
   const [showExcluded, setShowExcluded] = useState(false);
   const items = query.data;
   // 並びは画面に出す名前の順にする（DB はパスの順で返す）
@@ -552,6 +600,7 @@ function KindPanel(props: {
           state={filter}
           onChange={props.onFilterChange}
           categories={categories.data ?? null}
+          categoriesError={categories.error ? toErrorPayload(categories.error) : null}
           showStatus
           showSearch={false}
           statuses={updates ? modStatuses : undefined}

@@ -293,3 +293,23 @@ describe("ContentRow icon", () => {
     expect(within(row("Plain")).getByTestId("content-icon").querySelector("img")).toBeNull();
   });
 });
+
+describe("ContentRow layout stability", () => {
+  // 行の高さを決めるクラスは、状態（無効、更新あり、更新中、操作不可）で変えない
+  it("row_height_class_is_the_same_in_every_state", () => {
+    const upd = new Map([["iris.jar", update("iris.jar", "1.0.0")]]);
+    mount([sodium, iris, lithium], { available: upd, updating: new Set(["sodium.jar"]) }, true);
+    const classes = screen.getAllByRole("row").map((r) => r.className);
+    expect(classes.length).toBe(3);
+    for (const c of classes) expect(c).toContain("h-14");
+    expect(new Set(classes).size).toBe(1);
+  });
+
+  it("every_row_has_the_same_update_slot_whether_or_not_it_has_an_update", () => {
+    mount([sodium, iris], { available: new Map([["iris.jar", update("iris.jar", "1.0.0")]]) });
+    const slots = screen.getAllByTestId("row-update-slot");
+    expect(slots.length).toBe(2);
+    expect(slots[0]!.className).toBe(slots[1]!.className);
+    expect(slots[0]!.className).toContain("min-w-");
+  });
+});

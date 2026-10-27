@@ -3,10 +3,13 @@ import { Input, type Key, SearchField, ToggleButton, ToggleButtonGroup } from "r
 import { useTranslation } from "react-i18next";
 import IconCheck from "~icons/ph/check";
 import IconSearch from "~icons/ph/magnifying-glass";
+import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { Side } from "../../bindings/Side";
 import type { FilterState, StatusKey } from "../../features/content/contentFilter";
 import i18n, { type resources } from "../../i18n";
+import { FailureNotice } from "../FailureNotice";
 import { inputBase } from "../settingsLayout";
+import { Skeleton } from "../Skeleton";
 
 type CategorySlug = keyof (typeof resources)["ja"]["common"]["content"]["category"];
 
@@ -107,6 +110,8 @@ export function ContentFilter(props: {
   state: FilterState;
   onChange: (next: FilterState) => void;
   categories: string[] | null;
+  /** カテゴリの取得に失敗したときの理由。あれば、カテゴリの場所に理由を出す */
+  categoriesError?: ErrorPayload | null;
   showStatus: boolean;
   showSearch?: boolean;
   statuses?: StatusKey[];
@@ -132,6 +137,12 @@ export function ContentFilter(props: {
         selected={state.server}
         onChange={(server) => onChange({ ...state, server })}
       />
+      {props.categoriesError && (
+        <div data-testid="categories-failed" className="flex flex-col gap-2">
+          <span className="text-xs text-text-muted">{t("content.filter.categories")}</span>
+          <FailureNotice error={props.categoriesError} />
+        </div>
+      )}
       {props.categories !== null && props.categories.length > 0 && (
         <ChipGroup
           label={t("content.filter.categories")}
@@ -151,6 +162,41 @@ export function ContentFilter(props: {
           onChange={(status) => onChange({ ...state, status })}
         />
       )}
+    </div>
+  );
+}
+
+function ChipGroupSkeleton({ chips, widths }: { chips: number; widths?: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Skeleton className="h-[18px] w-16" />
+      <div className="flex flex-wrap gap-1.5">
+        {Array.from({ length: chips }, (_, i) => (
+          <Skeleton key={i} className={`h-7 ${widths ?? "w-12"}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 絞り込みの列と同じ並びと寸法のスケルトン。見出しと札の数は、完成形（クライアント、サーバー、カテゴリ、状態）に合わせる。
+ * カテゴリは 2 列で 8 行ほど（実際の完成形の高さに近い）。
+ */
+export function FilterSkeleton({ status }: { status: boolean }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <ChipGroupSkeleton chips={3} />
+      <ChipGroupSkeleton chips={3} />
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-[18px] w-16" />
+        <div className="grid grid-cols-2 gap-1.5">
+          {Array.from({ length: 16 }, (_, i) => (
+            <Skeleton key={i} className="h-7" />
+          ))}
+        </div>
+      </div>
+      {status && <ChipGroupSkeleton chips={3} />}
     </div>
   );
 }
