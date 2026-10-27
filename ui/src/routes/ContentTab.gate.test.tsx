@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -139,5 +139,12 @@ describe("ContentTab loading", () => {
     mount();
     await screen.findByRole("button", { name: "Enable Sodium" });
     expect(screen.getAllByTestId("row-update-slot").length).toBe(1);
+  });
+
+  it("announces_loading_to_screen_readers_in_the_skeleton", async () => {
+    vi.mocked(listContentCategories).mockReturnValue(deferred<string[]>().promise);
+    mount();
+    await wait(250);
+    expect(within(screen.getByTestId("content-skeleton")).getByRole("status").textContent).toBe("Loading content");
   });
 });

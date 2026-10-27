@@ -264,8 +264,11 @@ function InstanceRow({
         <Link id={nameId} to={`/instances/${instance.id}`} className={nameLink}>
           {instance.name}
         </Link>
+        {/* 隠れた項目も含めた全文を読み上げ用に置く（見える方は重複するので読み上げから外す） */}
+        <span className="sr-only">{title}</span>
         <span
           data-meta
+          aria-hidden
           title={title}
           className="flex items-center gap-x-2 overflow-hidden text-sm whitespace-nowrap text-text-muted"
         >

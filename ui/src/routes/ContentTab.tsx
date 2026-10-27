@@ -511,15 +511,28 @@ const SKELETON_ROWS = 8;
 
 /** 一覧と絞り込みの列と同じ並びと寸法のスケルトン。行は実際の行と同じ高さ（ROW_SIZE） */
 function KindSkeleton({ withUpdates }: { withUpdates: boolean }) {
+  const { t } = useTranslation();
   return (
     <div data-testid="content-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+      <span role="status" className="sr-only">
+        {t("content.loading")}
+      </span>
       <div className="scroll-thin min-h-0 overflow-hidden pr-1 [scrollbar-gutter:stable]">
         <FilterSkeleton status />
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 pb-1">
           <Skeleton className="h-9 min-w-0 flex-1" />
-          {withUpdates && <Skeleton className="h-9 w-[158px] shrink-0" />}
+          {withUpdates && (
+            // 「Modrinth から追加」と同じ枠。見えない文字で幅を決めるので、どの言語でも同じ幅になる
+            <div
+              aria-hidden
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-transparent bg-surface-2 px-3 text-sm motion-safe:animate-pulse"
+            >
+              <span className="size-4 shrink-0" />
+              <span className="invisible">{t("modrinth.addFromModrinth")}</span>
+            </div>
+          )}
         </div>
         {withUpdates && <Skeleton className="h-8 w-40 shrink-0 self-end" />}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

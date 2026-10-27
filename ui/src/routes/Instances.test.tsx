@@ -344,6 +344,16 @@ describe("Instances", () => {
       expect(meta.getAttribute("title")).toBe(`1.21.5 · Ready · Last played ${played} · Play time 3 hr 12 min`);
     });
 
+    it("also gives the full meta text to screen readers, not only the tooltip", async () => {
+      mount([full()]);
+      const li = await row("Survival");
+      const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
+      const full_text = `1.21.5 · Ready · Last played ${played} · Play time 3 hr 12 min`;
+      const sr = Array.from(li.querySelectorAll(".sr-only")).find((el) => el.textContent === full_text);
+      expect(sr).toBeTruthy();
+      expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("aria-hidden")).toBe("true");
+    });
+
     it("hides play time, then last played, then version as the row narrows, keeping the tooltip", async () => {
       const widths: number[] = [];
       let callback: ResizeObserverCallback = () => {};

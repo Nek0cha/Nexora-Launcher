@@ -44,10 +44,9 @@ export function useGateTiming(pending: boolean): GatePhase {
  * 中身を出したあとに枠へ戻すと、入力や並びが消えて跳ねる。
  */
 export function useLatchedPending(pending: boolean): boolean {
-  const passed = useRef(false);
-  const latched = !passed.current && pending;
-  if (!latched) passed.current = true;
-  return latched;
+  const [passed, setPassed] = useState(false);
+  if (!passed && !pending) setPassed(true);
+  return !passed && pending;
 }
 
 /**

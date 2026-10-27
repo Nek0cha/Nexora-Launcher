@@ -126,43 +126,71 @@ const optionClass =
 function VersionSelect(props: { value: string | null; onChange: (value: string | null) => void }) {
   const { t } = useTranslation();
   const versions = useVersions(true);
+  const versionsError = versions.error ? toErrorPayload(versions.error) : null;
   const options = [
     { id: ANY_VERSION, label: t("modrinth.anyVersion") },
     ...(versions.data ?? []).map((v) => ({ id: v.id, label: v.id })),
   ];
   return (
-    <AriaSelect
-      value={props.value ?? ANY_VERSION}
-      onChange={(key) => {
-        if (key !== null) props.onChange(key === ANY_VERSION ? null : String(key));
-      }}
-      className="flex flex-col gap-2"
-    >
-      <Label className="text-xs text-text-muted">{t("modrinth.mcVersion")}</Label>
-      <Button className={triggerClass}>
-        <SelectValue className="tabular truncate">{({ selectedText }) => selectedText}</SelectValue>
-        <IconCaret aria-hidden className="size-4 shrink-0 text-text-muted" />
-      </Button>
-      <Popover
-        offset={4}
-        className={`min-w-(--trigger-width) rounded-lg border border-line bg-surface-2 p-1 shadow-float ${popoverMotion}`}
+    <div className="flex flex-col gap-2">
+      <AriaSelect
+        value={props.value ?? ANY_VERSION}
+        onChange={(key) => {
+          if (key !== null) props.onChange(key === ANY_VERSION ? null : String(key));
+        }}
+        className="flex flex-col gap-2"
       >
-        <ListBox items={options} className="scroll-thin max-h-72 overflow-auto outline-none">
-          {(o) => (
-            <ListBoxItem id={o.id} textValue={o.label} className={optionClass}>
-              {({ isSelected }) => (
-                <>
-                  <span className="grid size-4 shrink-0 place-items-center">
-                    {isSelected && <IconCheck aria-hidden className="size-4 text-accent" />}
-                  </span>
-                  <span className="tabular truncate">{o.label}</span>
-                </>
-              )}
-            </ListBoxItem>
-          )}
-        </ListBox>
-      </Popover>
-    </AriaSelect>
+        <Label className="text-xs text-text-muted">{t("modrinth.mcVersion")}</Label>
+        <Button className={triggerClass}>
+          <SelectValue className="tabular truncate">{({ selectedText }) => selectedText}</SelectValue>
+          <IconCaret aria-hidden className="size-4 shrink-0 text-text-muted" />
+        </Button>
+        <Popover
+          offset={4}
+          className={`min-w-(--trigger-width) rounded-lg border border-line bg-surface-2 p-1 shadow-float ${popoverMotion}`}
+        >
+          <ListBox items={options} className="scroll-thin max-h-72 overflow-auto outline-none">
+            {(o) => (
+              <ListBoxItem id={o.id} textValue={o.label} className={optionClass}>
+                {({ isSelected }) => (
+                  <>
+                    <span className="grid size-4 shrink-0 place-items-center">
+                      {isSelected && <IconCheck aria-hidden className="size-4 text-accent" />}
+                    </span>
+                    <span className="tabular truncate">{o.label}</span>
+                  </>
+                )}
+              </ListBoxItem>
+            )}
+          </ListBox>
+        </Popover>
+      </AriaSelect>
+      {versionsError && (
+        <div role="alert" data-testid="versions-failed" className="flex flex-col items-start gap-1">
+          <FailureNotice error={versionsError} />
+          <Button onPress={() => void versions.refetch()} className={textButton}>
+            {t("modrinth.retry")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 並び順の切り替えと同じ枠。見えない文字で幅を決めるので、どの言語でも完成形と同じ幅になる */
+function SortSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-hidden
+      className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-transparent bg-surface-2 p-0.5 motion-safe:animate-pulse"
+    >
+      {sortOptions.map((id) => (
+        <span key={id} className="inline-flex h-7 items-center rounded-sm px-2.5 text-xs">
+          <span className="invisible">{t(`modrinth.sortValue.${id}`)}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -176,6 +204,9 @@ function BrowserSkeleton({ fixed }: { fixed: boolean }) {
   const { t } = useTranslation();
   return (
     <div data-testid="modrinth-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+      <span role="status" className="sr-only">
+        {t("modrinth.searching")}
+      </span>
       <div className="scroll-thin flex min-h-0 flex-col gap-4 overflow-hidden pr-1 [scrollbar-gutter:stable]">
         {fixed ? (
           <div className="flex flex-col gap-2">
@@ -204,10 +235,11 @@ function BrowserSkeleton({ fixed }: { fixed: boolean }) {
         <div className="flex shrink-0 items-center gap-3 pb-1">
           <Skeleton className="h-9 min-w-0 flex-1" />
           <Skeleton className="h-9 w-32 shrink-0" />
-          <Skeleton className="h-9 w-[168px] shrink-0" />
+          <SortSkeleton />
         </div>
         <div className="flex min-h-0 flex-1 flex-col divide-y divide-line overflow-hidden pr-1">
           {Array.from({ length: SKELETON_HITS }, (_, i) => (
+            // 高さは実際の結果 1 件（HitCard の上下 py-4、アイコン 48px、説明 2 行、下の行）を幅 600px 前後で測った値
             <div key={i} className="grid h-[169.3px] shrink-0 grid-cols-[auto_minmax(0,1fr)] content-start gap-x-4 py-4">
               <Skeleton className="size-12" />
               <div className="flex min-w-0 flex-col gap-2">

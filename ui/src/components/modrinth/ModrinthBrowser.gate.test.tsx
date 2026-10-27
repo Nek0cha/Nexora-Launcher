@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, listContentCategories, listInstances, listVersions, searchModrinth } from "../../api/commands";
 import type { SearchHit } from "../../bindings/SearchHit";
 import type { SearchPage } from "../../bindings/SearchPage";
+import { IpcError } from "../../api/ipc";
 import i18n from "../../i18n";
 import { ModrinthBrowser, SEARCH_DEBOUNCE_MS } from "./ModrinthBrowser";
 
@@ -66,7 +67,6 @@ describe("ModrinthBrowser loading", () => {
     // 絞り込みの札は届いているが、結果がまだ。途中の姿は出さない
     expect(screen.queryByTestId("modrinth-facets")).toBeNull();
     expect(screen.getByTestId("modrinth-skeleton")).toBeTruthy();
-    expect(screen.queryByText("Searching...")).toBeNull();
     await act(async () => first.resolve(page([hit()])));
     await wait(350);
     expect(screen.queryByTestId("modrinth-skeleton")).toBeNull();
@@ -98,5 +98,26 @@ describe("ModrinthBrowser loading", () => {
     await screen.findByRole("article", { name: "Sodium" });
     // 件数の場所は、件数が決まる前から（空でも）同じ幅で確保する
     expect(screen.getByTestId("modrinth-total").className).toContain("min-w-");
+  });
+
+  it("announces_loading_to_screen_readers_in_the_skeleton", async () => {
+    vi.mocked(searchModrinth).mockReturnValue(deferred<SearchPage>().promise);
+    mount();
+    await wait(250);
+    expect(within(screen.getByTestId("modrinth-skeleton")).getByRole("status").textContent).toBe("Searching...");
+  });
+
+  it("shows_why_the_version_list_is_missing_and_retries_it", async () => {
+    // 枠を出したあとに中身が付く側の問い合わせも、取り直すたびに失敗させる
+    vi.mocked(listVersions).mockRejectedValue(new IpcError({ code: "net.offline", params: {}, detail: null }));
+    vi.mocked(searchModrinth).mockResolvedValue(page([hit()]));
+    mount();
+    const failed = await screen.findByTestId("versions-failed");
+    expect(failed.textContent).toContain("Retry");
+    const calls = vi.mocked(listVersions).mock.calls.length;
+    vi.mocked(listVersions).mockResolvedValue([{ id: "1.21", releaseTime: "2024-06-13T00:00:00Z" }]);
+    await act(async () => fireEvent.click(within(failed).getByRole("button", { name: "Retry" })));
+    await waitFor(() => expect(screen.queryByTestId("versions-failed")).toBeNull());
+    expect(vi.mocked(listVersions).mock.calls.length).toBe(calls + 1);
   });
 });

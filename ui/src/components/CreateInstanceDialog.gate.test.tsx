@@ -114,6 +114,8 @@ describe("CreateInstanceDialog shows everything at once", () => {
     expect(within(dialog).queryByRole("textbox", { name: "Name" })).toBeNull();
     // 少し待つとスケルトン。中身（タブ、名前、版）はまだ無い
     expect(await within(dialog).findByTestId("create-skeleton")).toBeTruthy();
+    expect(within(within(dialog).getByTestId("create-skeleton")).getByRole("status").textContent).toBe("Loading loader versions");
+    expect(within(within(dialog).getByTestId("create-skeleton")).getByRole("status").textContent).toBe("Loading loader versions");
     expect(tabs()).toEqual([]);
     // スケルトンの間も閉じられる
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();

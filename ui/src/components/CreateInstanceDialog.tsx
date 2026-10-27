@@ -46,7 +46,7 @@ import {
 import { FailureNotice } from "./FailureNotice";
 import { InstanceAdvancedFields } from "./InstanceAdvancedFields";
 import { modalClass, overlayClass } from "./modal";
-import { ReadyGate } from "./ReadyGate";
+import { ReadyGate, useLatchedPending } from "./ReadyGate";
 import { Select } from "./Select";
 import { Skeleton } from "./Skeleton";
 import { controlWidth, inputBase } from "./settingsLayout";
@@ -159,9 +159,9 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const quiltGames = useLoaderGameVersions("quilt", true);
   const giveUp = useElapsed(MAX_WAIT_MS);
   // 一度中身を出したら、再試行などで一覧が pending に戻っても枠は戻さない（入力が消えないように）
-  const passed = useRef(false);
-  const pending = !passed.current && !giveUp && [versions, fabricGames, forgeGames, neoforgeGames, quiltGames].some((q) => q.isPending);
-  if (!pending) passed.current = true;
+  const pending = useLatchedPending(
+    !giveUp && [versions, fabricGames, forgeGames, neoforgeGames, quiltGames].some((q) => q.isPending),
+  );
   const queries = [{ isPending: pending }];
   return (
     <ReadyGate queries={queries} skeleton={<CreateSkeleton />}>
@@ -182,6 +182,9 @@ function CreateSkeleton() {
   const { t } = useTranslation();
   return (
     <div data-testid="create-skeleton" aria-busy="true" className="flex max-h-[calc(85vh-1rem)] flex-col">
+      <span role="status" className="sr-only">
+        {t("create.loadingLoaderVersions")}
+      </span>
       <Heading slot="title" className="px-5 pt-5 font-display text-lg font-semibold text-text-strong">
         {t("create.title")}
       </Heading>
