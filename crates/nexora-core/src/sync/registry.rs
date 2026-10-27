@@ -18,6 +18,7 @@ pub enum Category {
     Graphics,
     Chat,
     Accessibility,
+    Language,
 }
 
 /// 値の型。options.txt の値は文字列なので、画面での扱いを決めるためだけに持つ。
@@ -52,7 +53,6 @@ const fn f(key: &'static str, category: Category, kind: ValueKind) -> Field {
 }
 
 /// `min_data_version` 以上のゲームでだけ扱う項目。
-#[allow(dead_code)]
 pub(crate) const fn f_since(
     key: &'static str,
     category: Category,
@@ -134,6 +134,8 @@ static FIELDS: &[Field] = &[
     f("sprintWindow", C::Accessibility, K::Int),
     f("attackIndicator", C::Accessibility, K::Int),
     f("showSubtitles", C::Accessibility, K::Bool),
+    // 言語コードの形式は 1.11（DataVersion 819）で小文字（en_us）になったため、それ以降だけ扱う
+    f_since("lang", C::Language, K::Text, 819),
     key_field("key_key.attack"),
     key_field("key_key.use"),
     key_field("key_key.forward"),
@@ -237,7 +239,7 @@ mod tests {
 
     #[test]
     fn existing_fields_have_no_floor() {
-        for x in fields() {
+        for x in fields().iter().filter(|x| x.id != "lang") {
             assert_eq!(x.min_data_version, 0, "{}", x.id);
         }
         assert_eq!(
@@ -355,7 +357,6 @@ mod tests {
             "preferredGraphicsBackend",
             "textureFiltering",
             "improvedTransparency",
-            "lang",
             "modelPart_cape",
             "realmsNotifications",
             "sharePresence",
@@ -365,6 +366,28 @@ mod tests {
             assert!(sample.get(key).is_some(), "サンプルに無い: {key}");
             assert!(field_for_key(key).is_none(), "{key}");
         }
+    }
+
+    #[test]
+    fn lang_is_registered_with_the_1_11_floor() {
+        let lang = field_for_key("lang").unwrap();
+        assert_eq!(lang.category, Category::Language);
+        assert_eq!(lang.kind, ValueKind::Text);
+        assert_eq!(lang.min_data_version, 819);
+        assert!(!lang.applies_to(818));
+        assert!(lang.applies_to(819));
+        assert_eq!(
+            serde_json::to_string(&Category::Language).unwrap(),
+            "\"language\""
+        );
+    }
+
+    #[test]
+    fn real_sample_lang_is_lowercase() {
+        let sample = crate::sync::options::OptionsFile::parse(REAL);
+        let value = sample.get("lang").unwrap();
+        assert!(value.contains('_'), "{value}");
+        assert_eq!(value, value.to_lowercase());
     }
 
     #[test]

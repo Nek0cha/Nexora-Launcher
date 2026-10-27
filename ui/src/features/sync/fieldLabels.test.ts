@@ -3,10 +3,10 @@ import registry from "../../../../crates/nexora-core/src/sync/registry.rs?raw";
 import i18n, { resources } from "../../i18n";
 import { fieldLabel } from "./fieldLabels";
 
-/** 登録表（core）の項目の ID。表の行 `f("id", ...)` と `key_field("id")` から読む */
+/** 登録表（core）の項目の ID。表の行 `f("id", ...)`、`f_since("id", ...)` と `key_field("id")` から読む */
 function registeredIds(): string[] {
   const table = registry.slice(0, registry.indexOf("pub fn fields()"));
-  return [...table.matchAll(/\b(?:f|key_field)\("([^"]+)"/g)].map((m) => m[1]!);
+  return [...table.matchAll(/\b(?:f|f_since|key_field)\("([^"]+)"/g)].map((m) => m[1]!);
 }
 
 describe("fieldLabel", () => {
@@ -14,6 +14,7 @@ describe("fieldLabel", () => {
     const ids = registeredIds();
     expect(ids.length).toBeGreaterThan(80);
     expect(ids).toContain("fov");
+    expect(ids).toContain("lang");
     expect(ids).toContain("key_key.hotbar.9");
   });
 

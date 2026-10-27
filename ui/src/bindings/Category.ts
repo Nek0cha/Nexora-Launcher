@@ -3,4 +3,4 @@
 /**
  * 共通設定の項目をまとめる種別。
  */
-export type Category = "keys" | "mouse" | "sound" | "graphics" | "chat" | "accessibility";
+export type Category = "keys" | "mouse" | "sound" | "graphics" | "chat" | "accessibility" | "language";

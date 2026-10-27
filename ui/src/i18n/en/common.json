@@ -499,7 +499,8 @@
       "sound": "Volume",
       "graphics": "Graphics",
       "chat": "Chat",
-      "accessibility": "Accessibility"
+      "accessibility": "Accessibility",
+      "language": "Language"
     },
     "otherField": "Other settings",
     "join": {
@@ -606,6 +607,7 @@
       "sprintWindow": "Sprint Window",
       "attackIndicator": "Attack Indicator",
       "showSubtitles": "Subtitles",
+      "lang": "Language",
       "key_key.attack": "Attack/Destroy",
       "key_key.use": "Use Item/Place Block",
       "key_key.forward": "Walk Forwards",

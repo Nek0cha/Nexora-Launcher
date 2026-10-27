@@ -78,6 +78,7 @@ describe("ProfileCard", () => {
     expect(pressed("音量")).toBe("false");
     expect(pressed("チャット")).toBe("false");
     expect(pressed("アクセシビリティ")).toBe("false");
+    expect(pressed("言語")).toBe("false");
     expect(within(card).getByText("Survival")).toBeTruthy();
     expect(within(card).getByText("Creative")).toBeTruthy();
     expect(within(card).queryByText("Modded")).toBeNull();
@@ -189,6 +190,12 @@ describe("ProfileCard", () => {
     mount();
     await press(screen.getByRole("button", { name: "マウス" }));
     await waitFor(() => expect(setSyncCategories).toHaveBeenCalledWith("p1", ["keys", "mouse", "graphics"]));
+  });
+
+  it("turns the language category on", async () => {
+    mount();
+    await press(screen.getByRole("button", { name: "言語" }));
+    await waitFor(() => expect(setSyncCategories).toHaveBeenCalledWith("p1", ["keys", "graphics", "language"]));
   });
 
   it("turns a category off", async () => {

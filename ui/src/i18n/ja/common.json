@@ -499,7 +499,8 @@
       "sound": "音量",
       "graphics": "グラフィック",
       "chat": "チャット",
-      "accessibility": "アクセシビリティ"
+      "accessibility": "アクセシビリティ",
+      "language": "言語"
     },
     "otherField": "その他の設定",
     "join": {
@@ -606,6 +607,7 @@
       "sprintWindow": "ダッシュの二度押しの間隔",
       "attackIndicator": "攻撃のインジケーター",
       "showSubtitles": "字幕",
+      "lang": "言語",
       "key_key.attack": "攻撃・破壊",
       "key_key.use": "アイテムの使用・ブロックの設置",
       "key_key.forward": "前進",

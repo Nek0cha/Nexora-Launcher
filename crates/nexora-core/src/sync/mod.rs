@@ -49,13 +49,14 @@ pub struct JoinReport {
     pub differing: usize,
 }
 
-pub(crate) const ALL_CATEGORIES: [Category; 6] = [
+pub(crate) const ALL_CATEGORIES: [Category; 7] = [
     Category::Keys,
     Category::Mouse,
     Category::Sound,
     Category::Graphics,
     Category::Chat,
     Category::Accessibility,
+    Category::Language,
 ];
 
 fn options_path(ctx: &SyncCtx, instance_id: &str) -> Result<std::path::PathBuf, CoreError> {
@@ -713,6 +714,32 @@ fov:0.5
                 "{category:?}"
             );
         }
+    }
+
+    #[test]
+    fn new_profiles_enable_the_language_category() {
+        let env = Env::new();
+        let id = env.instance("A", Some(SAMPLE.as_bytes()));
+        let p = create_profile_from_instance(&env.ctx(), &id, "共通").unwrap();
+        assert!(p.categories.contains(&Category::Language));
+    }
+
+    #[test]
+    fn existing_profiles_keep_their_categories() {
+        let env = Env::new();
+        let p = store::create_profile(&env.db, "P", &[Category::Keys, Category::Chat]).unwrap();
+        // 言語が加わる前に保存された値は、そのまま読み出せて言語は入らない
+        env.db
+            .with_conn(|c| {
+                c.execute(
+                    "UPDATE sync_profiles SET categories = ?2 WHERE id = ?1",
+                    rusqlite::params![p.id, r#"["keys","chat"]"#],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let got = find_profile(&env.ctx(), &p.id).unwrap();
+        assert_eq!(got.categories, vec![Category::Keys, Category::Chat]);
     }
 
     #[test]

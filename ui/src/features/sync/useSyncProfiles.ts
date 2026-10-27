@@ -15,7 +15,7 @@ import { SYNC_KEY } from "./useInstanceSync";
 export { useSyncProfiles } from "./useInstanceSync";
 
 /** 画面に並べるカテゴリの順。保存するときもこの順に揃える */
-export const CATEGORIES: Category[] = ["keys", "mouse", "sound", "graphics", "chat", "accessibility"];
+export const CATEGORIES: Category[] = ["keys", "mouse", "sound", "graphics", "chat", "accessibility", "language"];
 
 export function orderCategories(categories: Iterable<Category>): Category[] {
   const set = new Set(categories);

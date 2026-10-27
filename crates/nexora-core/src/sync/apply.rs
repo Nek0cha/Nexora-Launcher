@@ -410,13 +410,14 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     const VERSION: i64 = 4325;
-    const ALL: [Category; 6] = [
+    const ALL: [Category; 7] = [
         C::Keys,
         C::Mouse,
         C::Sound,
         C::Graphics,
         C::Chat,
         C::Accessibility,
+        C::Language,
     ];
 
     struct Env {
