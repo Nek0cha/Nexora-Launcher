@@ -23,7 +23,7 @@ export function isKnownCategory(slug: string): boolean {
 
 // 選べる値の札。選んだ札は面を明るくし、色だけに頼らないようチェックの印も付ける
 const chipClass = [
-  "inline-flex h-7 cursor-default items-center gap-1 rounded-full border border-line px-2.5 text-xs text-text-muted",
+  "inline-flex h-7 shrink-0 cursor-default items-center gap-1 rounded-full border border-line px-2.5 text-xs whitespace-nowrap text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
   "selected:border-line-strong selected:bg-surface-3 selected:text-text-strong",

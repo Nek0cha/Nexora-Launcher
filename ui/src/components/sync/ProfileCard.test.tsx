@@ -223,4 +223,15 @@ describe("ProfileCard", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(deleteSyncProfile).not.toHaveBeenCalled();
   });
+
+  it("lays the category switches out in a wrapping row and never wraps inside one", () => {
+    mount();
+    const buttons = screen.getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+    expect(buttons).toHaveLength(7);
+    expect((buttons[0]?.parentElement as HTMLElement).className).toContain("flex-wrap");
+    for (const b of buttons) {
+      expect(b.className).toContain("whitespace-nowrap");
+      expect(b.className).toContain("shrink-0");
+    }
+  });
 });
