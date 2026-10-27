@@ -102,7 +102,7 @@ fn collect_with(
                 continue;
             }
             // キー割り当ては、基準値も `key.keyboard.*` の書式のときだけ比べる
-            if field_for_key(field_id).is_some_and(|f| f.category == Category::Keys)
+            if resolve(field_id).is_some_and(|f| f.category == Category::Keys)
                 && key_codec(base) != KeyCodec::Keyboard
             {
                 continue;
