@@ -140,13 +140,6 @@
     "removeBody": "This removes the sign-in information from this computer. Tokens that Microsoft has already issued are not revoked.",
     "removeConfirm": "Remove",
     "changeSkin": "Change skin",
-    "skinTitle": "Change skin",
-    "skinFile": "Skin image (PNG)",
-    "skinFileHint": "64x64 or 64x32, up to 64 KiB.",
-    "skinModel": "Model",
-    "skinClassic": "Classic",
-    "skinSlim": "Slim",
-    "skinSubmit": "Change",
     "cancel": "Cancel"
   },
   "sidebar": {

@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   beginLogin,
   cancelTask,
   getSkin,
-  getSkinVariant,
   listAccounts,
   removeAccount,
   setActiveAccount,
@@ -32,8 +32,6 @@ vi.mock("../api/commands", () => ({
   beginLogin: vi.fn(),
   cancelTask: vi.fn(),
   getSkin: vi.fn(),
-  getSkinVariant: vi.fn(),
-  changeSkin: vi.fn(),
   launchInstance: vi.fn(),
 }));
 vi.mock("../api/events", () => ({ onAccountsChanged: vi.fn(), onLoginProgress: vi.fn() }));
@@ -50,10 +48,12 @@ function mount(list: AccountList) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   client.setQueryData(TASKS_KEY, {});
   render(
-    <QueryClientProvider client={client}>
-      <Accounts />
-      <ToastRegion />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <Accounts />
+        <ToastRegion />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -281,18 +281,19 @@ describe("Accounts", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("offers_change_only_for_microsoft_accounts", async () => {
+  it("links_to_the_skins_screen_only_on_usable_microsoft_rows", async () => {
     mount({
       accounts: [account("a1", "Alex", { isActive: true }), account("a2", "Sam", { needsLogin: true })],
       devOffline: { username: "Player", active: false },
     });
     const alex = within(await row("Alex"));
-    expect((alex.getByRole("button", { name: "Change skin" }) as HTMLButtonElement).disabled).toBe(false);
-    // ログインし直しが必要な行では押せない
+    expect(alex.getByRole("link", { name: "Change skin" }).getAttribute("href")).toBe("/skins");
+    expect(alex.queryByRole("button", { name: "Change skin" })).toBeNull();
+    // ログインし直しが必要な行には出さない
     const sam = within(await row("Sam"));
-    expect((sam.getByRole("button", { name: "Change skin" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(sam.queryByRole("link", { name: "Change skin" })).toBeNull();
     // 開発用のオフラインアカウントの行には出さない
     const dev = within(await row("Development offline account"));
-    expect(dev.queryByRole("button", { name: "Change skin" })).toBeNull();
+    expect(dev.queryByRole("link", { name: "Change skin" })).toBeNull();
   });
 });

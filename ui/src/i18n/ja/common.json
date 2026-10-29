@@ -140,13 +140,6 @@
     "removeBody": "このパソコンからログインの情報を消します。Microsoft 側で発行済みのトークンが無効になるわけではありません。",
     "removeConfirm": "削除",
     "changeSkin": "スキンを変更",
-    "skinTitle": "スキンを変更",
-    "skinFile": "スキンの画像（PNG）",
-    "skinFileHint": "64×64 または 64×32、64 KiB まで。",
-    "skinModel": "モデル",
-    "skinClassic": "Classic",
-    "skinSlim": "Slim",
-    "skinSubmit": "変更する",
     "cancel": "キャンセル"
   },
   "sidebar": {

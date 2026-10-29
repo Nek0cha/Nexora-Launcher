@@ -2,11 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginLogin,
-  changeSkin,
   createInstance,
   deleteInstance,
   duplicateInstance,
-  getSkinVariant,
   addContentFiles,
   getContentIcon,
   identifyContent,
@@ -124,10 +122,6 @@ describe("instance and skin commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("delete_instance", { instanceId: "i1" });
     await duplicateInstance("i1");
     expect(invoke).toHaveBeenLastCalledWith("duplicate_instance", { instanceId: "i1" });
-    await getSkinVariant("a1");
-    expect(invoke).toHaveBeenLastCalledWith("get_skin_variant", { accountId: "a1" });
-    await changeSkin("a1", "slim", [1, 2]);
-    expect(invoke).toHaveBeenLastCalledWith("change_skin", { accountId: "a1", variant: "slim", png: [1, 2] });
   });
 });
 

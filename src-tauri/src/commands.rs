@@ -6,7 +6,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
-use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
 use nexora_core::auth::service::CurrentSkin;
 use nexora_core::content::apply::ContentTaskReport;
@@ -629,40 +628,6 @@ pub fn get_dev_offline_username() -> CmdResult<String> {
 #[tauri::command]
 pub fn set_dev_offline_username(_name: String) -> CmdResult<String> {
     Err(ErrorPayload::new("app.dev_only"))
-}
-
-/// アカウントの現在のスキンの型（classic か slim）を返す。
-#[tauri::command]
-pub async fn get_skin_variant(
-    state: State<'_, AppState>,
-    account_id: String,
-) -> CmdResult<SkinVariant> {
-    let services = state.services()?;
-    let id = parse_account_id(&account_id)?;
-    services
-        .launcher
-        .auth()
-        .skin_variant(id)
-        .await
-        .map_err(ErrorPayload::from)
-}
-
-/// スキンを変更する。`png` は IPC の `number[]` で受ける。
-#[tauri::command]
-pub async fn change_skin(
-    state: State<'_, AppState>,
-    account_id: String,
-    variant: SkinVariant,
-    png: Vec<u8>,
-) -> CmdResult<()> {
-    let services = state.services()?;
-    let id = parse_account_id(&account_id)?;
-    services
-        .launcher
-        .auth()
-        .change_skin(id, variant, png)
-        .await
-        .map_err(ErrorPayload::from)
 }
 
 /// アカウントの現在のスキン（画像、ハッシュ、モデル）とマントの一覧を返す。

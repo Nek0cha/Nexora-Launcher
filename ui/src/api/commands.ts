@@ -1,7 +1,6 @@
 import type { CreatedInstance } from "../bindings/CreatedInstance";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
-import type { SkinVariant } from "../bindings/SkinVariant";
 import type { RunningSession } from "../bindings/RunningSession";
 import type { VersionEntry } from "../bindings/VersionEntry";
 import type { AppInfo } from "../bindings/AppInfo";
@@ -76,9 +75,6 @@ export const setDevOfflineActive = (active: boolean) => call<null>("set_dev_offl
 export const removeAccount = (accountId: string) => call<null>("remove_account", { accountId });
 export const beginLogin = (method: LoginMethod) => call<string>("begin_login", { method });
 export const getSkin = (accountId: string) => call<string | null>("get_skin", { accountId });
-export const getSkinVariant = (accountId: string) => call<SkinVariant>("get_skin_variant", { accountId });
-export const changeSkin = (accountId: string, variant: SkinVariant, png: number[]) =>
-  call<null>("change_skin", { accountId, variant, png });
 
 export const listContent = (instanceId: string, kind: ContentKind) =>
   call<ContentItem[]>("list_content", { instanceId, kind });

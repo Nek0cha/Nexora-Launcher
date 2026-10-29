@@ -191,8 +191,6 @@ pub fn run() {
             commands::open_modrinth_project,
             commands::get_content_icon,
             commands::duplicate_instance,
-            commands::get_skin_variant,
-            commands::change_skin,
             commands::get_current_skin,
             commands::set_cape,
             commands::list_saved_skins,
