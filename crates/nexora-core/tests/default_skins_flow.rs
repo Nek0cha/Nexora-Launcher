@@ -109,7 +109,10 @@ async fn lists_every_default_skin_the_game_jar_holds_as_data_urls() {
     assert_eq!(decode(&skins[2].image), skin_png(4));
     assert_eq!(decode(&skins[3].image), skin_png(3));
     // sha256 は元の画像の画素のハッシュ（保存したスキンと同じ値）
-    assert_eq!(skins[0].sha256, nexora_core::skins::pixel_hash(&skin_png(2)));
+    assert_eq!(
+        skins[0].sha256,
+        nexora_core::skins::pixel_hash(&skin_png(2))
+    );
     assert_ne!(skins[0].sha256, skins[1].sha256);
 
     // 取得に使った jar は残さない（共通の場所にも置かない）
