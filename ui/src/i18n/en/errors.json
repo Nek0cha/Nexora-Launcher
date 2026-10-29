@@ -84,7 +84,9 @@
     "version_unavailable": "{{name}} can't be changed to that version. Only versions of this mod that match this instance can be chosen. Reopen the list and try again."
   },
   "skin": {
-    "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller"
+    "invalid": "Choose a PNG skin image that is 64×64 or 64×32 pixels and 64 KiB or smaller",
+    "name_empty": "Enter a name.",
+    "not_found": "That skin was not found."
   },
   "sync": {
     "no_options": "This instance has never been launched, so its settings cannot be read yet. Launch it once, then try again.",

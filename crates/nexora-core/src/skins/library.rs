@@ -32,17 +32,11 @@ pub struct SavedSkinPatch {
     pub png: Option<Vec<u8>>,
 }
 
-fn invalid(reason: &str) -> CoreError {
-    CoreError::InvalidSkin {
-        reason: reason.into(),
-    }
-}
-
-/// 前後の空白を除く。空なら `InvalidSkin { reason: "name" }`。
+/// 前後の空白を除く。空なら `SkinNameEmpty`。
 fn clean_name(name: &str) -> Result<String, CoreError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(invalid("name"));
+        return Err(CoreError::SkinNameEmpty);
     }
     Ok(name.to_string())
 }
@@ -187,12 +181,14 @@ pub fn png(db: &Db, id: &str) -> Result<(Vec<u8>, SkinVariant), CoreError> {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        let (png, variant) = row.ok_or_else(|| invalid("not_found"))?;
+        let (png, variant) = row.ok_or_else(|| CoreError::SkinNotFound)?;
         Ok((png, parse_variant(&variant)))
     })
 }
 
 /// 名前、型、画像のうち指定したものを変える。画像を変えると `sha256` も変わり、`id` は変わらない。
+/// 画像を差し替えても型は判定し直さない。差し替えた画像の画素が他の項目と同じでもよい
+/// （同じ画像のカードが 2 つになりうる。`find_by_sha` は古い方を返す）。
 pub fn update(db: &Db, id: &str, patch: SavedSkinPatch) -> Result<SavedSkin, CoreError> {
     let name = patch.name.as_deref().map(clean_name).transpose()?;
     let new_png = match &patch.png {
@@ -209,7 +205,7 @@ pub fn update(db: &Db, id: &str, patch: SavedSkinPatch) -> Result<SavedSkin, Cor
             .optional()?
             .is_some();
         if !exists {
-            return Err(invalid("not_found"));
+            return Err(CoreError::SkinNotFound);
         }
         if let Some(name) = &name {
             tx.execute(
@@ -328,10 +324,6 @@ mod tests {
         v
     }
 
-    fn is_invalid(r: Result<SavedSkin, CoreError>, why: &str) -> bool {
-        matches!(r, Err(CoreError::InvalidSkin { reason }) if reason == why)
-    }
-
     #[test]
     fn add_validates_and_rejects_bad_png() {
         let db = Db::open_in_memory().unwrap();
@@ -348,7 +340,10 @@ mod tests {
         huge.resize(64 * 1024 + 1, 0);
         assert!(add(&db, "x", None, &huge, 1).is_err());
         assert!(add(&db, "x", None, &ihdr_only(32, 32), 1).is_err());
-        assert!(is_invalid(add(&db, "  ", None, &skin(1), 1), "name"));
+        assert!(matches!(
+            add(&db, "  ", None, &skin(1), 1),
+            Err(CoreError::SkinNameEmpty)
+        ));
     }
 
     #[test]
@@ -396,7 +391,7 @@ mod tests {
         let (bytes, variant) = png(&db, &a.id).unwrap();
         assert_eq!(bytes, slim);
         assert_eq!(variant, SkinVariant::Classic);
-        assert!(png(&db, "nope").is_err());
+        assert!(matches!(png(&db, "nope"), Err(CoreError::SkinNotFound)));
         // 指定も保存もない場合の判定はスリム
         let db2 = Db::open_in_memory().unwrap();
         assert_eq!(
@@ -414,9 +409,15 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(update(&db, &s.id, patch("  New  ")).unwrap().name, "New");
-        assert!(is_invalid(update(&db, &s.id, patch("   ")), "name"));
+        assert!(matches!(
+            update(&db, &s.id, patch("   ")),
+            Err(CoreError::SkinNameEmpty)
+        ));
         assert_eq!(list(&db).unwrap()[0].name, "New");
-        assert!(update(&db, "nope", patch("x")).is_err());
+        assert!(matches!(
+            update(&db, "nope", patch("x")),
+            Err(CoreError::SkinNotFound)
+        ));
     }
 
     #[test]
@@ -442,6 +443,26 @@ mod tests {
             ..Default::default()
         };
         assert!(update(&db, &s.id, bad).is_err());
+    }
+
+    #[test]
+    fn replacing_the_png_with_another_entrys_image_is_allowed() {
+        let db = Db::open_in_memory().unwrap();
+        let a = add(&db, "a", None, &skin(1), 1).unwrap();
+        let b = add(&db, "b", None, &skin(2), 2).unwrap();
+        let u = update(
+            &db,
+            &b.id,
+            SavedSkinPatch {
+                png: Some(skin(1)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(u.sha256, a.sha256);
+        assert_eq!(list(&db).unwrap().len(), 2);
+        // 同じ画像を追加すると古い方が返る
+        assert_eq!(add(&db, "c", None, &skin(1), 3).unwrap().id, a.id);
     }
 
     #[test]

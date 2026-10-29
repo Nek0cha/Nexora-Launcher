@@ -122,6 +122,12 @@ pub enum CoreError {
     ContentVersionUnavailable { name: String },
     #[error("invalid skin image: {reason}")]
     InvalidSkin { reason: String },
+    /// 保存するスキンの名前が空。
+    #[error("the skin name is empty")]
+    SkinNameEmpty,
+    /// 指定した保存済みスキンが無い。
+    #[error("the saved skin was not found")]
+    SkinNotFound,
     /// options.txt が無い（ゲームを一度も起動していない）ので、共通設定を作れない。
     #[error("the instance has no options.txt yet")]
     SyncNoOptions,
@@ -244,6 +250,8 @@ impl CoreError {
             CoreError::ContentNoLoader => "content.no_loader",
             CoreError::ContentVersionUnavailable { .. } => "content.version_unavailable",
             CoreError::InvalidSkin { .. } => "skin.invalid",
+            CoreError::SkinNameEmpty => "skin.name_empty",
+            CoreError::SkinNotFound => "skin.not_found",
             CoreError::SyncNoOptions => "sync.no_options",
             CoreError::SyncProfileNotFound => "sync.profile_not_found",
             CoreError::SyncNotMember => "sync.not_member",
@@ -736,6 +744,12 @@ mod tests {
             .params
             .is_empty()
         );
+    }
+
+    #[test]
+    fn skin_library_codes_are_stable() {
+        assert_eq!(CoreError::SkinNameEmpty.code(), "skin.name_empty");
+        assert_eq!(CoreError::SkinNotFound.code(), "skin.not_found");
     }
 
     #[test]
