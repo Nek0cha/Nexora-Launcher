@@ -115,7 +115,13 @@ describe("CapePicker", () => {
     await act(async () => release());
     await waitFor(() => expect(screen.getByRole("button", { name: "Vanilla" }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: "Migrator" }).getAttribute("aria-pressed")).toBe("false");
-    await waitFor(() => expect(busy).toHaveBeenLastCalledWith(false));
+    // 取り直しが終わっても、冷却の間は止めたまま（途中で false にならない）
+    expect(busy).toHaveBeenLastCalledWith(true);
+    const values = busy.mock.calls.map((c) => c[0]);
+    expect(values.slice(values.indexOf(true))).not.toContain(false);
+    for (const name of ["Migrator", "Vanilla", "Remove"]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
   });
 
   it("disables every control while blocked by another action", async () => {

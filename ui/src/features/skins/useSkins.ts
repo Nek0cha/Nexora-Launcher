@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import {
   addSavedSkin,
   addSavedSkinFromPath,
@@ -13,6 +14,7 @@ import {
   setCape,
   updateSavedSkin,
 } from "../../api/commands";
+import { toErrorPayload } from "../../api/ipc";
 import type { SavedSkin } from "../../bindings/SavedSkin";
 import type { SavedSkinPatch } from "../../bindings/SavedSkinPatch";
 import { SKIN_KEY } from "../accounts/useAccounts";
@@ -25,6 +27,19 @@ export const SKINS_KEY = ["skins"] as const;
 // 画像とデフォルトスキンは変わらない（または取得が重い）ので、SKINS_KEY の取り直しに巻き込まない
 const SKIN_IMAGE_KEY = ["skin-image"] as const;
 const DEFAULT_SKINS_KEY = ["default-skins"] as const;
+
+/**
+ * Mojang はスキンとマントの変更の回数を制限している。続けて押せないように、変更のあと
+ * この間は操作を止める（成功したあと / 取り直しが終わってから数える）。
+ */
+export const CHANGE_COOLDOWN_MS = 3000;
+/** HTTP 429 で止められたあとの冷却。すぐ押し直すとさらに長く止められるので長めにとる */
+export const RATE_LIMITED_COOLDOWN_MS = 30000;
+
+function isRateLimited(error: unknown): boolean {
+  const { code, params } = toErrorPayload(error);
+  return code === "net.http_status" && params.status === 429;
+}
 
 export function useSavedSkins() {
   return useQuery({ queryKey: [...SKINS_KEY, "saved"], queryFn: listSavedSkins });
@@ -80,12 +95,34 @@ export function useDefaultSkins() {
 /** スキン画面の操作。成功したら取り直しが終わるまで進行中のままにする（古い表示に一瞬戻らないように） */
 export function useSkinActions(accountId: string | null) {
   const client = useQueryClient();
+  // 冷却は busy に含める。進行中から冷却へ隙間なくつなぎ、全部の操作が同じ見た目（無効）のまま続くようにする
+  const [cooling, setCooling] = useState(false);
+  const coolTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(coolTimer.current), []);
+  /** 冷却に入る。ms を渡すとその時間で明け、渡さなければ（取り直しの間）明けるのを止めておく */
+  const cool = (ms?: number) => {
+    clearTimeout(coolTimer.current);
+    setCooling(true);
+    if (ms !== undefined) coolTimer.current = setTimeout(() => setCooling(false), ms);
+  };
   // サイドバーの顔（SKIN_KEY）も、スキンが変われば取り直す
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: SKINS_KEY }),
       client.invalidateQueries({ queryKey: SKIN_KEY }),
     ]);
+  // Mojang へ変更を送る操作の成功のあと: 取り直しの間も冷却のままにし、取り直しが終わってから数える
+  const changed = async () => {
+    cool();
+    try {
+      await refresh();
+    } finally {
+      cool(CHANGE_COOLDOWN_MS);
+    }
+  };
+  const limited = (e: unknown) => {
+    if (isRateLimited(e)) cool(RATE_LIMITED_COOLDOWN_MS);
+  };
   const need = () => {
     if (accountId === null) throw new Error("no account");
     return accountId;
@@ -93,11 +130,13 @@ export function useSkinActions(accountId: string | null) {
 
   const apply = useMutation({
     mutationFn: ({ skinId }: { skinId: string }) => applySavedSkin(need(), skinId),
-    onSuccess: refresh,
+    onSuccess: changed,
+    onError: limited,
   });
   const applyDefault = useMutation({
     mutationFn: ({ key }: { key: string }) => applyDefaultSkin(need(), key),
-    onSuccess: refresh,
+    onSuccess: changed,
+    onError: limited,
   });
   const add = useMutation({
     mutationFn: ({ name, png }: { name: string; png: number[] }) => addSavedSkin(name, png),
@@ -117,9 +156,11 @@ export function useSkinActions(accountId: string | null) {
   });
   const setCapeMutation = useMutation({
     mutationFn: ({ capeId }: { capeId: string | null }) => setCape(need(), capeId),
-    onSuccess: refresh,
+    onSuccess: changed,
+    onError: limited,
   });
 
-  const busy = [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
+  const busy =
+    cooling || [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
   return { apply, applyDefault, add, addFromPath, update, remove, setCape: setCapeMutation, busy };
 }

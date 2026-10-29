@@ -201,7 +201,8 @@ describe("SavedSkins", () => {
     // 履歴は「Skin 1」から「Skin 2」へ 1 回だけ。空の間も、Skin 1 に戻ることもない
     const changes = history.filter((h, i) => i === 0 || h !== history[i - 1]);
     expect(changes).toEqual(["Skin 1", "Skin 2"]);
-    expect(card("Skin 3").disabled).toBe(false);
+    // 取り直しが終わっても、冷却の間は操作できない
+    expect(card("Skin 3").disabled).toBe(true);
   });
 
   it("shows an error toast when the apply fails and leaves the check where it was", async () => {

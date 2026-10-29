@@ -20,6 +20,7 @@ import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
 import { ACCOUNTS_KEY } from "../features/accounts/useAccounts";
 import i18n from "../i18n";
+import { CHANGE_COOLDOWN_MS } from "../features/skins/useSkins";
 import Skins from "./Skins";
 
 vi.mock("../api/commands", () => ({
@@ -290,8 +291,11 @@ describe("Skins account switching", () => {
     fireEvent.click(screen.getByRole("button", { name: "Second" }));
     await waitFor(async () => expect((await switcher()).disabled).toBe(true));
     await act(async () => release());
-    await waitFor(async () => expect((await switcher()).disabled).toBe(false));
-  });
+    // 適用が済んでも冷却の間は止まったまま、明けると戻る
+    await waitFor(() => expect(applySavedSkin).toHaveBeenCalled());
+    expect((await switcher()).disabled).toBe(true);
+    await waitFor(async () => expect((await switcher()).disabled).toBe(false), { timeout: CHANGE_COOLDOWN_MS + 1500 });
+  }, CHANGE_COOLDOWN_MS + 5000);
 
   it("disables the switcher for the whole add batch", async () => {
     let handlers!: DragDropHandlers;
@@ -333,9 +337,11 @@ describe("Skins default skins and the shared busy state", () => {
     expect(btn("Add skin").disabled).toBe(true);
     expect((await switcher()).disabled).toBe(true);
     await act(async () => release());
-    await waitFor(() => expect(btn("Second").disabled).toBe(false));
-    expect(btn("Add skin").disabled).toBe(false);
-    expect((await switcher()).disabled).toBe(false);
+    // 適用が済んでも冷却の間は止まったまま
+    await waitFor(() => expect(applyDefaultSkin).toHaveBeenCalled());
+    expect(btn("Second").disabled).toBe(true);
+    expect(btn("Add skin").disabled).toBe(true);
+    expect((await switcher()).disabled).toBe(true);
   });
 
   it("blocks the default skins while a saved skin is being applied", async () => {
@@ -348,7 +354,8 @@ describe("Skins default skins and the shared busy state", () => {
     fireEvent.click(btn("Second"));
     await waitFor(() => expect(btn("Steve").disabled).toBe(true));
     await act(async () => release());
-    await waitFor(() => expect(btn("Steve").disabled).toBe(false));
+    // 適用が済んでも冷却の間は止まったまま
+    expect(btn("Steve").disabled).toBe(true);
   });
 
   it("keeps the saved cards in place while the default skins retry", async () => {

@@ -5,7 +5,10 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
+import { IpcError } from "../../api/ipc";
 import {
+  CHANGE_COOLDOWN_MS,
+  RATE_LIMITED_COOLDOWN_MS,
   useCurrentSkin,
   useDefaultSkins,
   useImportCurrentSkin,
@@ -17,6 +20,7 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.resetAllMocks();
 });
@@ -99,7 +103,8 @@ describe("useSkinActions", () => {
     await act(async () => finishRefetch(next));
     await waitFor(() => expect(hook.result.current.actions.apply.isPending).toBe(false));
     expect(hook.result.current.cur.data).toEqual(next);
-    expect(hook.result.current.actions.busy).toBe(false);
+    // 進行中が終わっても、冷却の間は busy のまま（明けるのは下の冷却のテストで確かめる）
+    expect(hook.result.current.actions.busy).toBe(true);
   });
 
   it("reads the saved list again after add and addFromPath", async () => {
@@ -137,6 +142,105 @@ describe("useSkinActions", () => {
     expect(invoke).toHaveBeenCalledWith("delete_saved_skin", { skinId: "s1" });
     expect(invoke).toHaveBeenCalledWith("apply_default_skin", { accountId: "a1", key: "slim-alex" });
     expect(invoke).toHaveBeenCalledWith("set_cape", { accountId: "a1", capeId: null });
+  });
+});
+
+describe("useSkinActions cooldown", () => {
+  const rateLimited = () => new IpcError({ code: "net.http_status", params: { status: 429 }, detail: null });
+  const settle = () => act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+  const wait = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+  function setup(change: () => Promise<unknown>) {
+    vi.useFakeTimers();
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "set_cape" || cmd === "apply_saved_skin" || cmd === "apply_default_skin") return change();
+      return null;
+    });
+    const seen: boolean[] = [];
+    const hook = renderHook(
+      () => {
+        const actions = useSkinActions("a1");
+        seen.push(actions.busy);
+        return actions;
+      },
+      { wrapper: wrapperFor() },
+    );
+    return { hook, seen };
+  }
+
+  it("keeps busy for the cooldown after a cape change, without a gap", async () => {
+    const { hook, seen } = setup(async () => null);
+    seen.length = 0;
+    act(() => hook.result.current.setCape.mutate({ capeId: "c1" }));
+    await settle();
+    expect(hook.result.current.setCape.isPending).toBe(false);
+    expect(hook.result.current.busy).toBe(true);
+    // 押してから冷却が明けるまで、途中で操作できる状態に戻らない
+    expect(seen).not.toContain(false);
+
+    await wait(CHANGE_COOLDOWN_MS - 1);
+    expect(hook.result.current.busy).toBe(true);
+    await wait(1);
+    expect(hook.result.current.busy).toBe(false);
+  });
+
+  it("starts the cooldown after applying a saved skin and a default skin", async () => {
+    const { hook } = setup(async () => null);
+    act(() => hook.result.current.apply.mutate({ skinId: "s1" }));
+    await settle();
+    expect(hook.result.current.busy).toBe(true);
+    await wait(CHANGE_COOLDOWN_MS);
+    expect(hook.result.current.busy).toBe(false);
+
+    act(() => hook.result.current.applyDefault.mutate({ key: "slim-alex" }));
+    await settle();
+    expect(hook.result.current.busy).toBe(true);
+    await wait(CHANGE_COOLDOWN_MS);
+    expect(hook.result.current.busy).toBe(false);
+  });
+
+  it("holds the cooldown longer after HTTP 429", async () => {
+    const { hook, seen } = setup(async () => {
+      throw rateLimited();
+    });
+    seen.length = 0;
+    act(() => hook.result.current.setCape.mutate({ capeId: "c1" }));
+    await settle();
+    expect(hook.result.current.setCape.isError).toBe(true);
+    expect(hook.result.current.busy).toBe(true);
+    expect(seen).not.toContain(false);
+
+    await wait(CHANGE_COOLDOWN_MS);
+    expect(hook.result.current.busy).toBe(true);
+    await wait(RATE_LIMITED_COOLDOWN_MS - CHANGE_COOLDOWN_MS);
+    expect(hook.result.current.busy).toBe(false);
+  });
+
+  it("does not start a cooldown for other failures or for library-only changes", async () => {
+    const { hook } = setup(async () => {
+      throw new IpcError({ code: "net.offline", params: {}, detail: null });
+    });
+    act(() => hook.result.current.setCape.mutate({ capeId: "c1" }));
+    await settle();
+    expect(hook.result.current.setCape.isError).toBe(true);
+    expect(hook.result.current.busy).toBe(false);
+
+    act(() => hook.result.current.remove.mutate({ skinId: "s1" }));
+    await settle();
+    expect(hook.result.current.busy).toBe(false);
+  });
+
+  it("restarts the cooldown when another change succeeds during it", async () => {
+    const { hook } = setup(async () => null);
+    act(() => hook.result.current.setCape.mutate({ capeId: "c1" }));
+    await settle();
+    await wait(CHANGE_COOLDOWN_MS - 1);
+    act(() => hook.result.current.setCape.mutate({ capeId: "c2" }));
+    await settle();
+    await wait(CHANGE_COOLDOWN_MS - 1);
+    expect(hook.result.current.busy).toBe(true);
+    await wait(1);
+    expect(hook.result.current.busy).toBe(false);
   });
 });
 
