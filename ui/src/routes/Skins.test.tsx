@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addSavedSkinFromPath,
+  applyDefaultSkin,
   applySavedSkin,
   getCurrentSkin,
   getSavedSkinImage,
@@ -307,6 +308,64 @@ describe("Skins account switching", () => {
     await waitFor(async () => expect((await switcher()).disabled).toBe(true));
     await act(async () => release());
     await waitFor(async () => expect((await switcher()).disabled).toBe(false));
+  });
+});
+
+describe("Skins default skins and the shared busy state", () => {
+  const defaults = [{ key: "classic-steve", name: "Steve", variant: "classic" as const, image: "data:image/png;base64,AAAA", sha256: "d1" }];
+  beforeEach(() => {
+    vi.mocked(listSavedSkins).mockResolvedValue(SKINS);
+    vi.mocked(listDefaultSkins).mockResolvedValue(defaults);
+    vi.mocked(getCurrentSkin).mockImplementation(async () => ({ image: "data:image/png;base64,CUR", sha256: "h1", variant: "classic", capes: [] }));
+  });
+  const btn = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
+
+  it("blocks the saved grid, the add card and the switcher while a default skin is being applied", async () => {
+    let release!: () => void;
+    vi.mocked(applyDefaultSkin).mockImplementation(() => new Promise((r) => (release = () => r(undefined as never))));
+    mount(twoAccounts());
+    await waitFor(() => expect(checked()).toEqual(["First"]));
+    await screen.findByRole("button", { name: "Steve" });
+    expect(btn("Second").disabled).toBe(false);
+    fireEvent.click(btn("Steve"));
+    await waitFor(() => expect(btn("Second").disabled).toBe(true));
+    expect(btn("First").disabled).toBe(true);
+    expect(btn("Add skin").disabled).toBe(true);
+    expect((await switcher()).disabled).toBe(true);
+    await act(async () => release());
+    await waitFor(() => expect(btn("Second").disabled).toBe(false));
+    expect(btn("Add skin").disabled).toBe(false);
+    expect((await switcher()).disabled).toBe(false);
+  });
+
+  it("blocks the default skins while a saved skin is being applied", async () => {
+    let release!: () => void;
+    vi.mocked(applySavedSkin).mockImplementation(() => new Promise((r) => (release = () => r(null))));
+    mount(twoAccounts());
+    await waitFor(() => expect(checked()).toEqual(["First"]));
+    await screen.findByRole("button", { name: "Steve" });
+    expect(btn("Steve").disabled).toBe(false);
+    fireEvent.click(btn("Second"));
+    await waitFor(() => expect(btn("Steve").disabled).toBe(true));
+    await act(async () => release());
+    await waitFor(() => expect(btn("Steve").disabled).toBe(false));
+  });
+
+  it("keeps the saved cards in place while the default skins retry", async () => {
+    vi.mocked(listDefaultSkins).mockRejectedValueOnce({ kind: "network", message: "x" });
+    mount(twoAccounts());
+    await waitFor(() => expect(checked()).toEqual(["First"]));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const first = btn("First");
+    let release!: (v: typeof defaults) => void;
+    vi.mocked(listDefaultSkins).mockReturnValueOnce(new Promise((r) => (release = r)));
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.parentElement?.getAttribute("aria-busy")).toBe("true"));
+    expect(btn("First")).toBe(first);
+    await act(async () => release(defaults));
+    await screen.findByRole("button", { name: "Steve" });
+    expect(btn("First")).toBe(first);
+    expect(checked()).toEqual(["First"]);
   });
 });
 
