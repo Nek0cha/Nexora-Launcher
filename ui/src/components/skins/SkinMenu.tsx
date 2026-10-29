@@ -73,10 +73,9 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled, onWorking }:
   const sent = useRef(false);
   const blocked = disabled || actions.update.isPending || actions.remove.isPending;
 
-  const reapply = worn && canApply;
-
   /**
-   * 更新し、着ているスキンなら適用し直す。失敗はトーストで知らせ、更新が失敗したら適用しない。
+   * 更新し、着ているスキンの見た目が変わるとき（モデルの切り替えとファイルの差し替え）だけ適用し直す。名前だけの変更は
+   * 手元の記録だけで、Mojang へ送り直さない。失敗はトーストで知らせ、更新が失敗したら適用しない。
    * 内容を作る処理（ファイルの読み込み）から取り直しの終わりまで、画面全体の操作を止める（onWorking）。
    */
   const run = async (build: () => Promise<Patch> | Patch) => {
@@ -87,7 +86,7 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled, onWorking }:
         skinId: skin.id,
         patch: { name: patch.name ?? null, variant: patch.variant ?? null, png: patch.png ?? null },
       });
-      if (reapply) await actions.apply.mutateAsync({ skinId: skin.id });
+      if (worn && canApply && (patch.variant !== undefined || patch.png !== undefined)) await actions.apply.mutateAsync({ skinId: skin.id });
     } catch (e) {
       toast.showError(e);
     } finally {

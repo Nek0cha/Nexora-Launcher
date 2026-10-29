@@ -178,7 +178,7 @@ describe("SkinMenu rename", () => {
     // ブラウザは、フォーカスのある入力が外れるときに blur を送る。それを DOM の取り外しに合わせて再現する
     const remove = Node.prototype.removeChild;
     const spy = vi.spyOn(Node.prototype, "removeChild").mockImplementation(function <T extends Node>(this: Node, node: T): T {
-      if (node.contains(input)) { console.log("BLUR"); fireEvent.blur(input); }
+      if (node.contains(input)) fireEvent.blur(input);
       return remove.call(this, node) as T;
     });
     try {
@@ -189,6 +189,22 @@ describe("SkinMenu rename", () => {
     }
     expect(nameInput()).toBeNull();
     expect(updateSavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("does not upload the worn skin again when only its name changes", async () => {
+    mount({ worn: "1" });
+    await ready();
+    await open("1");
+    await choose("Rename");
+    const input = (await waitFor(() => {
+      expect(nameInput()).not.toBeNull();
+      return nameInput();
+    })) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: "Renamed", variant: null, png: null }));
+    await waitFor(() => expect(nameInput()).toBeNull());
+    expect(applySavedSkin).not.toHaveBeenCalled();
   });
 
   it("sends exactly once when Enter is followed by a blur", async () => {
