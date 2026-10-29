@@ -3,7 +3,7 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconRetry from "~icons/ph/arrow-clockwise";
 import IconSpinner from "~icons/ph/circle-notch";
-import { useDefaultSkins, useSkinActions } from "../../features/skins/useSkins";
+import { useCurrentSkin, useDefaultSkins, useSkinActions } from "../../features/skins/useSkins";
 import { useDelayedFlag } from "../ReadyGate";
 import { Skeleton } from "../Skeleton";
 import { useToast } from "../toast/useToast";
@@ -12,8 +12,8 @@ import { SkinCard } from "./SkinCard";
 // 保存したスキンの格子と同じ並び・大きさ
 const grid = "grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3";
 const cardBox = "relative aspect-[2/3] w-full";
-// 読み込み中に場所取りをするカードの数（取得元の種類数と同じ程度）
-const SKELETON_COUNT = 9;
+// 読み込み中に場所取りをするカードの数（現行の Minecraft は wide と slim の各 9 種で 18 枚。多く取るぶんには下が縮むだけ）
+const SKELETON_COUNT = 18;
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -23,7 +23,7 @@ function RetryCard({ fetching, onPress }: { fetching: boolean; onPress: () => vo
   return (
     <div aria-busy={fetching || undefined} className={cardBox}>
       <Button
-        aria-label={t("create.retry")}
+        aria-label={t("skins.retryDefaults")}
         isDisabled={fetching}
         onPress={onPress}
         className={[
@@ -48,7 +48,7 @@ function RetryCard({ fetching, onPress }: { fetching: boolean; onPress: () => vo
 
 /**
  * デフォルトのスキンの格子。取得元が出す全種類を並べ、押すと適用する（ライブラリには足さない）。
- * 取得元のスキンには画像の sha256 がなく、着ているスキンと突き合わせられないので、チェックは付けない。
+ * 着ているスキンとは画素のハッシュ（と型）で突き合わせ、一致するカードにチェックを付ける。
  * 取れなかったときは再試行のカード 1 枚だけを出す（失敗の通知は出さない。カードが知らせる）。
  * blocked は保存したスキン側の適用・追加などの最中。
  */
@@ -60,6 +60,8 @@ export function DefaultSkins({ accountId, canApply, blocked = false, onBusyChang
   onBusyChange?: (busy: boolean) => void;
 }) {
   const query = useDefaultSkins();
+  // 要ログイン・オフラインのアカウントの現在のスキンは取りにいかない（保存したスキンと同じ）
+  const current = useCurrentSkin(canApply ? accountId : null);
   const actions = useSkinActions(accountId);
   const toast = useToast();
   // 150 ms 以内に返る取得では場所取りを出さない
@@ -92,6 +94,9 @@ export function DefaultSkins({ accountId, canApply, blocked = false, onBusyChang
     );
   }
 
+  const wornHash = !current.isPlaceholderData ? (current.data?.sha256 ?? null) : null;
+  const isWorn = (skin: { sha256: string; variant: string }) =>
+    wornHash !== null && skin.sha256 === wornHash && skin.variant === current.data?.variant;
   const applying = actions.applyDefault.isPending ? actions.applyDefault.variables?.key : undefined;
   return (
     <div className={grid}>
@@ -101,10 +106,14 @@ export function DefaultSkins({ accountId, canApply, blocked = false, onBusyChang
           image={skin.image}
           name={skin.name}
           variant={skin.variant}
-          selected={false}
+          selected={isWorn(skin)}
           pending={applying === skin.key}
           disabled={!canApply || busy || blocked}
-          onPress={() => actions.applyDefault.mutate({ key: skin.key }, { onError: (e) => toast.showError(e) })}
+          onPress={() => {
+            // 着ているものをもう一度適用しても何も変わらない
+            if (isWorn(skin)) return;
+            actions.applyDefault.mutate({ key: skin.key }, { onError: (e) => toast.showError(e) });
+          }}
         />
       ))}
     </div>
