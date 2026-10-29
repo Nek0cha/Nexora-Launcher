@@ -23,6 +23,8 @@ use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
+use nexora_core::skins::library::{self, SavedSkin, SavedSkinPatch};
+use nexora_core::skins::ops as skin_ops;
 use nexora_core::sync::JoinMode;
 use nexora_core::sync::proposals::Resolution;
 use nexora_core::sync::registry::Category;
@@ -691,6 +693,92 @@ pub async fn set_cape(
         .launcher
         .auth()
         .set_cape(id, cape_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 保存したスキンの一覧（追加が新しい順）。
+#[tauri::command]
+pub async fn list_saved_skins(state: State<'_, AppState>) -> CmdResult<Vec<SavedSkin>> {
+    let services = state.services()?;
+    blocking(move || library::list(&services.db)).await
+}
+
+/// 保存したスキンの画像を `data:image/png;base64,...` で返す。
+#[tauri::command]
+pub async fn get_saved_skin_image(
+    state: State<'_, AppState>,
+    skin_id: String,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    blocking(move || {
+        let (png, _) = library::png(&services.db, &skin_id)?;
+        Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
+    })
+    .await
+}
+
+/// 画像（IPC の `number[]`）をライブラリに足す。型は画像から判定する。
+#[tauri::command]
+pub async fn add_saved_skin(
+    state: State<'_, AppState>,
+    name: String,
+    png: Vec<u8>,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || library::add(&services.db, &name, None, &png, now_ms())).await
+}
+
+/// ドラッグ＆ドロップなどで渡されたファイルをライブラリに足す。名前は拡張子を除くファイル名。
+#[tauri::command]
+pub async fn add_saved_skin_from_path(
+    state: State<'_, AppState>,
+    path: String,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || skin_ops::add_from_path(&services.db, std::path::Path::new(&path), now_ms()))
+        .await
+}
+
+#[tauri::command]
+pub async fn update_saved_skin(
+    state: State<'_, AppState>,
+    skin_id: String,
+    patch: SavedSkinPatch,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || library::update(&services.db, &skin_id, patch)).await
+}
+
+#[tauri::command]
+pub async fn delete_saved_skin(state: State<'_, AppState>, skin_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    blocking(move || library::delete(&services.db, &skin_id)).await
+}
+
+/// 保存したスキンをアカウントに適用する。
+#[tauri::command]
+pub async fn apply_saved_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+    skin_id: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    skin_ops::apply_saved(&services.db, services.launcher.auth(), id, &skin_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// アカウントの現在のスキンを、まだなら一度だけライブラリに取り込む。取り込まなければ `None`。
+#[tauri::command]
+pub async fn import_current_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<Option<SavedSkin>> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    skin_ops::import_current_skin(&services.db, services.launcher.auth(), id, now_ms())
         .await
         .map_err(ErrorPayload::from)
 }

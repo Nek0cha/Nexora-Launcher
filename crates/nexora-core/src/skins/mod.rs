@@ -1,6 +1,7 @@
 //! スキンのライブラリ。ここでは、スキンを画素の内容で見分けるための `pixel_hash` だけを持つ。
 
 pub mod library;
+pub mod ops;
 
 use sha2::{Digest, Sha256};
 
