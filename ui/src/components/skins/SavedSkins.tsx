@@ -85,6 +85,9 @@ export function SavedSkins({ accountId, canApply, blocked = false, onBusyChange 
     importSkin.mutate({ accountId });
   }, [accountId, canApply, hasImage, importSkin.mutate]);
 
+  // 保存したスキンは画素の内容（ハッシュ）だけで着ているかを決める（仕様 6 章）。デフォルトのスキンは型も見るが、
+  // こちらは型を見ない。見ると、着ているスキンの classic と slim を切り替えた更新と適用し直しの間に、チェックが消えて
+  // 点滅する。型の違いは、メニューの切り替えが適用し直すことで直せる。
   const currentHash = current.data?.sha256 ?? null;
   const applying = actions.apply.isPending ? actions.apply.variables?.skinId : undefined;
 
