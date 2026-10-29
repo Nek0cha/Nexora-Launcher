@@ -458,9 +458,6 @@
     "card": {
       "title": "Settings sync",
       "start": "Match settings with other instances",
-      "joined": "Using the shared settings “{{name}}”",
-      "members": "Also using them: {{names}}",
-      "membersNone": "No other instance uses them yet.",
       "separator": ", ",
       "lastApplied": "Last applied: {{date}}",
       "neverApplied": "Not applied yet.",
@@ -473,7 +470,6 @@
       "release": "Use shared value",
       "releaseLabel": "Use the shared value for {{name}}",
       "leave": "Stop using shared settings",
-      "leaveNote": "This instance keeps its current settings when it stops. You can join again later.",
       "left": "Stopped using shared settings"
     },
     "applicability": {

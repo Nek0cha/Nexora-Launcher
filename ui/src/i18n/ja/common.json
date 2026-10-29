@@ -458,9 +458,6 @@
     "card": {
       "title": "設定の同期",
       "start": "他のインスタンスと設定を揃える",
-      "joined": "共通設定「{{name}}」を使っています",
-      "members": "一緒に使っているインスタンス：{{names}}",
-      "membersNone": "ほかに参加しているインスタンスはまだありません。",
       "separator": "、",
       "lastApplied": "最後に反映：{{date}}",
       "neverApplied": "まだ反映していません。",
@@ -473,7 +470,6 @@
       "release": "共通設定に戻す",
       "releaseLabel": "{{name}}を共通設定に戻す",
       "leave": "共通設定から外れる",
-      "leaveNote": "外れても、このインスタンスの設定はそのまま残ります。あとでまた参加できます。",
       "left": "共通設定から外れました"
     },
     "applicability": {

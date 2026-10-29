@@ -15,6 +15,7 @@ import { SYNC_KEY, useInstanceSync, useSyncFields } from "../../features/sync/us
 import { FailureNotice } from "../FailureNotice";
 import { Notice } from "../settingsLayout";
 import { useToast } from "../toast/useToast";
+import { InstanceChip } from "./InstanceChip";
 import { JoinSyncDialog } from "./JoinSyncDialog";
 import { ProposalsSection } from "./ProposalList";
 
@@ -124,12 +125,16 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   return (
     <>
       <div className="flex flex-col gap-0.5">
-        <p className="text-text">{t("sync.card.joined", { name: sync.profile?.name })}</p>
-        <p className="text-sm text-text-muted">
-          {others.length > 0
-            ? t("sync.card.members", { names: others.join(t("sync.card.separator")) })
-            : t("sync.card.membersNone")}
-        </p>
+        <p className="text-text">{sync.profile?.name}</p>
+        {others.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 py-1">
+            {others.map((name) => (
+              <li key={name} className="max-w-full">
+                <InstanceChip name={name} />
+              </li>
+            ))}
+          </ul>
+        )}
         {last?.state === "applied" && last.atMs !== null && (
           <p className="text-sm text-text-muted">
             {t("sync.card.lastApplied", { date: date.format(last.atMs) })}
@@ -175,8 +180,8 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
         />
       )}
 
-      {/* 外れる操作は確認を挟まない。外れても設定ファイルは変わらず、また参加できることを横に書く */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
+      {/* 外れる操作は確認を挟まない。外れても設定ファイルは変わらず、また参加できる */}
+      <div className="pt-1">
         <Button
           onPress={() => leave.mutate()}
           isPending={leave.isPending}
@@ -185,7 +190,6 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
         >
           {t("sync.card.leave")}
         </Button>
-        <p className="min-w-0 flex-1 basis-60 text-xs text-text-muted">{t("sync.card.leaveNote")}</p>
       </div>
     </>
   );
