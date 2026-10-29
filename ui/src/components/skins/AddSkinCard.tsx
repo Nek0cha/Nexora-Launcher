@@ -11,7 +11,7 @@ const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 
 // 枠の太さと大きさは状態で変えない（ドロップ中は枠の色、無効は不透明度だけで示す）
 const cardButton = [
-  "absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-3",
+  "absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-1 py-3",
   "border-line text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:border-line-strong hover:bg-surface-2 pressed:bg-surface-3",
@@ -118,7 +118,7 @@ export function AddSkinCard({ disabled, actions, onAdding }: {
         className={cardButton}
       >
         <IconPlus aria-hidden className="size-6" />
-        <span className="text-sm">{t("skins.add")}</span>
+        <span className="whitespace-nowrap text-sm">{t("skins.add")}</span>
       </Button>
       <input
         ref={picker}
