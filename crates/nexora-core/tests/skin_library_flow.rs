@@ -40,11 +40,14 @@ async fn env() -> Env {
     let temp = tempfile::tempdir().unwrap();
     let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
     let clock = Arc::new(AtomicI64::new(T0));
+    // 画像の取得先もモックにする（実際の textures.minecraft.net へは通信しない）
+    let mut urls = auth_urls(&server);
+    urls.texture_origin = Some(format!("{}/", server.uri()));
     let auth = AuthService::new(
         db.clone(),
         AppPaths::from_root(temp.path()),
         AuthHttp::new().unwrap(),
-        auth_urls(&server),
+        urls,
         Some(store),
         Some("cid".into()),
     )
@@ -202,8 +205,6 @@ async fn import_current_skin_returns_none_and_logs_nothing_when_there_is_no_skin
     assert!(library::list(&e.db).unwrap().is_empty());
 }
 
-const SKIN_URL: &str = "https://textures.minecraft.net/texture/lib-skin";
-
 /// 本物の PNG（全画素が rgba の 64×64）。
 fn real_png(rgba: [u8; 4]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -248,8 +249,9 @@ async fn import_current_skin_imports_once_with_profile_variant_and_username() {
     mount_chain(&e.server, 86_400, Ownership::Owned).await;
     let id = e.login().await;
     let bytes = real_png([10, 20, 30, 255]);
-    seed_image(&e, SKIN_URL, &bytes);
-    mount_profile_with_skin(&e, SKIN_URL, "SLIM").await;
+    let url = format!("{}/texture/lib-skin", e.server.uri());
+    seed_image(&e, &url, &bytes);
+    mount_profile_with_skin(&e, &url, "SLIM").await;
     let s = ops::import_current_skin(&e.db, &e.auth, id, 5)
         .await
         .unwrap()
@@ -282,9 +284,9 @@ async fn import_current_skin_with_an_unfetchable_texture_logs_nothing_and_retrie
     let e = env().await;
     mount_chain(&e.server, 86_400, Ownership::Owned).await;
     let id = e.login().await;
-    // 許可されたホストだが、キャッシュにも無く、取得もできない（存在しない画像）
-    let url = "https://textures.minecraft.net/texture/nexora-test-never-uploaded-0001";
-    mount_profile_with_skin(&e, url, "CLASSIC").await;
+    // キャッシュにも無く、取得先（モック）も 404 を返す
+    let url = format!("{}/texture/never-yet", e.server.uri());
+    mount_profile_with_skin(&e, &url, "CLASSIC").await;
     assert!(
         ops::import_current_skin(&e.db, &e.auth, id, 1)
             .await
@@ -295,11 +297,18 @@ async fn import_current_skin_with_an_unfetchable_texture_logs_nothing_and_retrie
     assert!(library::list(&e.db).unwrap().is_empty());
     // 画像が手に入れば、次の呼び出しで取り込める
     let bytes = real_png([1, 2, 3, 255]);
-    seed_image(&e, url, &bytes);
+    Mock::given(method("GET"))
+        .and(path("/texture/never-yet"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(bytes.clone()))
+        .expect(1)
+        .mount(&e.server)
+        .await;
     let s = ops::import_current_skin(&e.db, &e.auth, id, 2)
         .await
         .unwrap()
         .expect("imported later");
     assert_eq!(s.variant, SkinVariant::Classic);
+    assert_eq!(s.sha256, nexora_core::skins::pixel_hash(&bytes));
     assert_eq!(log_count(&e), 1);
+    e.server.verify().await;
 }

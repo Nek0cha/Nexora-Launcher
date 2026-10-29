@@ -394,7 +394,9 @@ impl AuthService {
         let Some(url) = accounts::get(&self.db, id)?.skin_url else {
             return Ok(None);
         };
-        match minecraft::cached_skin(&self.paths, &url).await {
+        match minecraft::cached_skin_at(&self.paths, &url, self.urls.texture_origin.as_deref())
+            .await
+        {
             Ok(path) => Ok(Some(path)),
             Err(e) => {
                 tracing::warn!(code = e.code(), "could not fetch the skin");
@@ -518,13 +520,16 @@ impl AuthService {
 
     /// キャッシュ経由で画像のバイトを読む。失敗はログに残して None。
     async fn fetch_image(&self, url: &str) -> Option<Vec<u8>> {
-        let path = match minecraft::cached_skin(&self.paths, url).await {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!(code = e.code(), "could not fetch the image");
-                return None;
-            }
-        };
+        let path =
+            match minecraft::cached_skin_at(&self.paths, url, self.urls.texture_origin.as_deref())
+                .await
+            {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::warn!(code = e.code(), "could not fetch the image");
+                    return None;
+                }
+            };
         match tokio::fs::read(&path).await {
             Ok(bytes) => Some(bytes),
             Err(e) => {
