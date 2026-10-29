@@ -1,5 +1,7 @@
 //! スキンのライブラリ。ここでは、スキンを画素の内容で見分けるための `pixel_hash` だけを持つ。
 
+pub mod library;
+
 use sha2::{Digest, Sha256};
 
 use crate::net::hash::hex;
