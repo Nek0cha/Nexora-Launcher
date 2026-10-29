@@ -74,7 +74,7 @@ function usePageName(): string {
 /** ロゴの形（favicon と同じ）。色はテーマのトークンに合わせる。 */
 export function Logo() {
   return (
-    <svg aria-hidden viewBox="0 0 32 32" className="size-4 shrink-0">
+    <svg aria-hidden viewBox="0 0 32 32" className="size-5 shrink-0">
       <rect x="3.5" y="6.5" width="25" height="19" rx="4.5" fill="none" strokeWidth="3" className="stroke-text-strong" />
       <rect x="7" y="10" width="12" height="12" rx="1.5" className="fill-accent" />
     </svg>
@@ -122,11 +122,12 @@ export function AppBar({
       data-testid="app-bar"
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
-      className={`flex h-10 shrink-0 items-center gap-1 pl-3 ${showWindowControls ? "" : "pr-3"} ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
+      className={`flex h-10 shrink-0 items-center gap-1 pl-6 ${showWindowControls ? "" : "pr-3"} ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
     >
-      <Logo />
-      <span className="ml-1.5 mr-2 font-display text-sm font-semibold tracking-[-0.01em] text-text-strong">
-        {t("appName")}
+      {/* ロゴの左端はサイドバーのアイコン、名前の左端はラベルに揃える（余白 24px、アイコン 20px、gap 10px） */}
+      <span data-testid="brand" className="mr-2 flex items-center gap-2.5">
+        <Logo />
+        <span className="font-display text-sm font-semibold tracking-[-0.01em] text-text-strong">{t("appName")}</span>
       </span>
       <Button aria-label={t("appBar.back")} isDisabled={!nav.canGoBack} onPress={nav.back} className={navButton}>
         <IconCaretLeft aria-hidden className="size-4" />

@@ -26,7 +26,7 @@ type Item = {
   ActiveIcon: IconComponent;
 };
 
-const ITEMS: Item[] = [
+export const ITEMS: Item[] = [
   { to: "/", key: "home", Icon: IconHouse, ActiveIcon: IconHouseFill },
   { to: "/instances", key: "instances", Icon: IconStack, ActiveIcon: IconStackFill },
   { to: "/sync", key: "sync", Icon: IconSliders, ActiveIcon: IconSlidersFill },
@@ -62,9 +62,9 @@ export function Sidebar({ materialOn }: { materialOn: boolean }) {
           {({ isActive }) => (
             <>
               {isActive ? (
-                <ActiveIcon aria-hidden className="size-4 shrink-0" />
+                <ActiveIcon aria-hidden className="size-5 shrink-0" />
               ) : (
-                <Icon aria-hidden className="size-4 shrink-0" />
+                <Icon aria-hidden className="size-5 shrink-0" />
               )}
               <span className="truncate">{t(`nav.${key}`)}</span>
             </>
@@ -107,7 +107,7 @@ function AccountLink() {
         </>
       ) : (
         <>
-          <IconUser aria-hidden className="size-4 shrink-0" />
+          <IconUser aria-hidden className="size-5 shrink-0" />
           <span className="truncate">{t("sidebar.login")}</span>
         </>
       )}
