@@ -5,7 +5,9 @@ mod common;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use common::{MS_ACCESS, Ownership, REFRESH_1, auth_urls, hits_on, mount_chain};
+use common::{
+    MS_ACCESS, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, auth_urls, hits_on, mount_chain,
+};
 use nexora_core::auth::http::AuthHttp;
 use nexora_core::auth::microsoft::MsTokens;
 use nexora_core::auth::minecraft::SkinVariant;
@@ -25,6 +27,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const T0: i64 = 1_800_000_000_000;
 
 struct Env {
+    temp_path: std::path::PathBuf,
     server: MockServer,
     db: Db,
     auth: AuthService,
@@ -47,6 +50,7 @@ async fn env() -> Env {
     )
     .with_clock(Arc::new(move || clock.load(Ordering::SeqCst)));
     Env {
+        temp_path: temp.path().to_path_buf(),
         server,
         db,
         auth,
@@ -196,4 +200,106 @@ async fn import_current_skin_returns_none_and_logs_nothing_when_there_is_no_skin
         .unwrap();
     assert_eq!(logged, 0);
     assert!(library::list(&e.db).unwrap().is_empty());
+}
+
+const SKIN_URL: &str = "https://textures.minecraft.net/texture/lib-skin";
+
+/// 本物の PNG（全画素が rgba の 64×64）。
+fn real_png(rgba: [u8; 4]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, 64, 64);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut writer = enc.write_header().unwrap();
+    let data: Vec<u8> = (0..64 * 64).flat_map(|_| rgba).collect();
+    writer.write_image_data(&data).unwrap();
+    writer.finish().unwrap();
+    out
+}
+
+/// 画像のキャッシュに置く（実際の textures.minecraft.net へは通信しない）。
+fn seed_image(e: &Env, url: &str, bytes: &[u8]) {
+    use sha2::{Digest, Sha256};
+    let dir = e.temp_path.join("cache").join("skins");
+    std::fs::create_dir_all(&dir).unwrap();
+    let name = nexora_core::net::hash::hex(&Sha256::digest(url.as_bytes()));
+    std::fs::write(dir.join(format!("{name}.png")), bytes).unwrap();
+}
+
+async fn mount_profile_with_skin(e: &Env, url: &str, variant: &str) {
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[{{"state":"ACTIVE","url":"{url}","variant":"{variant}"}}]}}"#
+        )))
+        .with_priority(1)
+        .mount(&e.server)
+        .await;
+}
+
+fn log_count(e: &Env) -> i64 {
+    e.db.with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM skin_import_log", [], |r| r.get(0))?))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn import_current_skin_imports_once_with_profile_variant_and_username() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await;
+    let bytes = real_png([10, 20, 30, 255]);
+    seed_image(&e, SKIN_URL, &bytes);
+    mount_profile_with_skin(&e, SKIN_URL, "SLIM").await;
+    let s = ops::import_current_skin(&e.db, &e.auth, id, 5)
+        .await
+        .unwrap()
+        .expect("imported");
+    assert_eq!(s.variant, SkinVariant::Slim);
+    assert_eq!(s.name, PROFILE_NAME);
+    assert_eq!(s.sha256, nexora_core::skins::pixel_hash(&bytes));
+    assert_eq!(log_count(&e), 1);
+    // 二度目は取り込まない
+    assert!(
+        ops::import_current_skin(&e.db, &e.auth, id, 6)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // 削除しても戻らない
+    library::delete(&e.db, &s.id).unwrap();
+    assert!(
+        ops::import_current_skin(&e.db, &e.auth, id, 7)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(library::list(&e.db).unwrap().is_empty());
+    assert_eq!(log_count(&e), 1);
+}
+
+#[tokio::test]
+async fn import_current_skin_with_an_unfetchable_texture_logs_nothing_and_retries_later() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await;
+    // 許可されたホストだが、キャッシュにも無く、取得もできない（存在しない画像）
+    let url = "https://textures.minecraft.net/texture/nexora-test-never-uploaded-0001";
+    mount_profile_with_skin(&e, url, "CLASSIC").await;
+    assert!(
+        ops::import_current_skin(&e.db, &e.auth, id, 1)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(log_count(&e), 0);
+    assert!(library::list(&e.db).unwrap().is_empty());
+    // 画像が手に入れば、次の呼び出しで取り込める
+    let bytes = real_png([1, 2, 3, 255]);
+    seed_image(&e, url, &bytes);
+    let s = ops::import_current_skin(&e.db, &e.auth, id, 2)
+        .await
+        .unwrap()
+        .expect("imported later");
+    assert_eq!(s.variant, SkinVariant::Classic);
+    assert_eq!(log_count(&e), 1);
 }
