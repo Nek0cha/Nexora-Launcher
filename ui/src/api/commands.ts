@@ -34,6 +34,10 @@ import type { Resolution } from "../bindings/Resolution";
 import type { SyncProfile } from "../bindings/SyncProfile";
 import type { SyncField } from "../bindings/SyncField";
 import type { SyncFieldValue } from "../bindings/SyncFieldValue";
+import type { CurrentSkin } from "../bindings/CurrentSkin";
+import type { SavedSkin } from "../bindings/SavedSkin";
+import type { SavedSkinPatch } from "../bindings/SavedSkinPatch";
+import type { DefaultSkin } from "../bindings/DefaultSkin";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -136,3 +140,20 @@ export const resolveSyncProposal = (
   resolution: Resolution,
   chosenValue?: string,
 ) => call<null>("resolve_sync_proposal", { instanceId, fieldId, resolution, chosenValue: chosenValue ?? null });
+
+export const getCurrentSkin = (accountId: string) => call<CurrentSkin>("get_current_skin", { accountId });
+export const setCape = (accountId: string, capeId: string | null) => call<null>("set_cape", { accountId, capeId });
+export const listSavedSkins = () => call<SavedSkin[]>("list_saved_skins");
+export const getSavedSkinImage = (skinId: string) => call<string>("get_saved_skin_image", { skinId });
+export const addSavedSkin = (name: string, png: number[]) => call<SavedSkin>("add_saved_skin", { name, png });
+export const addSavedSkinFromPath = (path: string) => call<SavedSkin>("add_saved_skin_from_path", { path });
+export const updateSavedSkin = (skinId: string, patch: SavedSkinPatch) =>
+  call<SavedSkin>("update_saved_skin", { skinId, patch });
+export const deleteSavedSkin = (skinId: string) => call<null>("delete_saved_skin", { skinId });
+export const applySavedSkin = (accountId: string, skinId: string) =>
+  call<null>("apply_saved_skin", { accountId, skinId });
+export const importCurrentSkin = (accountId: string) =>
+  call<SavedSkin | null>("import_current_skin", { accountId });
+export const listDefaultSkins = () => call<DefaultSkin[]>("list_default_skins");
+export const applyDefaultSkin = (accountId: string, key: string) =>
+  call<null>("apply_default_skin", { accountId, key });

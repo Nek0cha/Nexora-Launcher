@@ -44,6 +44,8 @@ import {
   listSyncFields,
   getSyncProfileValues,
   setSyncOverride,
+  getCurrentSkin, setCape, listSavedSkins, getSavedSkinImage, addSavedSkin, addSavedSkinFromPath,
+  updateSavedSkin, deleteSavedSkin, applySavedSkin, importCurrentSkin, listDefaultSkins, applyDefaultSkin,
 } from "./commands";
 import type { SearchQuery } from "../bindings/SearchQuery";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
@@ -247,5 +249,37 @@ describe("sync commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("set_sync_override", { instanceId: "i1", fieldId: "fov", value: "0.5" });
     await setSyncOverride("i1", "fov", null);
     expect(invoke).toHaveBeenLastCalledWith("set_sync_override", { instanceId: "i1", fieldId: "fov", value: null });
+  });
+});
+
+describe("skin commands", () => {
+  it("passes the command names and camelCase arguments", async () => {
+    await getCurrentSkin("a1");
+    expect(invoke).toHaveBeenLastCalledWith("get_current_skin", { accountId: "a1" });
+    await setCape("a1", "c1");
+    expect(invoke).toHaveBeenLastCalledWith("set_cape", { accountId: "a1", capeId: "c1" });
+    await setCape("a1", null);
+    expect(invoke).toHaveBeenLastCalledWith("set_cape", { accountId: "a1", capeId: null });
+    await listSavedSkins();
+    expect(invoke).toHaveBeenLastCalledWith("list_saved_skins", undefined);
+    await getSavedSkinImage("s1");
+    expect(invoke).toHaveBeenLastCalledWith("get_saved_skin_image", { skinId: "s1" });
+    await addSavedSkin("Me", [1, 2]);
+    expect(invoke).toHaveBeenLastCalledWith("add_saved_skin", { name: "Me", png: [1, 2] });
+    await addSavedSkinFromPath("C:\a.png");
+    expect(invoke).toHaveBeenLastCalledWith("add_saved_skin_from_path", { path: "C:\a.png" });
+    const patch = { name: "New", variant: null, png: null };
+    await updateSavedSkin("s1", patch);
+    expect(invoke).toHaveBeenLastCalledWith("update_saved_skin", { skinId: "s1", patch });
+    await deleteSavedSkin("s1");
+    expect(invoke).toHaveBeenLastCalledWith("delete_saved_skin", { skinId: "s1" });
+    await applySavedSkin("a1", "s1");
+    expect(invoke).toHaveBeenLastCalledWith("apply_saved_skin", { accountId: "a1", skinId: "s1" });
+    await importCurrentSkin("a1");
+    expect(invoke).toHaveBeenLastCalledWith("import_current_skin", { accountId: "a1" });
+    await listDefaultSkins();
+    expect(invoke).toHaveBeenLastCalledWith("list_default_skins", undefined);
+    await applyDefaultSkin("a1", "classic-steve");
+    expect(invoke).toHaveBeenLastCalledWith("apply_default_skin", { accountId: "a1", key: "classic-steve" });
   });
 });
