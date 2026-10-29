@@ -206,8 +206,10 @@ async fn a_jar_without_usable_skins_fails_and_caches_nothing() {
 
 #[tokio::test]
 async fn an_unreachable_source_fails_with_offline() {
-    // 予約済みの `.invalid` は名前が引けないので、実在のどのホストにも届かない
-    let manifest_url = "http://mojang-meta.invalid/manifest.json".to_string();
+    // 閉じたローカルのポートは、名前の解決に頼らず、すぐに接続を断られる（外へは出ない）
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let manifest_url = format!("http://{}/manifest.json", closed.local_addr().unwrap());
+    drop(closed);
     let temp = tempfile::tempdir().unwrap();
     let paths = AppPaths::from_root(temp.path());
 
