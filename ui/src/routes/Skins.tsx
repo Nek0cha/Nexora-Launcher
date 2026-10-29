@@ -7,6 +7,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ReadyGate, useLatchedPending } from "../components/ReadyGate";
 import { Skeleton } from "../components/Skeleton";
 import { AccountSwitch } from "../components/skins/AccountSwitch";
+import { DefaultSkins } from "../components/skins/DefaultSkins";
 import { SavedSkins } from "../components/skins/SavedSkins";
 import { SkinPreviewSlot } from "../components/skins/SkinPreviewSlot";
 import { useAccounts } from "../features/accounts/useAccounts";
@@ -48,7 +49,9 @@ export default function Skins() {
   const [picked, setPicked] = useState<string | null>(null);
   const [login, setLogin] = useState<LoginState>({ open: false, mode: "add", prompt: null });
   // 適用・マント・追加の最中か（SavedSkins が伝える）。この間はアカウントを切り替えさせない
-  const [busy, setBusy] = useState(false);
+  const [savedBusy, setSavedBusy] = useState(false);
+  const [defaultBusy, setDefaultBusy] = useState(false);
+  const busy = savedBusy || defaultBusy;
 
   const list = accounts.data;
   // 選んだアカウントが一覧から消えたら、使用中の msa アカウントに戻る。以降の判断はすべてこの有効なアカウントで行う
@@ -132,11 +135,11 @@ export default function Skins() {
               <div className="flex min-w-0 flex-1 flex-col gap-8">
                 <section className="flex flex-col gap-3">
                   <h2 className={sectionHeading}>{t("skins.saved")}</h2>
-                  <SavedSkins accountId={accountId} canApply={applicable} onBusyChange={setBusy} />
+                  <SavedSkins accountId={accountId} canApply={applicable} blocked={defaultBusy} onBusyChange={setSavedBusy} />
                 </section>
                 <section className="flex flex-col gap-3">
                   <h2 className={sectionHeading}>{t("skins.defaults")}</h2>
-                  <div data-testid="default-skins-slot" />
+                  <DefaultSkins accountId={accountId} canApply={applicable} blocked={savedBusy} onBusyChange={setDefaultBusy} />
                 </section>
               </div>
             </div>

@@ -9,6 +9,7 @@ import {
   getSkin,
   importCurrentSkin,
   listAccounts,
+  listDefaultSkins,
   listSavedSkins,
   setCape,
 } from "../api/commands";
@@ -23,6 +24,8 @@ import Skins from "./Skins";
 vi.mock("../api/commands", () => ({
   listAccounts: vi.fn(),
   listSavedSkins: vi.fn(),
+  listDefaultSkins: vi.fn(),
+  applyDefaultSkin: vi.fn(),
   getCurrentSkin: vi.fn(),
   getSavedSkinImage: vi.fn(),
   importCurrentSkin: vi.fn(),
@@ -64,6 +67,7 @@ beforeEach(async () => {
   vi.mocked(onAccountsChanged).mockResolvedValue(() => {});
   vi.mocked(onLoginProgress).mockResolvedValue(() => {});
   vi.mocked(listSavedSkins).mockResolvedValue([]);
+  vi.mocked(listDefaultSkins).mockResolvedValue([]);
   vi.mocked(getSavedSkinImage).mockResolvedValue("data:image/png;base64,AAAA");
   vi.mocked(importCurrentSkin).mockResolvedValue(null);
   vi.mocked(getCurrentSkin).mockResolvedValue({ image: null, sha256: null, variant: "classic", capes: [] });

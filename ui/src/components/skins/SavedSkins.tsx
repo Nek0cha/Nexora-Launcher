@@ -49,9 +49,11 @@ function SavedSkinCard({ skin, selected, pending, disabled, onPress, worn, canAp
  * チェックは現在のスキンの取り直しが終わるまで古いカードに残る（useSkinActions が取り直しまで進行中を保つ）。
  * canApply が偽（要ログイン・オフライン）のときは、見た目はそのままで押せないだけにする。
  */
-export function SavedSkins({ accountId, canApply, onBusyChange }: {
+export function SavedSkins({ accountId, canApply, blocked = false, onBusyChange }: {
   accountId: string | null;
   canApply: boolean;
+  /** デフォルトのスキンの適用の最中。こちらの操作も止める */
+  blocked?: boolean;
   /** 適用・マント・追加などの最中（追加の一連の合間も含む）かどうかを親へ伝える。アカウントの切り替えを止めるのに使う */
   onBusyChange?: (busy: boolean) => void;
 }) {
@@ -66,7 +68,7 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
   // メニューの編集（ファイルの読み込み・更新・適用の一連）の最中も同じく止める
   const [editing, setEditing] = useState(false);
 
-  const busy = actions.busy || adding || editing;
+  const busy = actions.busy || adding || editing || blocked;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => onBusyChange?.(false);
@@ -95,7 +97,7 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
       {/* 追加はライブラリへ足すだけでログインは要らないので、canApply には縛らない */}
-      <AddSkinCard disabled={actions.busy || editing} actions={actions} onAdding={setAdding} />
+      <AddSkinCard disabled={actions.busy || editing || blocked} actions={actions} onAdding={setAdding} />
       {(saved.data ?? []).map((skin) => (
         <SavedSkinCard
           key={skin.id}

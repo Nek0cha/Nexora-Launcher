@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCurrentSkin, getSavedSkinImage, importCurrentSkin, listAccounts, listSavedSkins } from "../api/commands";
+import { getCurrentSkin, getSavedSkinImage, importCurrentSkin, listAccounts, listDefaultSkins, listSavedSkins } from "../api/commands";
 import { onAccountsChanged, onLoginProgress } from "../api/events";
 import i18n from "../i18n";
 import Skins from "./Skins";
@@ -9,6 +9,8 @@ import Skins from "./Skins";
 vi.mock("../api/commands", () => ({
   listAccounts: vi.fn(),
   listSavedSkins: vi.fn(),
+  listDefaultSkins: vi.fn(),
+  applyDefaultSkin: vi.fn(),
   getCurrentSkin: vi.fn(),
   getSavedSkinImage: vi.fn(),
   importCurrentSkin: vi.fn(),
@@ -28,6 +30,7 @@ beforeEach(async () => {
   await i18n.changeLanguage("en");
   vi.mocked(onAccountsChanged).mockResolvedValue(() => {});
   vi.mocked(onLoginProgress).mockResolvedValue(() => {});
+  vi.mocked(listDefaultSkins).mockResolvedValue([]);
   vi.mocked(listAccounts).mockResolvedValue({
     accounts: [{ id: "a1", username: "Alex", isActive: true, entitlement: "verified", needsLogin: false, loginSaved: true, hasSkin: false }],
     devOffline: null,
