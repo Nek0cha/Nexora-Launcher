@@ -8,6 +8,7 @@ import {
   useSkinActions,
 } from "../../features/skins/useSkins";
 import { useToast } from "../toast/useToast";
+import { AddSkinCard } from "./AddSkinCard";
 import { SkinCard } from "./SkinCard";
 
 type CardProps = {
@@ -67,7 +68,8 @@ export function SavedSkins({ accountId, canApply }: { accountId: string | null; 
 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
-      {/* 先頭に「スキンを追加」のカードが入る（後のタスク） */}
+      {/* 追加はライブラリへ足すだけでログインは要らないので、canApply には縛らない */}
+      <AddSkinCard disabled={actions.busy} />
       {(saved.data ?? []).map((skin) => (
         <SavedSkinCard
           key={skin.id}

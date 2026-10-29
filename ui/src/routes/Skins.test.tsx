@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCurrentSkin, getSavedSkinImage, importCurrentSkin, listAccounts, listSavedSkins } from "../api/commands";
+import { onFilesDropped } from "../api/dragDrop";
 import { onAccountsChanged, onLoginProgress } from "../api/events";
 import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
@@ -19,6 +20,7 @@ vi.mock("../api/commands", () => ({
   cancelTask: vi.fn(),
   getSkin: vi.fn(),
 }));
+vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 vi.mock("../api/events", () => ({ onAccountsChanged: vi.fn(), onLoginProgress: vi.fn() }));
 // 3D の描画は jsdom では動かないので、渡された props だけを見えるようにした部品に差し替える
 vi.mock("../components/skins/SkinPreview", () => ({
@@ -44,6 +46,7 @@ function mount(list: AccountList) {
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
+  vi.mocked(onFilesDropped).mockResolvedValue(() => {});
   vi.mocked(onAccountsChanged).mockResolvedValue(() => {});
   vi.mocked(onLoginProgress).mockResolvedValue(() => {});
   vi.mocked(listSavedSkins).mockResolvedValue([]);
@@ -76,7 +79,7 @@ describe("Skins", () => {
   it("shows the frame without a login button for the dev offline account only", async () => {
     mount({ accounts: [], devOffline: { username: "Player", active: true } });
     expect(await screen.findByRole("heading", { name: "Saved skins" })).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
   });
 
   it("offers a login button at the top when the account needs login", async () => {

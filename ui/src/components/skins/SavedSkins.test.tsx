@@ -10,10 +10,12 @@ import {
 } from "../../api/commands";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
+import { onFilesDropped } from "../../api/dragDrop";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { SavedSkins } from "./SavedSkins";
 
+vi.mock("../../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 vi.mock("../../api/commands", () => ({
   applySavedSkin: vi.fn(),
   getCurrentSkin: vi.fn(),
@@ -68,6 +70,7 @@ const checkedNames = () =>
 beforeEach(async () => {
   await i18n.changeLanguage("en");
   clearToasts();
+  vi.mocked(onFilesDropped).mockResolvedValue(() => {});
   vi.mocked(listSavedSkins).mockResolvedValue([skin("1"), skin("2"), skin("3")]);
   vi.mocked(getSavedSkinImage).mockResolvedValue(PNG);
   vi.mocked(getCurrentSkin).mockResolvedValue(current("h-1"));
@@ -81,10 +84,19 @@ afterEach(() => {
 });
 
 describe("SavedSkins", () => {
+  it("puts the add card first, and keeps it usable when skins cannot be applied", async () => {
+    mount({ accountId: "a1", canApply: false });
+    await screen.findByRole("button", { name: "Skin 1" });
+    const buttons = screen.getAllByRole("button") as HTMLButtonElement[];
+    expect(buttons[0]?.textContent).toBe("Add skin");
+    expect(buttons[0]?.disabled).toBe(false);
+    expect(card("Skin 1").disabled).toBe(true);
+  });
+
   it("renders one card per saved skin, named by the skin", async () => {
     mount();
     expect(await screen.findByRole("button", { name: "Skin 1" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getAllByRole("button")).toHaveLength(4); // 追加のカード + スキン 3 枚
   });
 
   it("marks only the card whose hash matches the current skin", async () => {
@@ -257,7 +269,7 @@ describe("import of the current skin", () => {
     mount();
     await waitFor(() => expect(warn).toHaveBeenCalled());
     expect(screen.getByTestId("toasts").textContent).toBe("");
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getAllByRole("button")).toHaveLength(4); // 追加のカード + スキン 3 枚
     warn.mockRestore();
   });
 });

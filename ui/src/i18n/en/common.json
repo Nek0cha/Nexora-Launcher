@@ -108,7 +108,8 @@
   "skins": {
     "saved": "Saved skins",
     "defaults": "Default skins",
-    "preview": "Skin preview"
+    "preview": "Skin preview",
+    "add": "Add skin"
   },
   "accounts": {
     "devTitle": "Development offline account",
