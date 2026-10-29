@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ReadyGate } from "./ReadyGate";
+import { ReadyGate, useDelayedFlag } from "./ReadyGate";
 
 const q = (isPending: boolean) => ({ isPending });
 
@@ -93,5 +93,30 @@ describe("ReadyGate", () => {
       </ReadyGate>,
     );
     expect(screen.getByText("lazy")).toBeTruthy();
+  });
+});
+
+describe("useDelayedFlag", () => {
+  function Probe({ on }: { on: boolean }) {
+    return <p>{useDelayedFlag(on) ? "on" : "off"}</p>;
+  }
+
+  it("stays off when the flag ends before the delay, so a quick refresh does not flash", () => {
+    const { rerender } = render(<Probe on={false} />);
+    rerender(<Probe on />);
+    tick(100);
+    expect(screen.getByText("off")).toBeTruthy();
+    rerender(<Probe on={false} />);
+    tick(500);
+    expect(screen.getByText("off")).toBeTruthy();
+  });
+
+  it("turns on after 150ms of waiting and off as soon as the flag ends", () => {
+    const { rerender } = render(<Probe on />);
+    expect(screen.getByText("off")).toBeTruthy();
+    tick(150);
+    expect(screen.getByText("on")).toBeTruthy();
+    rerender(<Probe on={false} />);
+    expect(screen.getByText("off")).toBeTruthy();
   });
 });

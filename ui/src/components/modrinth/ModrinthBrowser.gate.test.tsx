@@ -74,7 +74,7 @@ describe("ModrinthBrowser loading", () => {
     expect(screen.getByRole("button", { name: "Optimization" })).toBeTruthy();
   });
 
-  it("keeps_the_previous_rows_dimmed_while_a_new_search_is_running", async () => {
+  it("keeps_the_previous_rows_and_dims_them_only_when_a_new_search_takes_long", async () => {
     vi.mocked(searchModrinth).mockResolvedValueOnce(page([hit()]));
     mount();
     await screen.findByRole("article", { name: "Sodium" });
@@ -86,6 +86,9 @@ describe("ModrinthBrowser loading", () => {
     expect(screen.getByRole("article", { name: "Sodium" })).toBeTruthy();
     expect(screen.queryByTestId("modrinth-skeleton")).toBeNull();
     expect(screen.queryByText("Searching...")).toBeNull();
+    // すぐ返る検索では薄くしない（薄くして戻すとちらつく）。待ちが 150ms を超えたら薄くする
+    expect(screen.getByTestId("modrinth-results").getAttribute("aria-busy")).not.toBe("true");
+    await wait(200);
     expect(screen.getByTestId("modrinth-results").getAttribute("aria-busy")).toBe("true");
     await act(async () => next.resolve(page([hit({ projectId: "x", title: "Iris", slug: "iris" })])));
     expect(await screen.findByRole("article", { name: "Iris" })).toBeTruthy();

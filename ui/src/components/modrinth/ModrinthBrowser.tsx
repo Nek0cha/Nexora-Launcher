@@ -37,7 +37,7 @@ import { SETTINGS_KEY, useSettings } from "../../features/settings/useSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ChipGroup, ChipSkeleton, ContentFilter, ContentSearchField, FilterSkeleton } from "../content/ContentFilter";
 import { FailureNotice } from "../FailureNotice";
-import { ReadyGate, useLatchedPending } from "../ReadyGate";
+import { ReadyGate, useDelayedFlag, useLatchedPending } from "../ReadyGate";
 import { Skeleton } from "../Skeleton";
 import { useToast } from "../toast/useToast";
 import { AddToInstanceMenu } from "./AddToInstanceMenu";
@@ -447,6 +447,8 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
   const error = search.error ? toErrorPayload(search.error) : null;
   // 新しい条件の結果を待っていて、いまは前の結果を見せている
   const refreshing = search.isPlaceholderData;
+  // 薄くするのは待ちが長いときだけ。すぐ返るときに薄くして戻すと、フィルターを押すたびにちらつく
+  const dimmed = useDelayedFlag(refreshing);
 
   return (
     <>
@@ -501,9 +503,9 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
             {/* 検索し直している間は、前の結果を残して薄くする（空にしたりスケルトンに戻したりしない） */}
             <div
               data-testid="modrinth-results"
-              aria-busy={refreshing}
+              aria-busy={dimmed}
               className={`scroll-thin min-h-0 flex-1 overflow-auto pr-1 transition-opacity duration-(--duration-fast) ease-out-quint ${
-                refreshing ? "opacity-60" : ""
+                dimmed ? "opacity-60" : ""
               }`}
             >
               {search.isPending && !error ? (

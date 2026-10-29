@@ -40,6 +40,23 @@ export function useGateTiming(pending: boolean): GatePhase {
 }
 
 /**
+ * 待ちが 150ms を超えてから真になる旗。終わったらすぐ偽に戻す。
+ * 一覧を薄くするような「更新中」の見せ方に使い、すぐ返る取り直しでは何も変えない（薄くして戻すとちらつく）。
+ */
+export function useDelayedFlag(flag: boolean): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!flag) {
+      setShown(false);
+      return;
+    }
+    const id = setTimeout(() => setShown(true), GATE_DELAY_MS);
+    return () => clearTimeout(id);
+  }, [flag]);
+  return flag && shown;
+}
+
+/**
  * 一度「そろった」になったら、その後に問い合わせが pending に戻っても（取り直しや再試行）、そろったままにする。
  * 中身を出したあとに枠へ戻すと、入力や並びが消えて跳ねる。
  */
