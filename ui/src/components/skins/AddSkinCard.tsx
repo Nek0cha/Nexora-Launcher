@@ -3,7 +3,8 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconPlus from "~icons/ph/plus";
 import { onFilesDropped } from "../../api/dragDrop";
-import { useSkinActions } from "../../features/skins/useSkins";
+import { IpcError } from "../../api/ipc";
+import { MAX_SKIN_BYTES, type useSkinActions } from "../../features/skins/useSkins";
 import { useToast } from "../toast/useToast";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -27,24 +28,30 @@ const stem = (name: string) => name.replace(/\.[^.]*$/, "") || name;
  * 複数のファイルは 1 つずつ順に追加し（並びを保つため）、1 つの失敗が残りを止めない。失敗はファイルごとにトーストで知らせる。
  * ログインは要らない（ライブラリへ追加するだけ）。
  */
-export function AddSkinCard({ disabled }: { disabled: boolean }) {
+export function AddSkinCard({ disabled, actions, onAdding }: {
+  disabled: boolean;
+  /** 親（SavedSkins）と同じ操作の組。適用と追加を同時に走らせないため、取り直しの管理を 1 つにする */
+  actions: Pick<ReturnType<typeof useSkinActions>, "add" | "addFromPath">;
+  /** 追加の一連（ファイルの合間も含む）の最中は真。親がスキンのカードを押せなくするのに使う */
+  onAdding: (adding: boolean) => void;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
-  const actions = useSkinActions(null);
   const [dragging, setDragging] = useState(false);
   const [working, setWorking] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
   // ドロップの受け口は 1 度だけ登録するので、最新の値は ref 越しに読む
   const blocked = disabled || working;
-  const latest = useRef({ blocked, actions, toast });
-  latest.current = { blocked, actions, toast };
+  const latest = useRef({ blocked, actions, toast, onAdding });
+  latest.current = { blocked, actions, toast, onAdding };
   const running = useRef(false);
 
   const runAll = async (jobs: Array<() => Promise<unknown>>) => {
     if (running.current || jobs.length === 0) return;
     running.current = true;
     setWorking(true);
+    latest.current.onAdding(true);
     try {
       for (const job of jobs) {
         try {
@@ -56,6 +63,7 @@ export function AddSkinCard({ disabled }: { disabled: boolean }) {
     } finally {
       running.current = false;
       setWorking(false);
+      latest.current.onAdding(false);
     }
   };
 
@@ -93,6 +101,8 @@ export function AddSkinCard({ disabled }: { disabled: boolean }) {
     if (latest.current.blocked) return;
     void runAll(
       list.map((file) => async () => {
+        // 読む前に大きさを見る（誤って選んだ巨大なファイルで画面を固めない）。本体の検査と同じ失敗にする
+        if (file.size > MAX_SKIN_BYTES) throw new IpcError({ code: "skin.invalid", params: {}, detail: null });
         const png = Array.from(new Uint8Array(await file.arrayBuffer()));
         await latest.current.actions.add.mutateAsync({ name: stem(file.name), png });
       }),
@@ -103,7 +113,7 @@ export function AddSkinCard({ disabled }: { disabled: boolean }) {
     <div className="relative aspect-[2/3] w-full">
       <Button
         isDisabled={blocked}
-        data-drop-target={dragging || undefined}
+        data-drop-target={(dragging && !blocked) || undefined}
         onPress={() => picker.current?.click()}
         className={cardButton}
       >

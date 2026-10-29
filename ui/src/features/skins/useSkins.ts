@@ -17,6 +17,9 @@ import type { SavedSkin } from "../../bindings/SavedSkin";
 import type { SavedSkinPatch } from "../../bindings/SavedSkinPatch";
 import { SKIN_KEY } from "../accounts/useAccounts";
 
+/** スキンの PNG の上限（本体の検査と同じ 64 KiB） */
+export const MAX_SKIN_BYTES = 64 * 1024;
+
 /** スキン画面のクエリの先頭のキー。現在のスキン・保存済みの一覧がこの下にある */
 export const SKINS_KEY = ["skins"] as const;
 // 画像とデフォルトスキンは変わらない（または取得が重い）ので、SKINS_KEY の取り直しに巻き込まない

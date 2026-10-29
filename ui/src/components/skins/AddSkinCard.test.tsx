@@ -5,7 +5,13 @@ import { addSavedSkin, addSavedSkinFromPath } from "../../api/commands";
 import { onFilesDropped, type DragDropHandlers } from "../../api/dragDrop";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
+import { useSkinActions } from "../../features/skins/useSkins";
 import { AddSkinCard } from "./AddSkinCard";
+
+function Card({ disabled }: { disabled: boolean }) {
+  const actions = useSkinActions(null);
+  return <AddSkinCard disabled={disabled} actions={actions} onAdding={() => {}} />;
+}
 
 vi.mock("../../api/commands", () => ({ addSavedSkin: vi.fn(), addSavedSkinFromPath: vi.fn() }));
 vi.mock("../../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
@@ -28,7 +34,7 @@ function mount(disabled = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const tree = (d: boolean) => (
     <QueryClientProvider client={client}>
-      <AddSkinCard disabled={d} />
+      <Card disabled={d} />
       <Toasts />
     </QueryClientProvider>
   );
@@ -168,5 +174,46 @@ describe("AddSkinCard", () => {
     // 大きさに関わるクラスは状態で変わらない（色だけが変わる）
     const size = (c: string) => c.split(" ").filter((x) => /^(p|m|w|h|aspect|border(-\d)?$|inset|gap)/.test(x));
     expect(size(button().className)).toEqual(size(idle));
+  });
+
+  it("rejects an oversized picked file before reading it, and the rest of the batch continues", async () => {
+    mount();
+    const big = file("big.png", [1]);
+    Object.defineProperty(big, "size", { value: 70 * 1024 });
+    const read = vi.spyOn(big, "arrayBuffer");
+    await act(async () => {
+      fireEvent.change(input(), { target: { files: [big, file("ok.png", [5])] } });
+    });
+    await waitFor(() => expect(addSavedSkin).toHaveBeenCalledTimes(1));
+    expect(read).not.toHaveBeenCalled();
+    expect(vi.mocked(addSavedSkin).mock.calls).toEqual([["ok", [5]]]);
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it("drops the highlight when the card becomes disabled mid-drag", async () => {
+    const view = mount(false);
+    await waitFor(() => expect(onFilesDropped).toHaveBeenCalled());
+    act(() => handlers.enter());
+    expect(button().dataset.dropTarget).toBe("true");
+    view.rerender(true);
+    expect(button().dataset.dropTarget).toBeUndefined();
+  });
+
+  it("tells the parent about the whole batch, gaps between files included", async () => {
+    const seen: boolean[] = [];
+    let release!: () => void;
+    vi.mocked(addSavedSkinFromPath).mockImplementationOnce(() => new Promise((r) => (release = () => r({} as never))));
+    function Probe() {
+      const actions = useSkinActions(null);
+      return <AddSkinCard disabled={false} actions={actions} onAdding={(a) => seen.push(a)} />;
+    }
+    const client = new QueryClient();
+    render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    await waitFor(() => expect(onFilesDropped).toHaveBeenCalled());
+    await drop(["a.png", "b.png"]);
+    expect(seen).toEqual([true]);
+    await act(async () => release());
+    await waitFor(() => expect(seen).toEqual([true, false]));
+    expect(addSavedSkinFromPath).toHaveBeenCalledTimes(2);
   });
 });

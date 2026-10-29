@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SavedSkin } from "../../bindings/SavedSkin";
 import {
   useCurrentSkin,
@@ -46,6 +46,8 @@ export function SavedSkins({ accountId, canApply }: { accountId: string | null; 
   const actions = useSkinActions(accountId);
   const importSkin = useImportCurrentSkin();
   const toast = useToast();
+  // 追加の一連の最中（ファイルの合間も）は、スキンの適用を始めさせない
+  const [adding, setAdding] = useState(false);
 
   // いま着ているスキンの取り込みは、アカウントごとに画面を開いてから 1 回だけ。
   // 読める現在のスキン（Mojang から取れた画像）が要るので、ログインが有効なアカウントのときだけ行う
@@ -69,14 +71,14 @@ export function SavedSkins({ accountId, canApply }: { accountId: string | null; 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
       {/* 追加はライブラリへ足すだけでログインは要らないので、canApply には縛らない */}
-      <AddSkinCard disabled={actions.busy} />
+      <AddSkinCard disabled={actions.busy} actions={actions} onAdding={setAdding} />
       {(saved.data ?? []).map((skin) => (
         <SavedSkinCard
           key={skin.id}
           skin={skin}
           selected={currentHash !== null && skin.sha256 === currentHash}
           pending={applying === skin.id}
-          disabled={!canApply || actions.busy}
+          disabled={!canApply || actions.busy || adding}
           onPress={() => press(skin)}
         />
       ))}

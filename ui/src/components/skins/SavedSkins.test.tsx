@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addSavedSkinFromPath,
   applySavedSkin,
   getCurrentSkin,
   getSavedSkinImage,
@@ -10,13 +11,14 @@ import {
 } from "../../api/commands";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
-import { onFilesDropped } from "../../api/dragDrop";
+import { onFilesDropped, type DragDropHandlers } from "../../api/dragDrop";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { SavedSkins } from "./SavedSkins";
 
 vi.mock("../../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 vi.mock("../../api/commands", () => ({
+  addSavedSkinFromPath: vi.fn(),
   applySavedSkin: vi.fn(),
   getCurrentSkin: vi.fn(),
   getSavedSkinImage: vi.fn(),
@@ -84,6 +86,25 @@ afterEach(() => {
 });
 
 describe("SavedSkins", () => {
+  it("disables every skin card for the whole add batch and applies nothing", async () => {
+    let handlers!: DragDropHandlers;
+    vi.mocked(onFilesDropped).mockImplementation(async (h) => {
+      handlers = h;
+      return () => {};
+    });
+    let release!: () => void;
+    vi.mocked(addSavedSkinFromPath).mockImplementation(() => new Promise((r) => (release = () => r({} as never))));
+    mount();
+    await screen.findByRole("button", { name: "Skin 2" });
+    await waitFor(() => expect(handlers).toBeTruthy());
+    await act(async () => handlers.drop(["a.png"]));
+    for (const n of ["Skin 1", "Skin 2", "Skin 3"]) expect(card(n).disabled).toBe(true);
+    fireEvent.click(card("Skin 2"));
+    expect(applySavedSkin).not.toHaveBeenCalled();
+    await act(async () => release());
+    await waitFor(() => expect(card("Skin 2").disabled).toBe(false));
+  });
+
   it("puts the add card first, and keeps it usable when skins cannot be applied", async () => {
     mount({ accountId: "a1", canApply: false });
     await screen.findByRole("button", { name: "Skin 1" });

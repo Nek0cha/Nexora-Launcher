@@ -7,10 +7,10 @@ import { IpcError, toErrorPayload } from "../../api/ipc";
 import type { SkinVariant } from "../../bindings/SkinVariant";
 import { FailureNotice } from "../../components/FailureNotice";
 import { modalClass, overlayClass } from "../../components/modal";
+import { MAX_SKIN_BYTES } from "../skins/useSkins";
 import { ACCOUNTS_KEY, SKIN_KEY } from "./useAccounts";
 
 /** スキンの PNG の上限（バックエンドと同じ 64 KiB）。 */
-const MAX_SKIN_BYTES = 64 * 1024;
 
 const ring ="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
