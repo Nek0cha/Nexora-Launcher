@@ -77,7 +77,7 @@ export function App() {
           <AppBar showWindowControls={isWindows} materialOn={materialOn} slot={<RunningPill />} />
           <div className="flex min-h-0 flex-1">
             <Sidebar materialOn={materialOn} />
-            <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0">
+            <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0 [scrollbar-gutter:stable]">
               <Outlet />
             </main>
           </div>
