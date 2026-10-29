@@ -13,6 +13,7 @@ import {
   pendingSyncProposals,
   previewJoinSyncProfile,
   resolveSyncProposal,
+  setSyncCategories,
 } from "../api/commands";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSync } from "../bindings/InstanceSync";
@@ -304,5 +305,35 @@ describe("SyncProfiles proposals", () => {
     await waitFor(() =>
       expect(resolveSyncProposal).toHaveBeenCalledWith("i2", "key_key.jump", "applyToProfile", undefined),
     );
+  });
+});
+
+describe("SyncProfiles category chips", () => {
+  it("keeps a chip in its new state until the profiles are fetched again, so it does not flash back", async () => {
+    const p = profile("p1", "いつもの", ["i1"]);
+    vi.mocked(setSyncCategories).mockResolvedValue(null);
+    mount({ profiles: [p] });
+    const card = await screen.findByRole("region", { name: "いつもの" });
+    const chip = within(card).getByRole("button", { name: "マウス" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    // 保存の後の取り直しを止めておく
+    let release: (v: SyncProfile[]) => void = () => {};
+    vi.mocked(listSyncProfiles).mockReturnValue(new Promise((r) => (release = r)));
+    const seen: (string | null)[] = [];
+    const observer = new MutationObserver(() => seen.push(chip.getAttribute("aria-pressed")));
+    observer.observe(chip, { attributes: true, attributeFilter: ["aria-pressed"] });
+    await press(chip);
+    await waitFor(() => expect(setSyncCategories).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => {
+      release([{ ...p, categories: ["keys", "mouse"] }]);
+    });
+    observer.disconnect();
+    // 押した後は true になるだけで、false に戻らない
+    expect(seen).not.toContain("false");
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
   });
 });

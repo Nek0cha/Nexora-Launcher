@@ -140,7 +140,8 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
     },
     onError: toast.showError,
     // 途中で失敗しても、済んだ分を映すために取り直す
-    onSettled: () => void client.invalidateQueries({ queryKey: SYNC_KEY }),
+    // 取り直しが終わるまで進行中のままにする（解決した項目が一瞬、押せる状態で戻らないように）
+    onSettled: () => client.invalidateQueries({ queryKey: SYNC_KEY }),
   });
 
   const ctx: ItemContext = {

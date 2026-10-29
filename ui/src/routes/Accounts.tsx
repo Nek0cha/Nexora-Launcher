@@ -66,7 +66,8 @@ export default function Accounts() {
   const [removeOpen, setRemoveOpen] = useState(false);
 
   // 一覧は accounts://changed でも取り直されるが、届く前に古い表示が残らないよう、成功したらすぐ取り直す
-  const refresh = () => void client.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+  // 取り直しが終わるまで mutation を進行中のままにする。先に終わると、古い表示が一瞬戻ってから新しくなる
+  const refresh = () => client.invalidateQueries({ queryKey: ACCOUNTS_KEY });
   const action = {
     onSuccess: refresh,
     onError: (e: unknown) => toast.showError(e),

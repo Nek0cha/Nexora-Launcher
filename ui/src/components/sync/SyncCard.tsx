@@ -101,8 +101,9 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   const leave = useMutation({
     mutationKey: SYNC_KEY,
     mutationFn: () => leaveSyncProfile(instanceId),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: SYNC_KEY });
+    onSuccess: async () => {
+      // 取り直しが終わるまで進行中のままにする（外れた後に、参加中の表示が一瞬戻らないように）
+      await client.invalidateQueries({ queryKey: SYNC_KEY });
       toast.show({ kind: "success", message: t("sync.card.left") });
     },
     onError: toast.showError,
@@ -111,7 +112,7 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   const release = useMutation({
     mutationKey: SYNC_KEY,
     mutationFn: (fieldId: string) => setSyncOverride(instanceId, fieldId, null),
-    onSuccess: () => void client.invalidateQueries({ queryKey: SYNC_KEY }),
+    onSuccess: () => client.invalidateQueries({ queryKey: SYNC_KEY }),
     onError: toast.showError,
   });
 
