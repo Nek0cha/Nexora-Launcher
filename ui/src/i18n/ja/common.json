@@ -5,6 +5,7 @@
     "instances": "インスタンス",
     "sync": "共通設定",
     "browse": "探す",
+    "skins": "スキン",
     "accounts": "アカウント",
     "settings": "設定"
   },
@@ -240,6 +241,7 @@
     "close": "通知を閉じる"
   },
   "appBar": {
+    "breadcrumb": "現在の場所",
     "back": "戻る",
     "forward": "進む",
     "minimize": "最小化",

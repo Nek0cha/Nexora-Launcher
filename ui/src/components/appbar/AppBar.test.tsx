@@ -79,12 +79,17 @@ describe("AppBar", () => {
     await act(async () => {
       await router.navigate("/instances/i1");
     });
-    await waitFor(() => expect(screen.getByTestId("page-name").textContent).toBe("Survival"));
+    await waitFor(() => expect(screen.getByTestId("page-name").textContent).toContain("Survival"));
+    expect(screen.getByRole("link", { name: "Instances" })).toBeTruthy();
     await act(async () => {
       await i18n.changeLanguage("ja");
       await router.navigate("/settings");
     });
     expect(screen.getByTestId("page-name").textContent).toBe("設定");
+    await act(async () => {
+      await router.navigate("/sync");
+    });
+    expect(screen.getByTestId("page-name").textContent).toBe("共通設定");
   });
 
   it("aligns_the_logo_and_name_with_the_sidebar_icon_and_label", () => {

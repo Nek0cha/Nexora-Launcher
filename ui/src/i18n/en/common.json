@@ -5,6 +5,7 @@
     "instances": "Instances",
     "sync": "Shared settings",
     "browse": "Browse",
+    "skins": "Skins",
     "accounts": "Accounts",
     "settings": "Settings"
   },
@@ -240,6 +241,7 @@
     "close": "Close notification"
   },
   "appBar": {
+    "breadcrumb": "Breadcrumb",
     "back": "Back",
     "forward": "Forward",
     "minimize": "Minimize",
