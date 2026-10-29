@@ -72,7 +72,6 @@ function NotJoined({ instanceId, sync, running }: { instanceId: string; sync: In
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col items-start gap-3">
-      <p className="text-sm text-text-muted">{t("sync.card.intro")}</p>
       <Button onPress={() => setOpen(true)} className={secondaryButton}>
         {t("sync.card.start")}
       </Button>

@@ -457,7 +457,6 @@
   "sync": {
     "card": {
       "title": "Settings sync",
-      "intro": "Keep settings such as key bindings and volume the same as your other instances.",
       "start": "Match settings with other instances",
       "joined": "Using the shared settings “{{name}}”",
       "members": "Also using them: {{names}}",

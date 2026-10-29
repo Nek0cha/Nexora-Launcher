@@ -57,7 +57,6 @@ export function InstanceAdvancedFields({
         {form.memoryMode === "manual" && (
           <NumberField
             label={t("instances.detail.memoryMb")}
-            description={t("instances.detail.memoryRange")}
             value={form.memoryMb}
             min={MEMORY_MIN_MB}
             max={MEMORY_MAX_MB}
