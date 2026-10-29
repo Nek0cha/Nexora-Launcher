@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applySavedSkin, deleteSavedSkin, listSavedSkins, updateSavedSkin } from "../../api/commands";
@@ -37,6 +38,7 @@ const pressed = vi.fn();
 function Harness({ worn, canApply = true, adding = false }: { worn: string | null; canApply?: boolean; adding?: boolean }) {
   const saved = useSavedSkins();
   const actions = useSkinActions("acc");
+  const [working, setWorking] = useState(false);
   return (
     <div>
       {(saved.data ?? []).map((s) => (
@@ -55,7 +57,8 @@ function Harness({ worn, canApply = true, adding = false }: { worn: string | nul
               worn={s.id === worn}
               canApply={canApply}
               actions={actions}
-              disabled={actions.busy || adding}
+              disabled={actions.busy || adding || working}
+              onWorking={setWorking}
             />
           }
         />
@@ -172,10 +175,39 @@ describe("SkinMenu rename", () => {
       return nameInput();
     })) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Other" } });
-    fireEvent.keyDown(input, { key: "Escape" });
-    fireEvent.blur(input);
+    // ブラウザは、フォーカスのある入力が外れるときに blur を送る。それを DOM の取り外しに合わせて再現する
+    const remove = Node.prototype.removeChild;
+    const spy = vi.spyOn(Node.prototype, "removeChild").mockImplementation(function <T extends Node>(this: Node, node: T): T {
+      if (node.contains(input)) { console.log("BLUR"); fireEvent.blur(input); }
+      return remove.call(this, node) as T;
+    });
+    try {
+      fireEvent.keyDown(input, { key: "Escape" });
+      await act(async () => new Promise((r) => setTimeout(r, 30)));
+    } finally {
+      spy.mockRestore();
+    }
     expect(nameInput()).toBeNull();
     expect(updateSavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("sends exactly once when Enter is followed by a blur", async () => {
+    mount({ worn: null });
+    await ready();
+    await open("1");
+    await choose("Rename");
+    const input = (await waitFor(() => {
+      expect(nameInput()).not.toBeNull();
+      return nameInput();
+    })) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Once" } });
+    act(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.blur(input);
+    });
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(updateSavedSkin).toHaveBeenCalledTimes(1);
   });
 
   it("shows the old name until the refetch ends, then the new one", async () => {
@@ -348,15 +380,6 @@ describe("SkinMenu delete", () => {
 });
 
 describe("SkinMenu on the card", () => {
-  it("does not apply the card when the button or an item is pressed", async () => {
-    mount({ worn: null });
-    await ready();
-    await open("1");
-    await choose("Slim");
-    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
-    expect(pressed).not.toHaveBeenCalled();
-  });
-
   it("is disabled while the shared actions are busy or the card is adding", async () => {
     let release!: () => void;
     vi.mocked(deleteSavedSkin).mockImplementation(() => new Promise((r) => (release = () => r(undefined as never))));

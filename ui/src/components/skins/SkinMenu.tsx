@@ -17,7 +17,9 @@ const menuButton = [
   "bg-surface-1/80 text-text-muted opacity-0",
   "transition-[opacity,background-color,color] duration-(--duration-fast) ease-out-quint",
   "group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100",
-  "hover:bg-surface-3 hover:text-text pressed:bg-surface-3 disabled:opacity-50",
+  "hover:bg-surface-3 hover:text-text pressed:bg-surface-3",
+  // 押せないときも見える条件は同じで、見えるときだけ薄くする（取り直しの間に全カードへ点滅しない）
+  "disabled:opacity-0 group-hover:disabled:opacity-50 group-focus-within:disabled:opacity-50",
   ring,
 ].join(" ");
 
@@ -44,13 +46,14 @@ const menuItemClass = [
 const dangerItemClass = `${menuItemClass} text-danger`;
 
 type Actions = Pick<ReturnType<typeof useSkinActions>, "update" | "remove" | "apply">;
+type Patch = { name?: string; variant?: SkinVariant; png?: number[] };
 
 /**
  * 保存したスキン 1 枚のメニュー（名前を変える、classic / slim、ファイルを差し替える、削除）。
  * 操作の組はスキン画面と共通のものを受け取る（取り直しが終わるまでの「進行中」を 1 つにするため）。
  * 着ているスキンを変えたときだけ、更新のあとに適用し直して Mojang 側へ反映する。削除はライブラリだけで、確認は挟まない。
  */
-export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
+export function SkinMenu({ skin, worn, canApply, actions, disabled, onWorking }: {
   skin: SavedSkin;
   /** いま着ているスキンか */
   worn: boolean;
@@ -58,24 +61,28 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
   actions: Actions;
   /** 適用・追加など、ほかの操作の最中 */
   disabled: boolean;
+  /** 読み込み・更新・適用の一連の最中は真。親が全てのカードとメニューを止めるのに使う */
+  onWorking: (working: boolean) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  // 更新と適用の合間にも操作を受けない
-  const [working, setWorking] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
-  // 送った名前。Enter の後にフォーカスが外れても二度送らない
+  // 送った名前（または Esc で取り消した編集）。Enter や Esc の後にフォーカスが外れても、名前を送らない
   const sent = useRef(false);
-  const blocked = disabled || working || actions.update.isPending || actions.remove.isPending;
+  const blocked = disabled || actions.update.isPending || actions.remove.isPending;
 
   const reapply = worn && canApply;
 
-  /** 更新し、着ているスキンなら適用し直す。失敗はトーストで知らせ、更新が失敗したら適用しない */
-  const run = async (patch: { name?: string; variant?: SkinVariant; png?: number[] }) => {
-    setWorking(true);
+  /**
+   * 更新し、着ているスキンなら適用し直す。失敗はトーストで知らせ、更新が失敗したら適用しない。
+   * 内容を作る処理（ファイルの読み込み）から取り直しの終わりまで、画面全体の操作を止める（onWorking）。
+   */
+  const run = async (build: () => Promise<Patch> | Patch) => {
+    onWorking(true);
     try {
+      const patch = await build();
       await actions.update.mutateAsync({
         skinId: skin.id,
         patch: { name: patch.name ?? null, variant: patch.variant ?? null, png: patch.png ?? null },
@@ -84,7 +91,7 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
     } catch (e) {
       toast.showError(e);
     } finally {
-      setWorking(false);
+      onWorking(false);
     }
   };
 
@@ -97,7 +104,7 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
     }
     sent.current = true;
     // 保存と取り直しが終わるまで入力を残す（古い名前に一瞬戻らない）
-    await run({ name });
+    await run(() => ({ name }));
     sent.current = false;
     setEditing(false);
   };
@@ -107,16 +114,11 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
     // 同じファイルをもう一度選べるように空にする
     if (picker.current) picker.current.value = "";
     if (!file || blocked) return;
-    void (async () => {
-      try {
-        // 読む前に大きさを見る。本体の検査と同じ失敗にする
-        if (file.size > MAX_SKIN_BYTES) throw new IpcError({ code: "skin.invalid", params: {}, detail: null });
-        const png = Array.from(new Uint8Array(await file.arrayBuffer()));
-        await run({ png });
-      } catch (e) {
-        toast.showError(e);
-      }
-    })();
+    void run(async () => {
+      // 読む前に大きさを見る。本体の検査と同じ失敗にする
+      if (file.size > MAX_SKIN_BYTES) throw new IpcError({ code: "skin.invalid", params: {}, detail: null });
+      return { png: Array.from(new Uint8Array(await file.arrayBuffer())) };
+    });
   };
 
   const onAction = (key: string | number) => {
@@ -128,7 +130,7 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
         break;
       case "classic":
       case "slim":
-        if (key !== skin.variant) void run({ variant: key });
+        if (key !== skin.variant) void run(() => ({ variant: key }));
         break;
       case "replace":
         picker.current?.click();
@@ -187,7 +189,11 @@ export function SkinMenu({ skin, worn, canApply, actions, disabled }: {
           onBlur={() => void commitName()}
           onKeyDown={(e) => {
             if (e.key === "Enter") void commitName();
-            else if (e.key === "Escape") setEditing(false);
+            else if (e.key === "Escape") {
+              // 入力が外れるときの blur で、編集中の名前が送られないようにする
+              sent.current = true;
+              setEditing(false);
+            }
             else e.continuePropagation();
           }}
           className="pointer-events-auto absolute inset-x-1.5 bottom-1.5"

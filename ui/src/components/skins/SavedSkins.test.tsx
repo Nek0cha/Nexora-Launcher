@@ -7,7 +7,9 @@ import {
   getCurrentSkin,
   getSavedSkinImage,
   importCurrentSkin,
+  deleteSavedSkin,
   listSavedSkins,
+  updateSavedSkin,
 } from "../../api/commands";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
@@ -24,6 +26,8 @@ vi.mock("../../api/commands", () => ({
   getSavedSkinImage: vi.fn(),
   importCurrentSkin: vi.fn(),
   listSavedSkins: vi.fn(),
+  deleteSavedSkin: vi.fn(),
+  updateSavedSkin: vi.fn(),
 }));
 
 const skin = (id: string, patch: Partial<SavedSkin> = {}): SavedSkin => ({
@@ -295,5 +299,93 @@ describe("import of the current skin", () => {
     expect(screen.getByTestId("toasts").textContent).toBe("");
     expect(screen.getAllByRole("button", { name: /^(Add skin|Skin \d)/ })).toHaveLength(4); // 追加のカード + スキン 3 枚（メニューのボタンは数えない）
     warn.mockRestore();
+  });
+});
+
+describe("the card menus inside the screen", () => {
+  const menus = () => screen.getAllByRole("button", { name: "Skin menu" }) as HTMLButtonElement[];
+  const openMenu = async (i: number) => {
+    fireEvent.click(menus()[i] as HTMLElement);
+    await screen.findByRole("menu");
+  };
+  const pick = (name: string) => {
+    const el = Array.from(document.querySelectorAll("[role^=menuitem]")).find((e) => e.textContent === name);
+    fireEvent.click(el as Element);
+  };
+
+  beforeEach(() => {
+    vi.mocked(updateSavedSkin).mockResolvedValue(skin("1"));
+    vi.mocked(deleteSavedSkin).mockResolvedValue(null);
+  });
+
+  it("never applies a card when its menu button or an item is pressed", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Skin 2" });
+    // 着ていないカード（Skin 2）のメニュー
+    for (const name of ["Rename", "Slim", "Replace file", "Delete"]) {
+      await openMenu(1);
+      pick(name);
+      await act(async () => {});
+    }
+    expect(applySavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("keeps every card and menu disabled between the update and the apply of a worn skin", async () => {
+    let releaseApply!: () => void;
+    vi.mocked(applySavedSkin).mockImplementation(() => new Promise((r) => (releaseApply = () => r(null))));
+    mount();
+    await screen.findByRole("button", { name: "Skin 2" });
+    await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
+    await openMenu(0);
+    pick("Slim");
+    await waitFor(() => expect(applySavedSkin).toHaveBeenCalledTimes(1));
+    fireEvent.click(card("Skin 3"));
+    expect(applySavedSkin).toHaveBeenCalledTimes(1);
+    expect(menus()[1]?.disabled).toBe(true);
+    await act(async () => releaseApply());
+  });
+
+  it("never enables the other cards between the update and the apply of a worn skin", async () => {
+    let releaseUpdate!: () => void;
+    vi.mocked(updateSavedSkin).mockImplementation(async () => {
+      await new Promise<void>((r) => (releaseUpdate = r));
+      return skin("1");
+    });
+    // 適用は呼ばれたところで止める（それより前の合間だけを見る）
+    let releaseApply!: () => void;
+    vi.mocked(applySavedSkin).mockImplementation(() => new Promise((r) => (releaseApply = () => r(null))));
+    mount();
+    await screen.findByRole("button", { name: "Skin 2" });
+    await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
+    await openMenu(0);
+    pick("Slim");
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
+    // 一連の間に、別のカードが 1 度でも押せる状態になったかを、DOM の変化で記録する
+    const other = card("Skin 3");
+    const seen: boolean[] = [other.disabled];
+    const observer = new MutationObserver(() => seen.push(other.disabled));
+    observer.observe(other, { attributes: true, attributeFilter: ["disabled"] });
+    await act(async () => releaseUpdate());
+    await waitFor(() => expect(applySavedSkin).toHaveBeenCalledWith("a1", "1"));
+    observer.disconnect();
+    expect(seen.every((d) => d)).toBe(true);
+    await act(async () => releaseApply());
+  });
+
+  it("keeps everything disabled while a picked file is being read", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Skin 2" });
+    await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
+    let release!: () => void;
+    const f = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    vi.spyOn(f, "arrayBuffer").mockImplementation(() => new Promise((r) => (release = () => r(new ArrayBuffer(1)))));
+    const input = document.querySelector("input[type=file][accept='image/png']:not([multiple])") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [f] } });
+    });
+    expect(menus()[1]?.disabled).toBe(true);
+    fireEvent.click(card("Skin 3"));
+    expect(applySavedSkin).not.toHaveBeenCalled();
+    await act(async () => release());
   });
 });

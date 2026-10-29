@@ -21,13 +21,14 @@ type CardProps = {
   /** 着ているスキンか（メニューの編集のあとに適用し直すかの判断に使う） */
   worn: boolean;
   canApply: boolean;
-  actions: ReturnType<typeof useSkinActions>;
+  actions: Pick<ReturnType<typeof useSkinActions>, "update" | "remove" | "apply">;
+  onWorking: (working: boolean) => void;
   /** 適用・追加などの最中。メニューも止める */
   busy: boolean;
 };
 
 /** 画像の取得はカードごと（画像は変わらないのでキャッシュされる）。取れるまでは枠だけで、大きさは変わらない */
-function SavedSkinCard({ skin, selected, pending, disabled, onPress, worn, canApply, actions, busy }: CardProps) {
+function SavedSkinCard({ skin, selected, pending, disabled, onPress, worn, canApply, actions, busy, onWorking }: CardProps) {
   const image = useSavedSkinImage(skin);
   return (
     <SkinCard
@@ -38,7 +39,7 @@ function SavedSkinCard({ skin, selected, pending, disabled, onPress, worn, canAp
       pending={pending}
       disabled={disabled}
       onPress={onPress}
-      menu={<SkinMenu skin={skin} worn={worn} canApply={canApply} actions={actions} disabled={busy} />}
+      menu={<SkinMenu skin={skin} worn={worn} canApply={canApply} actions={actions} disabled={busy} onWorking={onWorking} />}
     />
   );
 }
@@ -62,8 +63,10 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
   const toast = useToast();
   // 追加の一連の最中（ファイルの合間も）は、スキンの適用を始めさせない
   const [adding, setAdding] = useState(false);
+  // メニューの編集（ファイルの読み込み・更新・適用の一連）の最中も同じく止める
+  const [editing, setEditing] = useState(false);
 
-  const busy = actions.busy || adding;
+  const busy = actions.busy || adding || editing;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => onBusyChange?.(false);
@@ -92,7 +95,7 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
       {/* 追加はライブラリへ足すだけでログインは要らないので、canApply には縛らない */}
-      <AddSkinCard disabled={actions.busy} actions={actions} onAdding={setAdding} />
+      <AddSkinCard disabled={actions.busy || editing} actions={actions} onAdding={setAdding} />
       {(saved.data ?? []).map((skin) => (
         <SavedSkinCard
           key={skin.id}
@@ -105,6 +108,7 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
           canApply={canApply}
           actions={actions}
           busy={busy}
+          onWorking={setEditing}
         />
       ))}
     </div>
