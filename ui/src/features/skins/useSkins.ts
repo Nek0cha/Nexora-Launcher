@@ -39,11 +39,17 @@ export function useSavedSkinImage(skin: SavedSkin) {
   });
 }
 
+/**
+ * アカウントを切り替えた直後は、新しいアカウントのスキンが届くまで前のアカウントの表示（プレビューとチェック）を残し、
+ * 空の枠を挟まずに 1 回で移る。アカウントが無い（null）ときは残さない（別のアカウントのスキンを誤って見せない）。
+ * 残っている間は isPlaceholderData が真。
+ */
 export function useCurrentSkin(accountId: string | null) {
   return useQuery({
     queryKey: [...SKINS_KEY, "current", accountId],
     queryFn: () => getCurrentSkin(accountId as string),
     enabled: accountId !== null,
+    placeholderData: (previous) => (accountId !== null ? previous : undefined),
   });
 }
 

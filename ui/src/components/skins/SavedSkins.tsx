@@ -40,19 +40,32 @@ function SavedSkinCard({ skin, selected, pending, disabled, onPress }: CardProps
  * チェックは現在のスキンの取り直しが終わるまで古いカードに残る（useSkinActions が取り直しまで進行中を保つ）。
  * canApply が偽（要ログイン・オフライン）のときは、見た目はそのままで押せないだけにする。
  */
-export function SavedSkins({ accountId, canApply }: { accountId: string | null; canApply: boolean }) {
+export function SavedSkins({ accountId, canApply, onBusyChange }: {
+  accountId: string | null;
+  canApply: boolean;
+  /** 適用・マント・追加などの最中（追加の一連の合間も含む）かどうかを親へ伝える。アカウントの切り替えを止めるのに使う */
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const saved = useSavedSkins();
-  const current = useCurrentSkin(accountId);
+  // 要ログイン・オフラインのアカウントの現在のスキンは取りにいかない（取れても 401 になるだけで、頼らない）
+  const current = useCurrentSkin(canApply ? accountId : null);
   const actions = useSkinActions(accountId);
   const importSkin = useImportCurrentSkin();
   const toast = useToast();
   // 追加の一連の最中（ファイルの合間も）は、スキンの適用を始めさせない
   const [adding, setAdding] = useState(false);
 
+  const busy = actions.busy || adding;
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
+
   // いま着ているスキンの取り込みは、アカウントごとに画面を開いてから 1 回だけ。
   // 読める現在のスキン（Mojang から取れた画像）が要るので、ログインが有効なアカウントのときだけ行う
   const imported = useRef(new Set<string>());
-  const hasImage = !!current.data?.image;
+  // 前のアカウントの表示を借りている間（isPlaceholderData）は、このアカウントのものではないので数えない
+  const hasImage = !!current.data?.image && !current.isPlaceholderData;
   useEffect(() => {
     if (accountId === null || !canApply || !hasImage || imported.current.has(accountId)) return;
     imported.current.add(accountId);
@@ -64,7 +77,7 @@ export function SavedSkins({ accountId, canApply }: { accountId: string | null; 
 
   const press = (skin: SavedSkin) => {
     // 着ているものをもう一度適用しても何も変わらない
-    if (skin.sha256 === currentHash) return;
+    if (!current.isPlaceholderData && skin.sha256 === currentHash) return;
     actions.apply.mutate({ skinId: skin.id }, { onError: (e) => toast.showError(e) });
   };
 
@@ -78,7 +91,7 @@ export function SavedSkins({ accountId, canApply }: { accountId: string | null; 
           skin={skin}
           selected={currentHash !== null && skin.sha256 === currentHash}
           pending={applying === skin.id}
-          disabled={!canApply || actions.busy || adding}
+          disabled={!canApply || busy}
           onPress={() => press(skin)}
         />
       ))}

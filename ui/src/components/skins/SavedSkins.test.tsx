@@ -211,10 +211,13 @@ describe("SavedSkins", () => {
     expect(busy("Skin 2")).toBeNull();
   });
 
-  it("renders disabled cards, with the same marks, when the account cannot apply", async () => {
+  it("renders disabled cards, with no mark and no request for the current skin, when the account cannot apply", async () => {
     mount({ accountId: "a1", canApply: false });
-    await waitFor(() => expect(checkedNames()).toEqual(["Skin 1"]));
+    await screen.findByRole("button", { name: "Skin 1" });
     for (const name of ["Skin 1", "Skin 2", "Skin 3"]) expect(card(name).disabled).toBe(true);
+    await act(async () => {});
+    expect(getCurrentSkin).not.toHaveBeenCalled();
+    expect(checkedNames()).toEqual([]);
     fireEvent.click(card("Skin 2"));
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
@@ -270,8 +273,8 @@ describe("import of the current skin", () => {
   it("does not import when the account cannot apply", async () => {
     mount({ accountId: "a1", canApply: false });
     await screen.findByRole("button", { name: "Skin 1" });
-    await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
     await act(async () => {});
+    expect(getCurrentSkin).not.toHaveBeenCalled();
     expect(importCurrentSkin).not.toHaveBeenCalled();
   });
 

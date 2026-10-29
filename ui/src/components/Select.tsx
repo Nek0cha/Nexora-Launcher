@@ -7,7 +7,7 @@ export type Option<T extends string> = { id: T; label: string };
 
 // 一覧の開閉。ボタンの側から 4px 動きながら現れる。開くときは base、閉じるときは fast。
 // 動きを減らす設定では移動をやめ、不透明度だけを fast で変える
-const popoverMotion = [
+export const popoverMotion = [
   "transition-[opacity,translate] duration-(--duration-base) ease-out-quint",
   "entering:opacity-0 exiting:opacity-0 exiting:duration-(--duration-fast)",
   "motion-safe:placement-bottom:entering:-translate-y-1 motion-safe:placement-bottom:exiting:-translate-y-1",
@@ -24,7 +24,7 @@ const triggerClass = [
 
 // キーボードで移動中の項目は、ホバーと同じ面の明度で示す。この面がフォーカスの印の代わりになる。
 // キーボードを使った後はホバーでフォーカスが移らないため、ホバーにも同じ面を直接付ける
-const optionClass =
+export const optionClass =
   "flex h-9 cursor-default items-center gap-2 rounded-sm px-2 text-text outline-none hover:bg-surface-3 focused:bg-surface-3 selected:text-text-strong";
 
 export function Select<T extends string>(props: {
