@@ -87,9 +87,11 @@
 
 ### 4.6 デフォルトスキン
 
-- 画像は同梱しない。取得元は次のいずれかで、**先に実際に確かめてから決める**（ビルダーの最初の作業）。
-  - A（私の案、未確認）: ゲーム本体の jar（ランチャーが Mojang から取得するもの）に入っているデフォルトスキンの画像を取り出す。取得元が公式のまま、同梱もしない。置き場所はバージョンで違う可能性があり、確かめる。
-  - B: Mojang の公開の URL（textures.minecraft.net）から取る。URL の安定性は未確認。
+- 画像は同梱しない。取得元は**A（ゲーム本体の jar）に決めた**。実際の jar で確かめた（2026-10-29、公式の version manifest にある最新の正式版 26.3 のクライアント jar。sha1 は version JSON の `downloads.client` と一致した）。
+  - 置き場所: `assets/minecraft/textures/entity/player/wide/<名前>.png` と `assets/minecraft/textures/entity/player/slim/<名前>.png`。名前は alex、ari、efe、kai、makena、noor、steve、sunny、zuri の 9 つで、wide と slim の両方にあるため**全部で 18 枚**。どれも 64×64 の PNG（約 1 KB）。型は置き場所で決まる（`wide` が classic、`slim` が slim）。表示名はファイル名の先頭を大文字にしたもの（Steve など）。
+  - バージョン: この配置は 1.19.3 以降（1.21.11 の jar でも同じ 18 枚を確認）。それより古い版には `textures/entity/steve.png` と `alex.png` の 2 枚しかない。このため、**version manifest の最新の正式版**の jar を読む（古い版へのフォールバックは作らない）。
+  - 取得: ランチャーが起動のために使う取得元（piston-meta の manifest、version JSON の `downloads.client`）をそのまま使い、新しい通信先は足さない。jar は約 40 MB だが、`shared/versions` に同じ版の jar が検証済みで既にあればそれを読み、無ければ一時的にキャッシュの下へ取得して 18 枚を取り出したあとで消す。
+  - B（`textures.minecraft.net`）は採らない。URL が画像のハッシュで決まり、デフォルトの一覧を権威ある形で得る手段が確認できなかったため。
 - 取得できなかったときの見せ方は、名前だけのカードを出して、押すと取得を再試行する形にする。
 - 画像は取得後にキャッシュし、毎回ネットワークに出ない。キャッシュしたものを同梱の代わりにアプリに入れない。
 - 適用は、保存したスキンと同じ経路（`change_skin`）。デフォルトのスキンを適用しても、ライブラリには追加しない。
