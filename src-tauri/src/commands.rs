@@ -23,6 +23,7 @@ use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
+use nexora_core::skins::defaults::DefaultSkin;
 use nexora_core::skins::library::{self, SavedSkin, SavedSkinPatch};
 use nexora_core::skins::ops as skin_ops;
 use nexora_core::sync::JoinMode;
@@ -766,6 +767,34 @@ pub async fn apply_saved_skin(
     let services = state.services()?;
     let id = parse_account_id(&account_id)?;
     skin_ops::apply_saved(&services.db, services.launcher.auth(), id, &skin_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// デフォルトスキンの一覧。初回はゲームの jar から取り出して（時間がかかる）、以後はキャッシュを返す。
+/// 取得元に届かないときはエラー（画面は再試行のカードを出す）。
+#[tauri::command]
+pub async fn list_default_skins(state: State<'_, AppState>) -> CmdResult<Vec<DefaultSkin>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_default_skins()
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// デフォルトスキンをアカウントに適用する。ライブラリには足さない。知らないキーは `skin.not_found`。
+#[tauri::command]
+pub async fn apply_default_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+    key: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .apply_default_skin(id, &key)
         .await
         .map_err(ErrorPayload::from)
 }

@@ -50,6 +50,7 @@ use crate::meta::write_atomic;
 use crate::net::{Depth, Http};
 use crate::paths::AppPaths;
 use crate::settings;
+use crate::skins::defaults::{self, DefaultSkin};
 use crate::sync::apply::{ApplyFailure, ApplyOutcome, FailReason, apply_before_launch};
 use crate::sync::proposals::{self, Resolution};
 use crate::sync::registry::Category;
@@ -204,6 +205,24 @@ impl Launcher {
 
     pub fn auth(&self) -> &AuthService {
         &self.auth
+    }
+
+    /// デフォルトスキンの一覧（ゲームの jar から取り出し、キャッシュする）。
+    pub async fn list_default_skins(&self) -> Result<Vec<DefaultSkin>, CoreError> {
+        defaults::list_defaults(&self.env.http, &self.env.paths, &self.env.urls.manifest).await
+    }
+
+    /// デフォルトスキンをアカウントに適用する（ライブラリには足さない）。
+    pub async fn apply_default_skin(&self, account_id: Uuid, key: &str) -> Result<(), CoreError> {
+        defaults::apply_default(
+            &self.env.http,
+            &self.env.paths,
+            &self.env.urls.manifest,
+            &self.auth,
+            account_id,
+            key,
+        )
+        .await
     }
 
     /// ログインのタスクを始める。ログインのタスクが動いていれば、新しく作らずにその ID を返す。

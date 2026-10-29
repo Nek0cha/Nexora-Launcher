@@ -202,6 +202,8 @@ pub fn run() {
             commands::update_saved_skin,
             commands::delete_saved_skin,
             commands::apply_saved_skin,
+            commands::list_default_skins,
+            commands::apply_default_skin,
             commands::import_current_skin,
             commands::stop_instance,
             commands::open_instance_folder,
