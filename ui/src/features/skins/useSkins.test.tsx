@@ -5,7 +5,14 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
-import { useCurrentSkin, useDefaultSkins, useSavedSkinImage, useSavedSkins, useSkinActions } from "./useSkins";
+import {
+  useCurrentSkin,
+  useDefaultSkins,
+  useImportCurrentSkin,
+  useSavedSkinImage,
+  useSavedSkins,
+  useSkinActions,
+} from "./useSkins";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -130,5 +137,36 @@ describe("useSkinActions", () => {
     expect(invoke).toHaveBeenCalledWith("delete_saved_skin", { skinId: "s1" });
     expect(invoke).toHaveBeenCalledWith("apply_default_skin", { accountId: "a1", key: "slim-alex" });
     expect(invoke).toHaveBeenCalledWith("set_cape", { accountId: "a1", capeId: null });
+  });
+});
+
+describe("useImportCurrentSkin", () => {
+  it("reads the saved list again only when a skin was added", async () => {
+    let imported: SavedSkin | null = saved;
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => (cmd === "list_saved_skins" ? [saved] : imported));
+    const hook = renderHook(() => ({ list: useSavedSkins(), imp: useImportCurrentSkin() }), { wrapper: wrapperFor() });
+    await waitFor(() => expect(hook.result.current.list.data).toEqual([saved]));
+
+    await act(async () => {
+      await hook.result.current.imp.mutateAsync({ accountId: "a1" });
+    });
+    expect(invoke).toHaveBeenCalledWith("import_current_skin", { accountId: "a1" });
+    expect(calls("list_saved_skins")).toBe(2);
+
+    imported = null;
+    await act(async () => {
+      await hook.result.current.imp.mutateAsync({ accountId: "a1" });
+    });
+    expect(calls("list_saved_skins")).toBe(2);
+  });
+
+  it("only warns when the import fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(invoke).mockRejectedValue(new Error("offline"));
+    const hook = renderHook(() => useImportCurrentSkin(), { wrapper: wrapperFor() });
+    act(() => hook.result.current.mutate({ accountId: "a1" }));
+    await waitFor(() => expect(hook.result.current.isError).toBe(true));
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

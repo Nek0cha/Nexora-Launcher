@@ -7,6 +7,7 @@ import {
   deleteSavedSkin,
   getCurrentSkin,
   getSavedSkinImage,
+  importCurrentSkin,
   listDefaultSkins,
   listSavedSkins,
   setCape,
@@ -40,6 +41,19 @@ export function useCurrentSkin(accountId: string | null) {
     queryKey: [...SKINS_KEY, "current", accountId],
     queryFn: () => getCurrentSkin(accountId as string),
     enabled: accountId !== null,
+  });
+}
+
+/**
+ * いま着ているスキンをライブラリに取り込む（無ければ追加される）。便利機能なので、失敗は画面に出さず警告だけにする。
+ * 追加されたときだけ、保存済みの一覧を取り直す（現在のスキンは変わらないので巻き込まない）。
+ */
+export function useImportCurrentSkin() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId }: { accountId: string }) => importCurrentSkin(accountId),
+    onSuccess: (skin) => (skin ? client.invalidateQueries({ queryKey: [...SKINS_KEY, "saved"] }) : undefined),
+    onError: (e) => console.warn("import current skin failed", e),
   });
 }
 
