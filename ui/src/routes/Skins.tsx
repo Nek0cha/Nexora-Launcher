@@ -7,6 +7,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ReadyGate, useLatchedPending } from "../components/ReadyGate";
 import { Skeleton } from "../components/Skeleton";
 import { AccountSwitch } from "../components/skins/AccountSwitch";
+import { CapePicker } from "../components/skins/CapePicker";
 import { DefaultSkins } from "../components/skins/DefaultSkins";
 import { SavedSkins } from "../components/skins/SavedSkins";
 import { SkinPreviewSlot } from "../components/skins/SkinPreviewSlot";
@@ -51,7 +52,8 @@ export default function Skins() {
   // 適用・マント・追加の最中か（SavedSkins が伝える）。この間はアカウントを切り替えさせない
   const [savedBusy, setSavedBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState(false);
-  const busy = savedBusy || defaultBusy;
+  const [capeBusy, setCapeBusy] = useState(false);
+  const busy = savedBusy || defaultBusy || capeBusy;
 
   const list = accounts.data;
   // 選んだアカウントが一覧から消えたら、使用中の msa アカウントに戻る。以降の判断はすべてこの有効なアカウントで行う
@@ -130,16 +132,17 @@ export default function Skins() {
               {/* 左の列。3D プレビュー（大きさは読み込み中と同じ）と、その下にアカウントの切り替え */}
               <div className="flex w-64 shrink-0 flex-col gap-3">
                 <SkinPreviewSlot image={current?.image ?? null} variant={current?.variant ?? "classic"} capeImage={capeImage} />
+                <CapePicker accountId={accountId} canApply={applicable} blocked={savedBusy || defaultBusy} onBusyChange={setCapeBusy} />
                 <AccountSwitch accountId={accountId} onChange={setPicked} disabled={busy} />
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-8">
                 <section className="flex flex-col gap-3">
                   <h2 className={sectionHeading}>{t("skins.saved")}</h2>
-                  <SavedSkins accountId={accountId} canApply={applicable} blocked={defaultBusy} onBusyChange={setSavedBusy} />
+                  <SavedSkins accountId={accountId} canApply={applicable} blocked={defaultBusy || capeBusy} onBusyChange={setSavedBusy} />
                 </section>
                 <section className="flex flex-col gap-3">
                   <h2 className={sectionHeading}>{t("skins.defaults")}</h2>
-                  <DefaultSkins accountId={accountId} canApply={applicable} blocked={savedBusy} onBusyChange={setDefaultBusy} />
+                  <DefaultSkins accountId={accountId} canApply={applicable} blocked={savedBusy || capeBusy} onBusyChange={setDefaultBusy} />
                 </section>
               </div>
             </div>
