@@ -70,7 +70,7 @@ export function SkinCard({ image, name, variant = "classic", selected, pending, 
 }) {
   return (
     // aria-busy は react-aria の Button が DOM に通さないので、カードの枠に付ける
-    <div aria-busy={pending || undefined} className="relative aspect-[2/3] w-full">
+    <div aria-busy={pending || undefined} className="group relative aspect-[2/3] w-full">
       <Button
         aria-label={name}
         aria-pressed={selected}
@@ -91,7 +91,8 @@ export function SkinCard({ image, name, variant = "classic", selected, pending, 
           className="pointer-events-none absolute top-1.5 right-1.5 size-5 text-text-muted motion-safe:animate-spin"
         />
       ) : null}
-      {menu && <div className="absolute top-1.5 left-1.5">{menu}</div>}
+      {/* 重ねる層は押せない。メニューの部品が自分で pointer-events-auto を付け、カードの適用を邪魔しない */}
+      {menu && <div className="pointer-events-none absolute inset-0">{menu}</div>}
     </div>
   );
 }

@@ -109,7 +109,15 @@
     "saved": "Saved skins",
     "defaults": "Default skins",
     "preview": "Skin preview",
-    "add": "Add skin"
+    "add": "Add skin",
+    "menu": "Skin menu",
+    "name": "Name",
+    "rename": "Rename",
+    "model": "Model",
+    "classic": "Classic",
+    "slim": "Slim",
+    "replace": "Replace file",
+    "delete": "Delete"
   },
   "accounts": {
     "devTitle": "Development offline account",

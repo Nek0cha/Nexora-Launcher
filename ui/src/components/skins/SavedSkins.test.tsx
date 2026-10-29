@@ -117,7 +117,7 @@ describe("SavedSkins", () => {
   it("renders one card per saved skin, named by the skin", async () => {
     mount();
     expect(await screen.findByRole("button", { name: "Skin 1" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(4); // 追加のカード + スキン 3 枚
+    expect(screen.getAllByRole("button", { name: /^(Add skin|Skin \d)/ })).toHaveLength(4); // 追加のカード + スキン 3 枚（メニューのボタンは数えない）
   });
 
   it("marks only the card whose hash matches the current skin", async () => {
@@ -293,7 +293,7 @@ describe("import of the current skin", () => {
     mount();
     await waitFor(() => expect(warn).toHaveBeenCalled());
     expect(screen.getByTestId("toasts").textContent).toBe("");
-    expect(screen.getAllByRole("button")).toHaveLength(4); // 追加のカード + スキン 3 枚
+    expect(screen.getAllByRole("button", { name: /^(Add skin|Skin \d)/ })).toHaveLength(4); // 追加のカード + スキン 3 枚（メニューのボタンは数えない）
     warn.mockRestore();
   });
 });

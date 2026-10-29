@@ -10,6 +10,7 @@ import {
 import { useToast } from "../toast/useToast";
 import { AddSkinCard } from "./AddSkinCard";
 import { SkinCard } from "./SkinCard";
+import { SkinMenu } from "./SkinMenu";
 
 type CardProps = {
   skin: SavedSkin;
@@ -17,10 +18,16 @@ type CardProps = {
   pending: boolean;
   disabled: boolean;
   onPress: () => void;
+  /** 着ているスキンか（メニューの編集のあとに適用し直すかの判断に使う） */
+  worn: boolean;
+  canApply: boolean;
+  actions: ReturnType<typeof useSkinActions>;
+  /** 適用・追加などの最中。メニューも止める */
+  busy: boolean;
 };
 
 /** 画像の取得はカードごと（画像は変わらないのでキャッシュされる）。取れるまでは枠だけで、大きさは変わらない */
-function SavedSkinCard({ skin, selected, pending, disabled, onPress }: CardProps) {
+function SavedSkinCard({ skin, selected, pending, disabled, onPress, worn, canApply, actions, busy }: CardProps) {
   const image = useSavedSkinImage(skin);
   return (
     <SkinCard
@@ -31,6 +38,7 @@ function SavedSkinCard({ skin, selected, pending, disabled, onPress }: CardProps
       pending={pending}
       disabled={disabled}
       onPress={onPress}
+      menu={<SkinMenu skin={skin} worn={worn} canApply={canApply} actions={actions} disabled={busy} />}
     />
   );
 }
@@ -93,6 +101,10 @@ export function SavedSkins({ accountId, canApply, onBusyChange }: {
           pending={applying === skin.id}
           disabled={!canApply || busy}
           onPress={() => press(skin)}
+          worn={currentHash !== null && skin.sha256 === currentHash && !current.isPlaceholderData}
+          canApply={canApply}
+          actions={actions}
+          busy={busy}
         />
       ))}
     </div>
