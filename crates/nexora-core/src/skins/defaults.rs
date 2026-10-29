@@ -38,6 +38,8 @@ pub struct DefaultSkin {
     pub name: String,
     pub variant: SkinVariant,
     pub image: String,
+    /// 画素の内容のハッシュ（保存したスキンと同じ `pixel_hash`）。着ているスキンとの突き合わせに使う。
+    pub sha256: String,
 }
 
 /// キャッシュの索引の 1 件。画像は `<key>.png` に別に置く。
@@ -88,6 +90,7 @@ pub async fn list_defaults(
     Ok(entries
         .into_iter()
         .map(|e| DefaultSkin {
+            sha256: crate::skins::pixel_hash(&e.png),
             image: format!("data:image/png;base64,{}", STANDARD.encode(&e.png)),
             key: e.meta.key,
             name: e.meta.name,

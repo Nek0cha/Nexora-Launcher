@@ -8,4 +8,8 @@ export type DefaultSkin = {
 /**
  * 画面と適用の命令で使う識別子（`classic-steve`、`slim-alex` など）。
  */
-key: string, name: string, variant: SkinVariant, image: string, };
+key: string, name: string, variant: SkinVariant, image: string, 
+/**
+ * 画素の内容のハッシュ（保存したスキンと同じ `pixel_hash`）。着ているスキンとの突き合わせに使う。
+ */
+sha256: string, };
