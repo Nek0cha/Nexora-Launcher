@@ -107,7 +107,8 @@
   },
   "skins": {
     "saved": "保存したスキン",
-    "defaults": "デフォルトのスキン"
+    "defaults": "デフォルトのスキン",
+    "preview": "スキンのプレビュー"
   },
   "accounts": {
     "devTitle": "開発用のオフラインアカウント",

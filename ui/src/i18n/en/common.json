@@ -107,7 +107,8 @@
   },
   "skins": {
     "saved": "Saved skins",
-    "defaults": "Default skins"
+    "defaults": "Default skins",
+    "preview": "Skin preview"
   },
   "accounts": {
     "devTitle": "Development offline account",
