@@ -2,8 +2,11 @@ import type { ReactNode } from "react";
 import IconInfo from "~icons/ph/info";
 import IconWarning from "~icons/ph/warning";
 
-// 右の列の幅。名前の欄と、自動／手動の選択欄で揃える
-export const controlWidth = "w-60";
+// 右の列の幅。名前の欄と、自動／手動の選択欄で揃える。幅が足りないときは、ラベルでなくこちらが縮む
+export const controlWidth = "w-60 min-w-0";
+
+// 左のラベル。縮めず折り返さない（スクロールバーや文字の拡大で幅が減っても、文字の途中で改行しない）
+export const rowLabel = "shrink-0 whitespace-nowrap text-text";
 
 export const inputBase = [
   "h-9 rounded-md border border-line-control bg-surface-1 px-3 text-text",

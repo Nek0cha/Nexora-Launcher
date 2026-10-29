@@ -137,6 +137,19 @@ describe("CreateInstanceDialog", () => {
     expect(within(dialog).getByRole("button", { name: /Version/ }).textContent).toContain("1.21.5");
   });
 
+  it("keeps row labels from shrinking or wrapping and reserves the scrollbar's place, so the form does not reflow when it scrolls", async () => {
+    mount();
+    const dialog = await open();
+    await waitFor(() => expect(nameInput(dialog)).toBeTruthy());
+    const form = dialog.querySelector("form") as HTMLElement;
+    const scroller = form.querySelector(":scope > div.overflow-y-auto") as HTMLElement;
+    expect(scroller.className).toContain("[scrollbar-gutter:stable]");
+    for (const name of ["Name", "Version"]) {
+      const label = within(dialog).getByText(name, { selector: "label, span" });
+      expect(label.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
+    }
+  });
+
   it("shows the skeleton, not a half-built form, while versions load", async () => {
     vi.mocked(listVersions).mockReturnValue(new Promise(() => {}));
     mount();

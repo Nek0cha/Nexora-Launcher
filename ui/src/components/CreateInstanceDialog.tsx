@@ -45,11 +45,11 @@ import {
 } from "../features/instances/useCreateInstance";
 import { FailureNotice } from "./FailureNotice";
 import { InstanceAdvancedFields } from "./InstanceAdvancedFields";
-import { modalClass, overlayClass } from "./modal";
+import { overlayClass, wideModalClass } from "./modal";
 import { ReadyGate, useLatchedPending } from "./ReadyGate";
 import { Select } from "./Select";
 import { Skeleton } from "./Skeleton";
-import { controlWidth, inputBase } from "./settingsLayout";
+import { controlWidth, inputBase, rowLabel } from "./settingsLayout";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -121,7 +121,7 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
         <span>{t("create.open")}</span>
       </Button>
       <ModalOverlay isDismissable className={overlayClass}>
-        <Modal className={modalClass}>
+        <Modal className={wideModalClass}>
           <Dialog className="outline-hidden">{({ close }) => <CreateForm onDone={close} />}</Dialog>
         </Modal>
       </ModalOverlay>
@@ -356,7 +356,7 @@ function CreateFormBody({
       <Heading slot="title" className="px-5 pt-5 font-display text-lg font-semibold text-text-strong">
         {t("create.title")}
       </Heading>
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <Tabs
           selectedKey={loader}
           onSelectionChange={(key) => {
@@ -396,7 +396,7 @@ function CreateFormBody({
           {/* 中身はどのタブでも同じ欄なので、選んでいるタブの id を持つ 1 つのパネルを使い回す */}
           <TabPanel id={loader} className="flex flex-col gap-3 pt-4 pb-5 outline-none">
             <TextField value={name} onChange={setName} maxLength={64} autoFocus className="flex items-center justify-between gap-4">
-              <Label className="text-text">{t("create.name")}</Label>
+              <Label className={rowLabel}>{t("create.name")}</Label>
               {/* 空欄のまま作ると、既定の名前を使う。そのことを入力例として見せる */}
               <Input placeholder={currentDefault ?? undefined} className={inputClass} />
             </TextField>
@@ -530,7 +530,7 @@ function QueryRow({
     return (
       <div role="alert" className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-text">{label}</span>
+          <span className={rowLabel}>{label}</span>
           <Button onPress={() => void query.refetch()} isPending={query.isFetching} className={`${secondaryButton} ${controlWidth} justify-center`}>
             <IconRetry aria-hidden className="size-4" />
             <span>{t("create.retry")}</span>
@@ -545,7 +545,7 @@ function QueryRow({
     // 文が長いため、高さは折り返しに合わせて伸ばす
     return (
       <div className="flex items-center justify-between gap-4">
-        <span className="text-text">{label}</span>
+        <span className={rowLabel}>{label}</span>
         <span
           role="status"
           className={`flex min-h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 py-1.5 text-sm text-text-muted`}
@@ -559,7 +559,7 @@ function QueryRow({
     // 届いた後の Select と同じ行の形と高さにして、置き換わってもレイアウトを動かさない
     return (
       <div aria-busy="true" className="flex items-center justify-between gap-4">
-        <span className="text-text">{label}</span>
+        <span className={rowLabel}>{label}</span>
         <span className={`flex h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 text-sm text-text-muted`}>
           {loadingText}
         </span>

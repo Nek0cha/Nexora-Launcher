@@ -21,3 +21,7 @@ export const modalClass = [
   "data-exiting:opacity-0 motion-safe:data-exiting:translate-y-2 data-exiting:duration-(--duration-fast)",
   "motion-reduce:transition-opacity motion-reduce:duration-(--duration-fast)",
 ].join(" ");
+
+// 作成のダイアログ用に少し広くする。ラベル + 右の列（15rem）の行が、スクロールバーの分を引いても窮屈にならない幅
+export const wideModalClass = modalClass.replace("max-w-lg", "max-w-xl");
+

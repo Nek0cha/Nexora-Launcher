@@ -1,6 +1,7 @@
 import IconMinus from "~icons/ph/minus";
 import IconPlus from "~icons/ph/plus";
 import { Button, Group, Input, Label, NumberField as AriaNumberField, Text } from "react-aria-components";
+import { rowLabel } from "./settingsLayout";
 
 // 押せる範囲は 28px 四方。押した瞬間に面を1段深くし、長押しの連続増減は React Aria の標準の動作に任せる
 const stepButton = [
@@ -35,7 +36,7 @@ export function NumberField(props: {
       className="flex items-center justify-between gap-4"
     >
       <div className="flex flex-col">
-        <Label className="text-text">{props.label}</Label>
+        <Label className={rowLabel}>{props.label}</Label>
         {props.description && (
           <Text slot="description" className="text-xs text-text-muted">
             {props.description}
