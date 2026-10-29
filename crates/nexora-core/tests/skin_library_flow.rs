@@ -2,6 +2,7 @@
 
 mod common;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -192,7 +193,7 @@ async fn import_current_skin_returns_none_and_logs_nothing_when_there_is_no_skin
     mount_chain(&e.server, 86_400, Ownership::Owned).await;
     let id = e.login().await;
     assert!(
-        ops::import_current_skin(&e.db, &e.auth, id, 1)
+        ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 1)
             .await
             .unwrap()
             .is_none()
@@ -252,7 +253,7 @@ async fn import_current_skin_imports_once_with_profile_variant_and_username() {
     let url = format!("{}/texture/lib-skin", e.server.uri());
     seed_image(&e, &url, &bytes);
     mount_profile_with_skin(&e, &url, "SLIM").await;
-    let s = ops::import_current_skin(&e.db, &e.auth, id, 5)
+    let s = ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 5)
         .await
         .unwrap()
         .expect("imported");
@@ -262,7 +263,7 @@ async fn import_current_skin_imports_once_with_profile_variant_and_username() {
     assert_eq!(log_count(&e), 1);
     // 二度目は取り込まない
     assert!(
-        ops::import_current_skin(&e.db, &e.auth, id, 6)
+        ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 6)
             .await
             .unwrap()
             .is_none()
@@ -270,7 +271,7 @@ async fn import_current_skin_imports_once_with_profile_variant_and_username() {
     // 削除しても戻らない
     library::delete(&e.db, &s.id).unwrap();
     assert!(
-        ops::import_current_skin(&e.db, &e.auth, id, 7)
+        ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 7)
             .await
             .unwrap()
             .is_none()
@@ -288,7 +289,7 @@ async fn import_current_skin_with_an_unfetchable_texture_logs_nothing_and_retrie
     let url = format!("{}/texture/never-yet", e.server.uri());
     mount_profile_with_skin(&e, &url, "CLASSIC").await;
     assert!(
-        ops::import_current_skin(&e.db, &e.auth, id, 1)
+        ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 1)
             .await
             .unwrap()
             .is_none()
@@ -303,7 +304,7 @@ async fn import_current_skin_with_an_unfetchable_texture_logs_nothing_and_retrie
         .expect(1)
         .mount(&e.server)
         .await;
-    let s = ops::import_current_skin(&e.db, &e.auth, id, 2)
+    let s = ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, 2)
         .await
         .unwrap()
         .expect("imported later");

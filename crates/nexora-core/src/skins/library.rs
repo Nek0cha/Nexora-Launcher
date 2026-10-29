@@ -1,5 +1,7 @@
 //! 保存したスキンのライブラリ（`skin_library`）と、現在のスキンを一度だけ取り込む記録（`skin_import_log`）。
 
+use std::collections::HashSet;
+
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -246,9 +248,12 @@ pub fn delete(db: &Db, id: &str) -> Result<(), CoreError> {
 /// アカウントの現在のスキンを、(アカウント, 画素の内容) ごとに一度だけ取り込む。
 /// 取り込んだら `Some`。記録済み、またはすでに同じ画像がライブラリにあれば `None`
 /// （後者も記録は残す）。削除したスキンは、記録があるので二度と戻らない。
+/// `skip` に画素のハッシュが入っている画像（デフォルトスキン）は、記録だけ残して取り込まない。
+/// 利用者が選んで適用したデフォルトスキンを、次に画面を開いたときライブラリへ入れないため。
 pub fn import_current(
     db: &Db,
     account_id: Uuid,
+    skip: &HashSet<String>,
     name: &str,
     variant: SkinVariant,
     png: &[u8],
@@ -264,7 +269,7 @@ pub fn import_current(
             "INSERT OR IGNORE INTO skin_import_log (account_id, sha256) VALUES (?1, ?2)",
             params![account, sha],
         )?;
-        if logged == 0 || find_by_sha(&tx, &sha)?.is_some() {
+        if logged == 0 || skip.contains(&sha) || find_by_sha(&tx, &sha)?.is_some() {
             tx.commit()?;
             return Ok(None);
         }
@@ -493,30 +498,56 @@ mod tests {
     }
 
     #[test]
+    fn import_current_leaves_a_skipped_image_out_but_logs_it() {
+        let db = Db::open_in_memory().unwrap();
+        let a = Uuid::new_v4();
+        let img = skin(8);
+        let skip = HashSet::from([pixel_hash(&img)]);
+        assert!(
+            import_current(&db, a, &skip, "Steve", SkinVariant::Classic, &img, 1)
+                .unwrap()
+                .is_none()
+        );
+        assert!(list(&db).unwrap().is_empty());
+        let logged: i64 = db
+            .with_conn(|conn| {
+                Ok(conn.query_row("SELECT COUNT(*) FROM skin_import_log", [], |r| r.get(0))?)
+            })
+            .unwrap();
+        assert_eq!(logged, 1);
+        // 別の画像は、同じ skip を渡しても取り込まれる
+        assert!(
+            import_current(&db, a, &skip, "Mine", SkinVariant::Classic, &skin(9), 2)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn import_current_adds_once_per_account_and_image() {
         let db = Db::open_in_memory().unwrap();
         let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
         let img = skin(5);
-        let first = import_current(&db, a, "Mine", SkinVariant::Slim, &img, 1)
+        let first = import_current(&db, a, &HashSet::new(), "Mine", SkinVariant::Slim, &img, 1)
             .unwrap()
             .unwrap();
         assert_eq!(first.variant, SkinVariant::Slim);
         assert!(
-            import_current(&db, a, "Mine", SkinVariant::Slim, &img, 2)
+            import_current(&db, a, &HashSet::new(), "Mine", SkinVariant::Slim, &img, 2)
                 .unwrap()
                 .is_none()
         );
         // 削除しても戻らない
         delete(&db, &first.id).unwrap();
         assert!(
-            import_current(&db, a, "Mine", SkinVariant::Slim, &img, 3)
+            import_current(&db, a, &HashSet::new(), "Mine", SkinVariant::Slim, &img, 3)
                 .unwrap()
                 .is_none()
         );
         assert!(list(&db).unwrap().is_empty());
         // 別のアカウントは取り込める
         assert!(
-            import_current(&db, b, "Mine", SkinVariant::Slim, &img, 4)
+            import_current(&db, b, &HashSet::new(), "Mine", SkinVariant::Slim, &img, 4)
                 .unwrap()
                 .is_some()
         );
@@ -525,9 +556,17 @@ mod tests {
         let other = skin(6);
         add(&db, "manual", None, &other, 5).unwrap();
         assert!(
-            import_current(&db, c, "Cur", SkinVariant::Classic, &other, 6)
-                .unwrap()
-                .is_none()
+            import_current(
+                &db,
+                c,
+                &HashSet::new(),
+                "Cur",
+                SkinVariant::Classic,
+                &other,
+                6
+            )
+            .unwrap()
+            .is_none()
         );
         assert_eq!(list(&db).unwrap().len(), 2);
         let logged: i64 = db
@@ -541,11 +580,30 @@ mod tests {
             .unwrap();
         assert_eq!(logged, 1);
         // 名前が空なら記録も残さない
-        assert!(import_current(&db, c, " ", SkinVariant::Classic, &skin(7), 7).is_err());
         assert!(
-            import_current(&db, c, "ok", SkinVariant::Classic, &skin(7), 7)
-                .unwrap()
-                .is_some()
+            import_current(
+                &db,
+                c,
+                &HashSet::new(),
+                " ",
+                SkinVariant::Classic,
+                &skin(7),
+                7
+            )
+            .is_err()
+        );
+        assert!(
+            import_current(
+                &db,
+                c,
+                &HashSet::new(),
+                "ok",
+                SkinVariant::Classic,
+                &skin(7),
+                7
+            )
+            .unwrap()
+            .is_some()
         );
     }
 }

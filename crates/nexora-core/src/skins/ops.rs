@@ -1,6 +1,7 @@
 //! ライブラリの操作のうち、ファイルや通信をまたぐもの（Tauri 命令から呼ぶ）。
 //! DB は同期の呼び出しの中でだけ使い、`await` をまたいで握らない。
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
@@ -96,9 +97,11 @@ pub async fn apply_saved(
 /// アカウントの現在のスキンを、まだ取り込んでいなければライブラリに取り込む。
 /// スキンがない、または取得に失敗したときは `None` で、記録も残さない（次の機会にやり直せる）。
 /// 型は Mojang のプロフィールのものを使い、名前はアカウントのユーザー名にする。
+/// `default_hashes`（デフォルトスキンの画素のハッシュ）と同じ画像は取り込まない。
 pub async fn import_current_skin(
     db: &Db,
     auth: &AuthService,
+    default_hashes: HashSet<String>,
     account_id: Uuid,
     now_ms: i64,
 ) -> Result<Option<SavedSkin>, CoreError> {
@@ -108,7 +111,15 @@ pub async fn import_current_skin(
     let db = db.clone();
     blocking(move || {
         let name = import_name(&accounts::get(&db, account_id)?.username);
-        library::import_current(&db, account_id, &name, variant, &png, now_ms)
+        library::import_current(
+            &db,
+            account_id,
+            &default_hashes,
+            &name,
+            variant,
+            &png,
+            now_ms,
+        )
     })
     .await
 }

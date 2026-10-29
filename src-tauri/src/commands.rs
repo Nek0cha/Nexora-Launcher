@@ -772,9 +772,17 @@ pub async fn import_current_skin(
 ) -> CmdResult<Option<SavedSkin>> {
     let services = state.services()?;
     let id = parse_account_id(&account_id)?;
-    skin_ops::import_current_skin(&services.db, services.launcher.auth(), id, now_ms())
-        .await
-        .map_err(ErrorPayload::from)
+    // 適用したデフォルトスキンを、現在のスキンとしてライブラリへ取り込まない
+    let defaults = services.launcher.cached_default_skin_hashes().await;
+    skin_ops::import_current_skin(
+        &services.db,
+        services.launcher.auth(),
+        defaults,
+        id,
+        now_ms(),
+    )
+    .await
+    .map_err(ErrorPayload::from)
 }
 
 /// 動いているゲームを止める。強制終了は外部プロセスを呼ぶことがあるため、別スレッドで動かす。

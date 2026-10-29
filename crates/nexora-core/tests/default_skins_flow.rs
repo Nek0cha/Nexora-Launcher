@@ -3,13 +3,17 @@
 
 mod common;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use common::{FakeMojang, MS_ACCESS, Ownership, REFRESH_1, auth_urls, hits_on, http, mount_chain};
+use common::{
+    FakeMojang, MS_ACCESS, Ownership, PROFILE_ID, PROFILE_NAME, REFRESH_1, auth_urls, hits_on,
+    http, mount_chain,
+};
 use nexora_core::auth::http::AuthHttp;
 use nexora_core::auth::microsoft::MsTokens;
 use nexora_core::auth::minecraft::SkinVariant;
@@ -21,7 +25,7 @@ use nexora_core::meta::mojang::manifest::client_jar_path;
 use nexora_core::net::hash::sha1_hex;
 use nexora_core::paths::AppPaths;
 use nexora_core::skins::defaults::{self, DefaultSkin};
-use nexora_core::skins::library;
+use nexora_core::skins::{library, ops};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -252,11 +256,14 @@ async fn env() -> Env {
     let paths = AppPaths::from_root(temp.path());
     let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
     let clock = Arc::new(AtomicI64::new(T0));
+    // 画像の取得先もモックにする（実際の textures.minecraft.net へは通信しない）
+    let mut urls = auth_urls(&server);
+    urls.texture_origin = Some(format!("{}/", server.uri()));
     let auth = AuthService::new(
         db.clone(),
         paths.clone(),
         AuthHttp::new().unwrap(),
-        auth_urls(&server),
+        urls,
         Some(store),
         Some("cid".into()),
     )
@@ -344,4 +351,66 @@ async fn apply_default_with_an_unknown_key_fails_without_uploading() {
 
     assert!(matches!(err, CoreError::SkinNotFound), "{err:?}");
     assert_eq!(hits_on(&e.server, "/mc/profile/skins").await, 0);
+}
+
+/// 適用したデフォルトスキンは現在のスキンになるが、次に画面を開いたときの取り込みでライブラリへ入れない（記録だけ残す）。
+#[tokio::test]
+async fn an_applied_default_skin_is_not_imported_as_the_current_skin() {
+    let fake = FakeMojang::start_with_client(&standard_jar()).await;
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await;
+    Mock::given(method("POST"))
+        .and(path("/mc/profile/skins"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .mount(&e.server)
+        .await;
+    defaults::apply_default(
+        &http(),
+        &e.paths,
+        &fake.manifest_url(),
+        &e.auth,
+        id,
+        "slim-alex",
+    )
+    .await
+    .unwrap();
+
+    // Mojang はいま、そのデフォルトスキンを現在のスキンとして返す
+    let url = format!("{}/texture/applied", e.server.uri());
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[{{"state":"ACTIVE","url":"{url}","variant":"SLIM"}}]}}"#
+        )))
+        .with_priority(1)
+        .mount(&e.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/texture/applied"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(skin_png(4)))
+        .mount(&e.server)
+        .await;
+
+    let hashes = defaults::cached_hashes(&e.paths).await;
+    assert_eq!(hashes.len(), 4);
+    let imported = ops::import_current_skin(&e.db, &e.auth, hashes, id, T0)
+        .await
+        .unwrap();
+    assert!(imported.is_none());
+    assert!(library::list(&e.db).unwrap().is_empty());
+    // 記録は残り、あとでキャッシュが空でも二度と取り込まれない
+    let again = ops::import_current_skin(&e.db, &e.auth, HashSet::new(), id, T0 + 1)
+        .await
+        .unwrap();
+    assert!(again.is_none());
+    assert!(library::list(&e.db).unwrap().is_empty());
+}
+
+/// デフォルトスキンのキャッシュが無ければ、通信せず空を返す。
+#[tokio::test]
+async fn cached_hashes_is_empty_without_a_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_root(temp.path());
+    assert!(defaults::cached_hashes(&paths).await.is_empty());
 }

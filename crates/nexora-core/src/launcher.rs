@@ -212,6 +212,11 @@ impl Launcher {
         defaults::list_defaults(&self.env.http, &self.env.paths, &self.env.urls.manifest).await
     }
 
+    /// キャッシュ済みのデフォルトスキンの画素のハッシュ（通信しない）。
+    pub async fn cached_default_skin_hashes(&self) -> std::collections::HashSet<String> {
+        defaults::cached_hashes(&self.env.paths).await
+    }
+
     /// デフォルトスキンをアカウントに適用する（ライブラリには足さない）。
     pub async fn apply_default_skin(&self, account_id: Uuid, key: &str) -> Result<(), CoreError> {
         defaults::apply_default(

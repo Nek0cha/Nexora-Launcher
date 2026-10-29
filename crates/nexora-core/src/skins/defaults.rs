@@ -5,6 +5,7 @@
 //! `wide/<名前>.png`（classic）と `slim/<名前>.png`（slim）が対象。取り出した画像は
 //! `cache/default-skins/` に置き、2 回目からは通信しない。
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -97,6 +98,21 @@ pub async fn list_defaults(
             variant: e.meta.variant,
         })
         .collect())
+}
+
+/// キャッシュ済みのデフォルトスキンの画素のハッシュ。通信はしない（キャッシュが無ければ空）。
+/// 現在のスキンの取り込みで、デフォルトスキンを除くのに使う。
+pub async fn cached_hashes(paths: &AppPaths) -> HashSet<String> {
+    let dir = cache_dir(paths);
+    blocking(move || {
+        Ok(read_cache(&dir)
+            .unwrap_or_default()
+            .iter()
+            .map(|e| crate::skins::pixel_hash(&e.png))
+            .collect())
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// デフォルトスキンをアカウントに適用する。保存したスキンと同じ `change_skin` の経路で、
