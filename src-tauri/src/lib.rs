@@ -193,6 +193,8 @@ pub fn run() {
             commands::duplicate_instance,
             commands::get_skin_variant,
             commands::change_skin,
+            commands::get_current_skin,
+            commands::set_cape,
             commands::stop_instance,
             commands::open_instance_folder,
             commands::system_memory_mb,

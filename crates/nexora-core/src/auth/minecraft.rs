@@ -161,6 +161,17 @@ impl SkinVariant {
     }
 }
 
+/// 所有しているマント。`url` は取得に使う https の URL。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Cape {
+    pub id: String,
+    pub alias: String,
+    pub url: String,
+    pub active: bool,
+}
+
 /// Minecraft のプロフィール。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
@@ -169,6 +180,8 @@ pub struct Profile {
     pub skin_url: Option<String>,
     /// 使用中のスキンのモデル。プロフィールに書かれていなければ None。
     pub skin_variant: Option<SkinVariant>,
+    /// 所有しているマント。信頼できない URL のものは含めない。
+    pub capes: Vec<Cape>,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +190,16 @@ struct ProfileBody {
     name: String,
     #[serde(default)]
     skins: Vec<SkinBody>,
+    #[serde(default)]
+    capes: Vec<CapeBody>,
+}
+
+#[derive(Deserialize)]
+struct CapeBody {
+    id: String,
+    state: Option<String>,
+    url: Option<String>,
+    alias: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -227,11 +250,24 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
     let skin_url = active
         .and_then(|s| s.url)
         .and_then(|u| skin_url_from_profile(&u));
+    let capes = b
+        .capes
+        .into_iter()
+        .filter_map(|c| {
+            Some(Cape {
+                url: skin_url_from_profile(&c.url?)?,
+                active: c.state.as_deref() == Some("ACTIVE"),
+                alias: c.alias.unwrap_or_else(|| c.id.clone()),
+                id: c.id,
+            })
+        })
+        .collect();
     Ok(Profile {
         id,
         name: b.name,
         skin_url,
         skin_variant,
+        capes,
     })
 }
 
@@ -297,6 +333,35 @@ pub async fn upload_skin(
     }
     if !reply.is_success() {
         return Err(http_status(reply.status, &urls.mc_skins));
+    }
+    Ok(())
+}
+
+/// 使用中のマントを変える。`Some(id)` は `PUT {mc_cape_active}` に `{"capeId": id}`、
+/// `None` は `DELETE {mc_cape_active}`（マントを外す）。
+/// 429 は `HttpStatus { status: 429 }`、5xx と通信の失敗は Offline。本文はエラーに入れない。
+pub async fn set_active_cape(
+    http: &AuthHttp,
+    urls: &AuthUrls,
+    mc: &McToken,
+    cape_id: Option<&str>,
+) -> Result<(), CoreError> {
+    let client = http.client();
+    let request = match cape_id {
+        Some(id) => client
+            .put(&urls.mc_cape_active)
+            .header("Content-Type", "application/json")
+            .body(json!({ "capeId": id }).to_string()),
+        None => client.delete(&urls.mc_cape_active),
+    }
+    .header("Accept", "application/json")
+    .bearer_auth(mc.access.expose_secret());
+    let reply = send_any_status(request).await?;
+    if reply.status >= 500 {
+        return Err(transient_status(reply.status));
+    }
+    if !reply.is_success() {
+        return Err(http_status(reply.status, &urls.mc_cape_active));
     }
     Ok(())
 }

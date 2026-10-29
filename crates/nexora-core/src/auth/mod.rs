@@ -33,6 +33,7 @@ pub struct AuthUrls {
     pub mc_license: String,
     pub mc_profile: String,
     pub mc_skins: String,
+    pub mc_cape_active: String,
 }
 
 impl Default for AuthUrls {
@@ -50,6 +51,7 @@ impl Default for AuthUrls {
             mc_license: format!("{mc}/entitlements/license"),
             mc_profile: format!("{mc}/minecraft/profile"),
             mc_skins: format!("{mc}/minecraft/profile/skins"),
+            mc_cape_active: format!("{mc}/minecraft/profile/capes/active"),
         }
     }
 }
@@ -102,6 +104,10 @@ mod tests {
         assert_eq!(
             u.mc_skins,
             "https://api.minecraftservices.com/minecraft/profile/skins"
+        );
+        assert_eq!(
+            u.mc_cape_active,
+            "https://api.minecraftservices.com/minecraft/profile/capes/active"
         );
     }
 

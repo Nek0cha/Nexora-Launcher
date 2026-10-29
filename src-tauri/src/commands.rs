@@ -8,6 +8,7 @@ use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
 use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
+use nexora_core::auth::service::CurrentSkin;
 use nexora_core::content::apply::ContentTaskReport;
 use nexora_core::content::identify::IdentifyReport;
 use nexora_core::content::modrinth::{SearchPage, SearchQuery};
@@ -657,6 +658,39 @@ pub async fn change_skin(
         .launcher
         .auth()
         .change_skin(id, variant, png)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// アカウントの現在のスキン（画像、ハッシュ、モデル）とマントの一覧を返す。
+#[tauri::command]
+pub async fn get_current_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<CurrentSkin> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .auth()
+        .current_skin(id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 使用中のマントを変える。`cape_id` が None ならマントを外す。
+#[tauri::command]
+pub async fn set_cape(
+    state: State<'_, AppState>,
+    account_id: String,
+    cape_id: Option<String>,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .auth()
+        .set_cape(id, cape_id)
         .await
         .map_err(ErrorPayload::from)
 }

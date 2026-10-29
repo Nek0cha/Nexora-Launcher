@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
@@ -67,6 +69,36 @@ pub struct AccountList {
     pub accounts: Vec<Account>,
     /// 製品版のビルドでは常に None。
     pub dev_offline: Option<DevOfflineAccount>,
+}
+
+/// スキン画面に出すマント 1 件。`image` は `data:image/png;base64,...`。取得できなければ None。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CapeView {
+    pub id: String,
+    pub alias: String,
+    pub active: bool,
+    pub image: Option<String>,
+}
+
+/// アカウントの現在のスキンとマント。
+/// スキンがなければ `image`、`sha256` は None、`variant` は Classic。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CurrentSkin {
+    /// スキンの画像全体（`data:image/png;base64,...`）。
+    pub image: Option<String>,
+    /// 画素の内容のハッシュ（`skins::pixel_hash`）。
+    pub sha256: Option<String>,
+    /// プロフィールに書かれたモデル（画像からは判定しない）。
+    pub variant: SkinVariant,
+    pub capes: Vec<CapeView>,
+}
+
+fn data_url(png: &[u8]) -> String {
+    format!("data:image/png;base64,{}", STANDARD.encode(png))
 }
 
 /// 「オフラインで遊ぶ」を出せるか（spec 4.7）。ログインし直しが必要なときは出さない。
@@ -418,7 +450,89 @@ impl AuthService {
         Ok(profile.skin_variant.unwrap_or(SkinVariant::Classic))
     }
 
+    /// 現在のスキンの画像（PNG のバイト）とモデル。プロフィールにスキンがない、または画像を
+    /// 取得できなければ None（`skin_path` と同じく、ログに残して失敗にしない）。
+    pub async fn current_skin_raw(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<(Vec<u8>, SkinVariant)>, CoreError> {
+        let (profile, png) = self.current_profile_and_skin(id).await?;
+        Ok(png.map(|png| (png, profile.skin_variant.unwrap_or(SkinVariant::Classic))))
+    }
+
+    /// 現在のスキンとマントの情報。マントの画像が取れないときは、そのマントの `image` だけ None。
+    pub async fn current_skin(&self, id: Uuid) -> Result<CurrentSkin, CoreError> {
+        let (profile, png) = self.current_profile_and_skin(id).await?;
+        let mut capes = Vec::with_capacity(profile.capes.len());
+        for cape in profile.capes {
+            let image = self.fetch_image(&cape.url).await.map(|b| data_url(&b));
+            capes.push(CapeView {
+                id: cape.id,
+                alias: cape.alias,
+                active: cape.active,
+                image,
+            });
+        }
+        Ok(CurrentSkin {
+            image: png.as_deref().map(data_url),
+            sha256: png.as_deref().map(crate::skins::pixel_hash),
+            variant: profile.skin_variant.unwrap_or(SkinVariant::Classic),
+            capes,
+        })
+    }
+
+    /// 使用中のマントを変える。`None` はマントを外す。
+    /// 401 なら、トークンを 1 回だけ取り直して 1 回だけ再試行する（`change_skin` と同じ）。
+    pub async fn set_cape(&self, id: Uuid, cape_id: Option<String>) -> Result<(), CoreError> {
+        accounts::get(&self.db, id)?;
+        let mut mc = self.minecraft_token(id).await?;
+        let first =
+            minecraft::set_active_cape(&self.http, &self.urls, &mc, cape_id.as_deref()).await;
+        match first {
+            Err(e) if unauthorized(&e) => {
+                self.forget_mc(id, &mc);
+                mc = self.minecraft_token(id).await?;
+                minecraft::set_active_cape(&self.http, &self.urls, &mc, cape_id.as_deref()).await?;
+            }
+            other => other?,
+        }
+        Ok(())
+    }
+
     // ---- 内部 ----
+
+    /// プロフィールと、使用中のスキンの画像のバイト（なければ、取得できなければ None）。
+    async fn current_profile_and_skin(
+        &self,
+        id: Uuid,
+    ) -> Result<(minecraft::Profile, Option<Vec<u8>>), CoreError> {
+        accounts::get(&self.db, id)?;
+        let mc = self.minecraft_token(id).await?;
+        let profile = minecraft::profile(&self.http, &self.urls, &mc).await?;
+        let png = match profile.skin_url.as_deref() {
+            Some(url) => self.fetch_image(url).await,
+            None => None,
+        };
+        Ok((profile, png))
+    }
+
+    /// キャッシュ経由で画像のバイトを読む。失敗はログに残して None。
+    async fn fetch_image(&self, url: &str) -> Option<Vec<u8>> {
+        let path = match minecraft::cached_skin(&self.paths, url).await {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::warn!(code = e.code(), "could not fetch the image");
+                return None;
+            }
+        };
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read the cached image");
+                None
+            }
+        }
+    }
 
     /// 拒否された Minecraft のトークンを、メモリから外す。待っている間に別の呼び出しが
     /// 取り直していれば、その新しいトークンは残す。
@@ -692,5 +806,8 @@ mod tests {
         assert_send(&auth.skin_path(id));
         assert_send(&auth.change_skin(id, SkinVariant::Classic, Vec::new()));
         assert_send(&auth.skin_variant(id));
+        assert_send(&auth.current_skin(id));
+        assert_send(&auth.current_skin_raw(id));
+        assert_send(&auth.set_cape(id, None));
     }
 }

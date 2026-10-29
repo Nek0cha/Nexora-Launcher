@@ -24,6 +24,7 @@ pub mod auth;
 pub mod launch;
 pub mod launcher;
 
+pub mod skins;
 pub mod sync;
 
 pub mod system;
