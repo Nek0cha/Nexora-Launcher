@@ -95,11 +95,13 @@ describe("ContentFilter", () => {
     const before = slot();
     expect(before).not.toBeNull();
     expect(before?.getAttribute("aria-hidden")).toBe("true");
-    expect(before?.querySelector("svg")).toBeNull();
+    expect(before?.querySelector("svg")).not.toBeNull();
     const frame = before?.className;
+    const emptyMark = before?.innerHTML;
     rerender(<ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={["a"]} onChange={() => {}} />);
     expect(slot()?.className).toBe(frame);
     expect(slot()?.querySelector("svg")).not.toBeNull();
+    expect(slot()?.innerHTML).not.toBe(emptyMark);
   });
 
   it("the skeleton chips take the same size classes and label width as the real chips, so the filter does not change height", () => {

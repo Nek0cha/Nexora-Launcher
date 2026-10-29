@@ -1,7 +1,8 @@
 import { useId } from "react";
 import { Input, type Key, SearchField, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import IconCheck from "~icons/ph/check";
+import IconCheck from "~icons/ph/check-circle-fill";
+import IconCircle from "~icons/ph/circle";
 import IconSearch from "~icons/ph/magnifying-glass";
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { Side } from "../../bindings/Side";
@@ -65,9 +66,9 @@ export function ChipGroup<T extends string>(props: {
           <ToggleButton key={o.id} id={o.id} className={chipClass}>
             {({ isSelected }) => (
               <>
-                {/* チェックの場所は選ばれていない札でも確保し、選んでも幅が変わらないようにする */}
+                {/* 印は選ばれていない札にも出し（空の丸）、選んでも幅が変わらないようにする */}
                 <span aria-hidden data-check-slot className="-ml-0.5 grid size-3.5 shrink-0 place-items-center">
-                  {isSelected && <IconCheck className="size-3.5" />}
+                  {isSelected ? <IconCheck className="size-3.5" /> : <IconCircle className="size-3.5 opacity-60" />}
                 </span>
                 <span>{o.label}</span>
               </>
