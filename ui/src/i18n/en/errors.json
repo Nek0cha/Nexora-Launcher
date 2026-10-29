@@ -23,6 +23,7 @@
   "net": {
     "offline": "Can't connect to the internet",
     "http_status": "The server returned an error (HTTP {{status}})",
+    "http_status_429": "Mojang has temporarily blocked further changes because there were too many in a row. Wait a moment and try again",
     "hash_mismatch": "A downloaded file was corrupted"
   },
   "meta": {
