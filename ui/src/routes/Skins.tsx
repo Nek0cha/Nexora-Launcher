@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconPlus from "~icons/ph/plus";
@@ -7,13 +7,11 @@ import { EmptyState } from "../components/EmptyState";
 import { ReadyGate, useLatchedPending } from "../components/ReadyGate";
 import { Skeleton } from "../components/Skeleton";
 import { SavedSkins } from "../components/skins/SavedSkins";
+import { SkinPreviewSlot } from "../components/skins/SkinPreviewSlot";
 import { useAccounts } from "../features/accounts/useAccounts";
 import { LoginDialog } from "../features/login/LoginDialog";
 import { canApply } from "../features/skins/canApply";
 import { useCurrentSkin, useSavedSkins } from "../features/skins/useSkins";
-
-// 3D のライブラリは大きい（約 130 kB gzip）ので、画面を開いたあとに別の塊として読む
-const SkinPreview = lazy(() => import("../components/skins/SkinPreview").then((m) => ({ default: m.SkinPreview })));
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -106,11 +104,7 @@ export default function Skins() {
             <div className="flex gap-10">
               {/* 左の列。3D プレビュー（大きさは読み込み中と同じ）。アカウントの切り替えは後のタスクが足す */}
               <div className="w-64 shrink-0">
-                <div data-testid="skin-preview-slot" className="h-96 w-64 overflow-hidden rounded-lg bg-surface-1">
-                  <Suspense fallback={<div className="size-full" />}>
-                    <SkinPreview image={current?.image ?? null} variant={current?.variant ?? "classic"} capeImage={capeImage} />
-                  </Suspense>
-                </div>
+                <SkinPreviewSlot image={current?.image ?? null} variant={current?.variant ?? "classic"} capeImage={capeImage} />
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-8">
                 <section className="flex flex-col gap-3">
