@@ -23,7 +23,7 @@ function CapeFace({ image }: { image: string }) {
   return (
     <span
       aria-hidden
-      className="absolute inset-1.5 rounded-sm"
+      className="block h-[64px] w-[40px] shrink-0 rounded-sm"
       style={{
         backgroundImage: `url("${image}")`,
         backgroundSize: `${(64 / FRONT.w) * 100}% ${(32 / FRONT.h) * 100}%`,
@@ -57,7 +57,7 @@ function CapeChip({ label, selected, pending, disabled, onPress, children }: {
       {selected ? (
         <IconCheck aria-hidden data-testid="cape-check" className="pointer-events-none absolute top-0.5 right-0.5 size-4 text-accent" />
       ) : pending ? (
-        <IconSpinner aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 size-4 text-text-muted motion-safe:animate-spin" />
+        <IconSpinner aria-hidden data-testid="cape-progress" className="pointer-events-none absolute top-0.5 right-0.5 size-4 text-text-muted motion-safe:animate-spin" />
       ) : null}
     </div>
   );
@@ -86,7 +86,12 @@ export function CapePicker({ accountId, canApply, blocked = false, onBusyChange 
   }, [busy, onBusyChange]);
 
   const capes = canApply ? (current.data?.capes ?? []) : [];
-  if (capes.length === 0) return null;
+  if (capes.length === 0) {
+    // 適用できるアカウントで、取得中か前のアカウントの表示（空）のままの間は、行の高さを取っておく（下が動かないように）。
+    // 0 枚と分かったとき、適用できないとき、取得に失敗したときだけ畳む。
+    const reserve = canApply && accountId !== null && (current.isPending || current.isPlaceholderData);
+    return reserve ? <div aria-hidden data-testid="cape-reserve" className="h-20" /> : null;
+  }
 
   // アカウントを切り替えた直後の前の表示は、触らせない
   const disabled = busy || blocked || current.isPlaceholderData;
