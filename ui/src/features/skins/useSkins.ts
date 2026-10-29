@@ -111,11 +111,13 @@ export function useSkinActions(accountId: string | null) {
       client.invalidateQueries({ queryKey: SKINS_KEY }),
       client.invalidateQueries({ queryKey: SKIN_KEY }),
     ]);
+  // マントはスキンの URL（顔の元）を変えないので、顔は取り直さない
+  const refreshCapes = () => client.invalidateQueries({ queryKey: SKINS_KEY });
   // Mojang へ変更を送る操作の成功のあと: 取り直しの間も冷却のままにし、取り直しが終わってから数える
-  const changed = async () => {
+  const changed = async (reload: () => Promise<unknown>) => {
     cool();
     try {
-      await refresh();
+      await reload();
     } finally {
       cool(CHANGE_COOLDOWN_MS);
     }
@@ -130,12 +132,12 @@ export function useSkinActions(accountId: string | null) {
 
   const apply = useMutation({
     mutationFn: ({ skinId }: { skinId: string }) => applySavedSkin(need(), skinId),
-    onSuccess: changed,
+    onSuccess: () => changed(refresh),
     onError: limited,
   });
   const applyDefault = useMutation({
     mutationFn: ({ key }: { key: string }) => applyDefaultSkin(need(), key),
-    onSuccess: changed,
+    onSuccess: () => changed(refresh),
     onError: limited,
   });
   const add = useMutation({
@@ -156,7 +158,7 @@ export function useSkinActions(accountId: string | null) {
   });
   const setCapeMutation = useMutation({
     mutationFn: ({ capeId }: { capeId: string | null }) => setCape(need(), capeId),
-    onSuccess: changed,
+    onSuccess: () => changed(refreshCapes),
     onError: limited,
   });
 

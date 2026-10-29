@@ -1,11 +1,13 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CurrentSkin } from "../../bindings/CurrentSkin";
 import type { SavedSkin } from "../../bindings/SavedSkin";
+import { getSkin } from "../../api/commands";
 import { IpcError } from "../../api/ipc";
+import { SKIN_KEY } from "../accounts/useAccounts";
 import {
   CHANGE_COOLDOWN_MS,
   RATE_LIMITED_COOLDOWN_MS,
@@ -105,6 +107,30 @@ describe("useSkinActions", () => {
     expect(hook.result.current.cur.data).toEqual(next);
     // 進行中が終わっても、冷却の間は busy のまま（明けるのは下の冷却のテストで確かめる）
     expect(hook.result.current.actions.busy).toBe(true);
+  });
+
+  it("does not reread the sidebar face after a cape change, but does after a skin change", async () => {
+    vi.mocked(invoke).mockImplementation(async () => null);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const face = renderHook(() => useQuery({ queryKey: [...SKIN_KEY, "a1"], queryFn: () => getSkin("a1") }), {
+      wrapper,
+    });
+    const hook = renderHook(() => useSkinActions("a1"), { wrapper });
+    await waitFor(() => expect(face.result.current.isSuccess).toBe(true));
+    expect(calls("get_skin")).toBe(1);
+
+    await act(async () => {
+      await hook.result.current.setCape.mutateAsync({ capeId: "c1" });
+    });
+    expect(calls("get_skin")).toBe(1);
+
+    await act(async () => {
+      await hook.result.current.apply.mutateAsync({ skinId: "s1" });
+    });
+    expect(calls("get_skin")).toBe(2);
   });
 
   it("reads the saved list again after add and addFromPath", async () => {
