@@ -73,4 +73,19 @@ describe("Breadcrumb", () => {
     expect(last?.className).toContain("min-w-0");
     expect(last?.querySelector("[aria-current]")?.className).toContain("truncate");
   });
+
+  it("truncates_the_middle_crumb_so_the_first_and_last_stay_whole", async () => {
+    mount("/instances/i1/modrinth", "A very long instance name ".repeat(10));
+    const nav = screen.getByTestId("page-name");
+    const middle = await within(nav).findByRole("link", { name: /A very long/ });
+    // the middle crumb is the only one allowed to shrink, and it truncates
+    expect(middle.closest("li")?.className).toContain("min-w-0");
+    expect(middle.closest("li")?.className).not.toContain("shrink-0");
+    expect(middle.className).toContain("truncate");
+    const items = nav.querySelectorAll("li");
+    expect(items).toHaveLength(3);
+    expect(items[0].className).toContain("shrink-0");
+    expect(items[2].className).toContain("shrink-0");
+    expect(items[2].className).not.toContain("min-w-0");
+  });
 });
