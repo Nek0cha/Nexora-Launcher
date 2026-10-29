@@ -127,8 +127,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
   const { t, i18n } = useTranslation();
   const client = useQueryClient();
   const toast = useToast();
-  const noteId = useId();
-
   // 解決はいつも直列。進んでいる間は、ほかの選択肢を押せない
   const resolve = useMutation({
     mutationKey: SYNC_KEY,
@@ -147,7 +145,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
   const ctx: ItemContext = {
     scope,
     busy: resolve.isPending,
-    noteId,
     current: (fieldId) => {
       const found = values.find((v) => v.fieldId === fieldId);
       return found ? formatValue(fieldId, found.value, t) : t("sync.proposals.notSet");
@@ -168,7 +165,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface-1 p-4">
-      <p className="text-sm text-text-muted">{t("sync.proposals.intro")}</p>
       {bulk && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3">
           <Button
@@ -191,9 +187,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
           <ConflictItem key={c.fieldId} conflict={c} ctx={ctx} />
         ))}
       </ul>
-      <p id={noteId} className="text-xs text-text-muted">
-        {t("sync.proposals.ignoreNote")}
-      </p>
     </div>
   );
 }
@@ -201,8 +194,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
 type ItemContext = {
   scope: Scope;
   busy: boolean;
-  /** 「無視」の注記の ID */
-  noteId: string;
   current: (fieldId: string) => string;
   format: (fieldId: string, value: string) => string;
   label: (fieldId: string) => string;
@@ -253,7 +244,6 @@ function SingleItem({ item, ctx }: { item: SingleProposal; ctx: ItemContext }) {
         <Button
           onPress={() => choose("ignore")}
           isDisabled={ctx.busy}
-          aria-describedby={ctx.noteId}
           className={quietButton}
         >
           {t("sync.proposals.ignore")}
@@ -266,7 +256,6 @@ function SingleItem({ item, ctx }: { item: SingleProposal; ctx: ItemContext }) {
 function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemContext }) {
   const { t } = useTranslation();
   const headingId = useId();
-  const noteId = useId();
   const [chosen, setChosen] = useState<string | null>(null);
   const label = ctx.label(conflict.fieldId);
   // 同じ値を出したインスタンスは 1 つの選択肢にまとめる
@@ -302,7 +291,6 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
         <Button
           onPress={() => chosen !== null && ctx.run(conflictCalls(conflict, { choose: chosen }, ctx.scope.instanceId))}
           isDisabled={ctx.busy || chosen === null}
-          aria-describedby={noteId}
           className={primaryButton}
         >
           {t("sync.proposals.applyChosen")}
@@ -310,15 +298,11 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
         <Button
           onPress={() => ctx.run(conflictCalls(conflict, "ignore", ctx.scope.instanceId))}
           isDisabled={ctx.busy}
-          aria-describedby={ctx.noteId}
           className={quietButton}
         >
           {t("sync.proposals.ignore")}
         </Button>
       </div>
-      <p id={noteId} className="text-xs text-text-muted">
-        {t("sync.proposals.conflictNote")}
-      </p>
     </li>
   );
 }

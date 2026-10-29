@@ -520,11 +520,8 @@
       "titleFor": "Match settings for {{name}}"
     },
     "screen": {
-      "intro": "Keep key bindings, volume and other settings the same across instances. Drag an instance onto a card, or pick one from “Add instance”, to join it. Joining changes nothing right away. It applies at the next launch.",
       "create": "Create shared settings",
       "createFrom": "Start from instance",
-      "emptyBody": "Keep key bindings, volume and other settings the same across instances. First, pick an instance to start the shared settings from.",
-      "noInstancesBody": "Shared settings keep settings the same across instances. Create an instance first.",
       "unjoined": "Instances not joined",
       "unjoinedNone": "Every instance has joined shared settings.",
       "name": "Name of the shared settings",
@@ -664,7 +661,6 @@
       "countProfile_other": "{{count}} settings were changed in the instances that use these settings",
       "review": "Review",
       "hide": "Hide",
-      "intro": "These settings were changed in game. They are not added to the shared settings on their own. Choose for each one.",
       "list": "Changed settings",
       "current": "Shared now",
       "thisInstance": "This instance",
@@ -672,14 +668,12 @@
       "keepForInstance": "Keep for this instance only",
       "keepFor": "Keep for {{names}} only",
       "ignore": "Ignore",
-      "ignoreNote": "If you choose Ignore, the shared value comes back on the next launch.",
       "applyAll_one": "Apply this {{count}} to all",
       "applyAll_other": "Apply these {{count}} to all",
       "conflictsExcluded": "Settings with different values are left out of applying all. Choose for each one.",
       "conflict": "The instances have different values. Choose one value to apply to all.",
       "conflictChoices": "Values of {{name}}",
       "applyChosen": "Apply the chosen value to all",
-      "conflictNote": "The instances with the other values also get this value on the next launch.",
       "notSet": "Not set",
       "applied": "Added to the shared settings. The instances get it on their next launch."
     }

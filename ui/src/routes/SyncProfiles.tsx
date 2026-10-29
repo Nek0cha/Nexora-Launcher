@@ -125,7 +125,7 @@ export default function SyncProfiles() {
 
   if (list.length === 0)
     return (
-      <EmptyState icon={IconSliders} title={t("nav.sync")} body={t("sync.screen.noInstancesBody")}>
+      <EmptyState icon={IconSliders} title={t("nav.sync")}>
         <CreateInstanceDialog trigger="primary" />
       </EmptyState>
     );
@@ -133,7 +133,7 @@ export default function SyncProfiles() {
   if (all.length === 0)
     return (
       <>
-        <EmptyState icon={IconSliders} title={t("nav.sync")} body={t("sync.screen.emptyBody")}>
+        <EmptyState icon={IconSliders} title={t("nav.sync")}>
           <CreateMenu instances={list} onPick={createFrom} variant="primary" />
         </EmptyState>
         {createDialog}
@@ -155,7 +155,6 @@ export default function SyncProfiles() {
           {title}
           <CreateMenu instances={list} onPick={createFrom} variant="quiet" />
         </div>
-        <p className="max-w-2xl text-sm text-text-muted">{t("sync.screen.intro")}</p>
       </header>
 
       <div className="grid grid-cols-[minmax(0,1fr)_13rem] items-start gap-6">

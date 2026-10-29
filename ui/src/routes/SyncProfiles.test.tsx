@@ -119,14 +119,17 @@ afterEach(() => {
 describe("SyncProfiles empty states", () => {
   it("asks to create an instance first when there is none", async () => {
     mount({ list: [] });
-    expect(await screen.findByText("共通設定は、インスタンスどうしで設定を揃える仕組みです。先にインスタンスを作ってください。")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "インスタンスを作成" })).toBeTruthy();
+    // 説明の文は置かず、操作だけを出す
+    expect(screen.queryByText(/揃える仕組み/)).toBeNull();
     expect(screen.getByRole("button", { name: "インスタンスを作成" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "共通設定を作る" })).toBeNull();
   });
 
   it("explains and offers to create one when there are no shared settings", async () => {
     mount();
-    expect(await screen.findByText(/まず、元にするインスタンスを選んで共通設定を作ります。/)).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "共通設定を作る" })).toBeTruthy();
+    expect(screen.queryByText(/元にするインスタンスを選んで/)).toBeNull();
     await press(screen.getByRole("button", { name: "共通設定を作る" }));
     const menu = await screen.findByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Survival", "Creative", "Modded"]);
@@ -157,8 +160,8 @@ describe("SyncProfiles", () => {
     expect(within(side).queryByText("Survival")).toBeNull();
     expect(within(side).getByText("Creative")).toBeTruthy();
     expect(within(side).getByText("Modded")).toBeTruthy();
-    expect(screen.getByText(/次の起動時に反映されます。/)).toBeTruthy();
-    // ドラッグのやり方は上の説明にあるので、脇では繰り返さない
+    // 上にも脇にも、ドラッグや反映の時期を説明する文は置かない
+    expect(screen.queryByText(/次の起動時に反映されます。/)).toBeNull();
     expect(within(side).queryByText("カードへドラッグすると参加します。")).toBeNull();
   });
 

@@ -107,15 +107,12 @@ describe("ProposalsSection on the instance card", () => {
     ]);
   });
 
-  it("notes that ignoring goes back to the shared value at the next launch", async () => {
+  it("has no note under the choices", async () => {
     mount({ instanceId: "i1", count: 3 });
     const list = await open();
     const ignore = within(item(list, "視野角")).getByRole("button", { name: "無視" });
-    const noteId = ignore.getAttribute("aria-describedby");
-    expect(noteId).toBeTruthy();
-    expect(document.getElementById(noteId!)?.textContent).toBe(
-      "「無視」を選ぶと、次の起動で共通設定の値に戻ります。",
-    );
+    expect(ignore.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByText(/次の起動で共通設定の値に戻ります/)).toBeNull();
   });
 
   it.each([
