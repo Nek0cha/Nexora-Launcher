@@ -82,10 +82,10 @@ describe("Breadcrumb", () => {
     expect(middle.closest("li")?.className).toContain("min-w-0");
     expect(middle.closest("li")?.className).not.toContain("shrink-0");
     expect(middle.className).toContain("truncate");
-    const items = nav.querySelectorAll("li");
+    const items = [...nav.querySelectorAll("li")];
     expect(items).toHaveLength(3);
-    expect(items[0].className).toContain("shrink-0");
-    expect(items[2].className).toContain("shrink-0");
-    expect(items[2].className).not.toContain("min-w-0");
+    expect(items[0]?.className).toContain("shrink-0");
+    expect(items[2]?.className).toContain("shrink-0");
+    expect(items[2]?.className).not.toContain("min-w-0");
   });
 });
