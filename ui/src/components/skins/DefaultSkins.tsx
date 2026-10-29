@@ -82,12 +82,12 @@ export function DefaultSkins({ accountId, canApply, blocked = false, onBusyChang
   if (!query.data) {
     return (
       <div className={grid}>
-        {showSkeleton &&
-          Array.from({ length: SKELETON_COUNT }, (_, i) => (
-            <div key={i} data-testid="default-skin-skeleton" className={cardBox}>
-              <Skeleton className="h-full w-full rounded-lg" />
-            </div>
-          ))}
+        {/* 場所は最初から取っておき（すぐ返っても高さが変わらない）、印の明滅は 150 ms 待ってから出す */}
+        {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+          <div key={i} aria-hidden data-testid={showSkeleton ? "default-skin-skeleton" : undefined} className={cardBox}>
+            {showSkeleton && <Skeleton className="h-full w-full rounded-lg" />}
+          </div>
+        ))}
       </div>
     );
   }
