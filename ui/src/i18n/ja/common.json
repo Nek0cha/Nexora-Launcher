@@ -108,6 +108,7 @@
   "skins": {
     "saved": "保存したスキン",
     "defaults": "デフォルトのスキン",
+    "retryDefaults": "再試行",
     "preview": "スキンのプレビュー",
     "add": "スキンを追加",
     "menu": "スキンのメニュー",

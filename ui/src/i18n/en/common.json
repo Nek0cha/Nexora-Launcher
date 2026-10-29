@@ -108,6 +108,7 @@
   "skins": {
     "saved": "Saved skins",
     "defaults": "Default skins",
+    "retryDefaults": "Retry",
     "preview": "Skin preview",
     "add": "Add skin",
     "menu": "Skin menu",
