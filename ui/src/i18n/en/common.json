@@ -105,6 +105,10 @@
     "noResults": "No matching commands",
     "launchLast": "Launch {{name}}"
   },
+  "skins": {
+    "saved": "Saved skins",
+    "defaults": "Default skins"
+  },
   "accounts": {
     "devTitle": "Development offline account",
     "devHint": "Only in development builds. Release builds sign in with a Microsoft account.",

@@ -105,6 +105,10 @@
     "noResults": "一致するコマンドはありません",
     "launchLast": "{{name}} を起動する"
   },
+  "skins": {
+    "saved": "保存したスキン",
+    "defaults": "デフォルトのスキン"
+  },
   "accounts": {
     "devTitle": "開発用のオフラインアカウント",
     "devHint": "開発ビルドでだけ使えます。製品版では Microsoft アカウントでログインします。",

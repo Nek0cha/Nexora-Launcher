@@ -91,4 +91,13 @@ describe("Sidebar", () => {
     // 先頭の「ホーム」は MemoryRouter の "/" で選択中（塗り）
     expect(within(nav).getByRole("link", { name: "Home" }).getAttribute("aria-current")).toBe("page");
   });
+
+  it("has a skins item between browse and accounts", async () => {
+    mount({ accounts: [account()], devOffline: null });
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Skins" }).getAttribute("href")).toBe("/skins");
+    const keys = ITEMS.map((i) => i.key);
+    expect(keys.indexOf("skins")).toBe(keys.indexOf("browse") + 1);
+    expect(keys.indexOf("accounts")).toBe(keys.indexOf("skins") + 1);
+  });
 });
