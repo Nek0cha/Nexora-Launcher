@@ -114,12 +114,16 @@
     "add": "スキンを追加",
     "menu": "スキンのメニュー",
     "name": "名前",
-    "rename": "名前を変える",
     "model": "モデル",
     "classic": "クラシック",
     "slim": "スリム",
     "replace": "ファイルを差し替える",
-    "delete": "削除"
+    "delete": "削除",
+    "edit": "スキンを編集",
+    "file": "ファイル",
+    "chooseFile": "PNG を選ぶ",
+    "save": "保存",
+    "cancel": "キャンセル"
   },
   "accounts": {
     "devTitle": "開発用のオフラインアカウント",

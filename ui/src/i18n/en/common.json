@@ -114,12 +114,16 @@
     "add": "Add skin",
     "menu": "Skin menu",
     "name": "Name",
-    "rename": "Rename",
     "model": "Model",
     "classic": "Classic",
     "slim": "Slim",
     "replace": "Replace file",
-    "delete": "Delete"
+    "delete": "Delete",
+    "edit": "Edit skin",
+    "file": "File",
+    "chooseFile": "Choose PNG",
+    "save": "Save",
+    "cancel": "Cancel"
   },
   "accounts": {
     "devTitle": "Development offline account",

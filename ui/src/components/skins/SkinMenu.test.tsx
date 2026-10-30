@@ -79,18 +79,22 @@ function mount(props: Parameters<typeof Harness>[0]) {
   return { rerender: (p: Parameters<typeof Harness>[0]) => view.rerender(tree(p)) };
 }
 
+const menuButtons = () => screen.getAllByRole("button", { name: "Skin menu", hidden: true }) as HTMLButtonElement[];
 const open = async (id: string) => {
-  const btn = screen.getAllByRole("button", { name: "Skin menu" })[Number(id) - 1] as HTMLElement;
-  fireEvent.click(btn);
-  await screen.findByRole("menu");
+  fireEvent.click(menuButtons()[Number(id) - 1] as HTMLElement);
+  await screen.findByRole("dialog");
 };
-const items = () => [...screen.getAllByRole("menuitem"), ...screen.getAllByRole("menuitemradio")];
-const item = (name: string) => items().find((e) => e.textContent === name) as HTMLElement;
-const choose = async (name: string) => {
-  fireEvent.click(item(name));
-};
-const nameInput = () => screen.queryByRole("textbox", { name: "Name" }) as HTMLInputElement | null;
+const nameInput = () => screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+const saveButton = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
 const picker = () => document.querySelector("input[type=file]") as HTMLInputElement;
+const png = (bytes: number[]) => new File([new Uint8Array(bytes)], "new.png", { type: "image/png" });
+const choosePng = async (f: File) => {
+  await act(async () => {
+    fireEvent.change(picker(), { target: { files: [f] } });
+  });
+};
+const save = () => fireEvent.click(saveButton());
 const toasts = () => screen.getByTestId("toasts").querySelectorAll("li");
 
 let list: SavedSkin[];
@@ -115,161 +119,70 @@ const ready = async () => {
   await screen.findByRole("button", { name: "Skin 1" });
 };
 
-describe("SkinMenu rename", () => {
-  it("trims the name and sends it", async () => {
+describe("SkinMenu dialog", () => {
+  it("opens with the current values and sends nothing until Save", async () => {
+    list = [skin("1", { variant: "slim" }), skin("2")];
+    mount({ worn: "1" });
+    await ready();
+    await open("1");
+    expect(nameInput().value).toBe("Skin 1");
+    expect(radio("Slim").checked).toBe(true);
+    expect(radio("Classic").checked).toBe(false);
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.change(nameInput(), { target: { value: "Changed" } });
+    fireEvent.click(radio("Classic"));
+    await choosePng(png([1]));
+    expect(updateSavedSkin).not.toHaveBeenCalled();
+    expect(applySavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("starts from the current values again after cancelling", async () => {
     mount({ worn: null });
     await ready();
     await open("1");
-    await choose("Rename");
-    const input = await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput() as HTMLInputElement;
-    });
-    expect(input.value).toBe("Skin 1");
-    fireEvent.change(input, { target: { value: "  New name  " } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(nameInput(), { target: { value: "Changed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await open("1");
+    expect(nameInput().value).toBe("Skin 1");
+    expect(updateSavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("trims the name and sends only the name, without applying the worn skin", async () => {
+    mount({ worn: "1" });
+    await ready();
+    await open("1");
+    fireEvent.change(nameInput(), { target: { value: "  New name  " } });
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: "New name", variant: null, png: null }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(updateSavedSkin).toHaveBeenCalledTimes(1);
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
 
-  it("does not send an empty or whitespace-only name and keeps the old one", async () => {
+  it("cannot save an empty name or an unchanged form", async () => {
     mount({ worn: null });
     await ready();
     await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "   " } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.blur(input);
+    fireEvent.change(nameInput(), { target: { value: "   " } });
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.change(nameInput(), { target: { value: "Skin 1" } });
+    expect(saveButton().disabled).toBe(true);
+    save();
     expect(updateSavedSkin).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Skin 1" })).toBeTruthy();
-    expect(toasts()).toHaveLength(0);
   });
 
   it("accepts a name that another card already has", async () => {
     mount({ worn: null });
     await ready();
     await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Skin 2" } });
-    fireEvent.blur(input);
+    fireEvent.change(nameInput(), { target: { value: "Skin 2" } });
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: "Skin 2", variant: null, png: null }));
     expect(toasts()).toHaveLength(0);
   });
 
-  it("cancels with Escape without a call", async () => {
-    mount({ worn: null });
-    await ready();
-    await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Other" } });
-    // ブラウザは、フォーカスのある入力が外れるときに blur を送る。それを DOM の取り外しに合わせて再現する
-    const remove = Node.prototype.removeChild;
-    const spy = vi.spyOn(Node.prototype, "removeChild").mockImplementation(function <T extends Node>(this: Node, node: T): T {
-      if (node.contains(input)) fireEvent.blur(input);
-      return remove.call(this, node) as T;
-    });
-    try {
-      fireEvent.keyDown(input, { key: "Escape" });
-      await act(async () => new Promise((r) => setTimeout(r, 30)));
-    } finally {
-      spy.mockRestore();
-    }
-    expect(nameInput()).toBeNull();
-    expect(updateSavedSkin).not.toHaveBeenCalled();
-  });
-
-  it("does not upload the worn skin again when only its name changes", async () => {
-    mount({ worn: "1" });
-    await ready();
-    await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Renamed" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: "Renamed", variant: null, png: null }));
-    await waitFor(() => expect(nameInput()).toBeNull());
-    expect(applySavedSkin).not.toHaveBeenCalled();
-  });
-
-  it("sends exactly once when Enter is followed by a blur", async () => {
-    mount({ worn: null });
-    await ready();
-    await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Once" } });
-    act(() => {
-      fireEvent.keyDown(input, { key: "Enter" });
-      fireEvent.blur(input);
-    });
-    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledTimes(1));
-    await act(async () => {});
-    expect(updateSavedSkin).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the old name until the refetch ends, then the new one", async () => {
-    mount({ worn: null });
-    await ready();
-    let release!: () => void;
-    const gate = new Promise<void>((r) => (release = r));
-    vi.mocked(updateSavedSkin).mockImplementation(async (id, patch) => {
-      list = list.map((s) => (s.id === id ? { ...s, name: patch.name ?? s.name } : s));
-      return list[0] as SavedSkin;
-    });
-    // 保存の後の取り直しを止めておく
-    vi.mocked(listSavedSkins).mockImplementation(async () => {
-      await gate;
-      return list;
-    });
-    await open("1");
-    await choose("Rename");
-    const input = (await waitFor(() => {
-      expect(nameInput()).not.toBeNull();
-      return nameInput();
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Renamed" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
-    // 取り直しの途中：カードは古い名前のまま
-    expect(screen.getByRole("button", { name: "Skin 1" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Renamed" })).toBeNull();
-    await act(async () => release());
-    await screen.findByRole("button", { name: "Renamed" });
-    expect(screen.queryByRole("button", { name: "Skin 1" })).toBeNull();
-    expect(nameInput()).toBeNull();
-  });
-});
-
-describe("SkinMenu model", () => {
-  it("marks the current model", async () => {
-    list = [skin("1", { variant: "slim" }), skin("2")];
-    mount({ worn: null });
-    await ready();
-    await open("1");
-    expect(item("Slim").getAttribute("aria-checked")).toBe("true");
-    expect(item("Classic").getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("updates then applies when the skin is worn and can be applied", async () => {
+  it("updates then applies when the model of the worn skin changes", async () => {
     const order: string[] = [];
     vi.mocked(updateSavedSkin).mockImplementation(async () => {
       order.push("update");
@@ -282,17 +195,32 @@ describe("SkinMenu model", () => {
     mount({ worn: "1" });
     await ready();
     await open("1");
-    await choose("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(applySavedSkin).toHaveBeenCalledWith("acc", "1"));
     expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: null, variant: "slim", png: null });
     expect(order).toEqual(["update", "apply"]);
+  });
+
+  it("sends name, model and file in one update", async () => {
+    mount({ worn: "1" });
+    await ready();
+    await open("1");
+    fireEvent.change(nameInput(), { target: { value: "All" } });
+    fireEvent.click(radio("Slim"));
+    await choosePng(png([1, 2, 3]));
+    save();
+    await waitFor(() => expect(applySavedSkin).toHaveBeenCalledTimes(1));
+    expect(updateSavedSkin).toHaveBeenCalledTimes(1);
+    expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: "All", variant: "slim", png: [1, 2, 3] });
   });
 
   it("only updates when the skin is not worn", async () => {
     mount({ worn: "2" });
     await ready();
     await open("1");
-    await choose("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledTimes(1));
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
@@ -301,53 +229,63 @@ describe("SkinMenu model", () => {
     mount({ worn: "1", canApply: false });
     await ready();
     await open("1");
-    await choose("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledTimes(1));
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
 
-  it("does nothing for the model it already has", async () => {
-    mount({ worn: "1" });
-    await ready();
-    await open("1");
-    await choose("Classic");
-    expect(updateSavedSkin).not.toHaveBeenCalled();
-    expect(applySavedSkin).not.toHaveBeenCalled();
-  });
-
-  it("does not apply when the update fails, and reports once", async () => {
+  it("stays open and does not apply when the update fails, reporting once", async () => {
     vi.mocked(updateSavedSkin).mockRejectedValue({ code: "skin.not_found", params: {}, detail: null });
     mount({ worn: "1" });
     await ready();
     await open("1");
-    await choose("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(toasts()).toHaveLength(1));
     expect(applySavedSkin).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("keeps the old name on the card until the refetch ends", async () => {
+    mount({ worn: null });
+    await ready();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.mocked(updateSavedSkin).mockImplementation(async (id, patch) => {
+      list = list.map((s) => (s.id === id ? { ...s, name: patch.name ?? s.name } : s));
+      return list[0] as SavedSkin;
+    });
+    vi.mocked(listSavedSkins).mockImplementation(async () => {
+      await gate;
+      return list;
+    });
+    await open("1");
+    fireEvent.change(nameInput(), { target: { value: "Renamed" } });
+    save();
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Skin 1", hidden: true })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Renamed", hidden: true })).toBeNull();
+    await act(async () => release());
+    await screen.findByRole("button", { name: "Renamed" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
 
 describe("SkinMenu replace file", () => {
-  const png = (bytes: number[]) => new File([new Uint8Array(bytes)], "new.png", { type: "image/png" });
-  const choosePng = async (f: File) => {
-    await act(async () => {
-      fireEvent.change(picker(), { target: { files: [f] } });
-    });
-  };
-
-  it("opens the picker for png only", async () => {
+  it("accepts png only", async () => {
     mount({ worn: null });
     await ready();
-    expect(picker().accept).toBe("image/png");
-    const click = vi.spyOn(picker(), "click");
     await open("1");
-    await choose("Replace file");
-    expect(click).toHaveBeenCalled();
+    expect(picker().accept).toBe("image/png");
   });
 
   it("sends the bytes and applies again when worn", async () => {
     mount({ worn: "1" });
     await ready();
+    await open("1");
     await choosePng(png([1, 2, 3]));
+    save();
     await waitFor(() => expect(applySavedSkin).toHaveBeenCalledWith("acc", "1"));
     expect(updateSavedSkin).toHaveBeenCalledWith("1", { name: null, variant: null, png: [1, 2, 3] });
   });
@@ -355,7 +293,9 @@ describe("SkinMenu replace file", () => {
   it("only updates when not worn", async () => {
     mount({ worn: "2" });
     await ready();
+    await open("1");
     await choosePng(png([9]));
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledTimes(1));
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
@@ -363,35 +303,37 @@ describe("SkinMenu replace file", () => {
   it("rejects an oversized file before reading it, with one toast", async () => {
     mount({ worn: "1" });
     await ready();
+    await open("1");
     const big = png([1]);
     Object.defineProperty(big, "size", { value: 70 * 1024 });
     const read = vi.spyOn(big, "arrayBuffer");
     await choosePng(big);
     await waitFor(() => expect(toasts()).toHaveLength(1));
     expect(read).not.toHaveBeenCalled();
-    expect(updateSavedSkin).not.toHaveBeenCalled();
-    expect(applySavedSkin).not.toHaveBeenCalled();
+    expect(saveButton().disabled).toBe(true);
   });
 });
 
 describe("SkinMenu delete", () => {
-  it("deletes the library entry only, with no confirmation and no apply", async () => {
+  it("cannot delete the skin that is being worn", async () => {
     mount({ worn: "1" });
     await ready();
     await open("1");
-    await choose("Delete");
-    await waitFor(() => expect(deleteSavedSkin).toHaveBeenCalledWith("1"));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(applySavedSkin).not.toHaveBeenCalled();
-    expect(updateSavedSkin).not.toHaveBeenCalled();
+    const del = screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+    fireEvent.click(del);
+    expect(deleteSavedSkin).not.toHaveBeenCalled();
   });
 
-  it("puts delete last", async () => {
-    mount({ worn: null });
+  it("deletes the library entry only, with no confirmation and no apply", async () => {
+    mount({ worn: "2" });
     await ready();
     await open("1");
-    const names = Array.from(document.querySelectorAll("[role^=menuitem]")).map((e) => e.textContent);
-    expect(names).toEqual(["Rename", "Classic", "Slim", "Replace file", "Delete"]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteSavedSkin).toHaveBeenCalledWith("1"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(applySavedSkin).not.toHaveBeenCalled();
+    expect(updateSavedSkin).not.toHaveBeenCalled();
   });
 });
 
@@ -402,30 +344,28 @@ describe("SkinMenu on the card", () => {
     const view = mount({ worn: null });
     await ready();
     await open("2");
-    await choose("Delete");
-    await waitFor(() => expect((screen.getAllByRole("button", { name: "Skin menu" })[0] as HTMLButtonElement).disabled).toBe(true));
-    expect((screen.getAllByRole("button", { name: "Skin menu" })[1] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(menuButtons()[0]?.disabled).toBe(true));
+    expect(menuButtons()[1]?.disabled).toBe(true);
     await act(async () => release());
-    await waitFor(() => expect((screen.getAllByRole("button", { name: "Skin menu" })[0] as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(menuButtons()[0]?.disabled).toBe(false));
     view.rerender({ worn: null, adding: true });
-    expect((screen.getAllByRole("button", { name: "Skin menu" })[0] as HTMLButtonElement).disabled).toBe(true);
+    expect(menuButtons()[0]?.disabled).toBe(true);
   });
 
-  it("keeps the card and menu button size classes in every state", async () => {
-    const size = (c: string) => c.split(" ").filter((x) => /^(p|m|w|h|size|aspect|border(-\d)?$|inset|gap)/.test(x));
+  it("keeps every other card disabled while a save is running", async () => {
+    let releaseUpdate!: () => void;
+    vi.mocked(updateSavedSkin).mockImplementation(async () => {
+      await new Promise<void>((r) => (releaseUpdate = r));
+      return list[0] as SavedSkin;
+    });
     mount({ worn: null });
     await ready();
-    const card = screen.getByRole("button", { name: "Skin 1" });
-    const btn = screen.getAllByRole("button", { name: "Skin menu" })[0] as HTMLElement;
-    const before = [size(card.className), size(btn.className), size(card.parentElement!.className)];
     await open("1");
-    await choose("Rename");
-    await waitFor(() => expect(nameInput()).not.toBeNull());
-    const after = [
-      size(screen.getByRole("button", { name: "Skin 1" }).className),
-      size((screen.getAllByRole("button", { name: "Skin menu" })[0] as HTMLElement).className),
-      size(screen.getByRole("button", { name: "Skin 1" }).parentElement!.className),
-    ];
-    expect(after).toEqual(before);
+    fireEvent.change(nameInput(), { target: { value: "Slow" } });
+    save();
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
+    expect(menuButtons()[1]?.disabled).toBe(true);
+    await act(async () => releaseUpdate());
   });
 });

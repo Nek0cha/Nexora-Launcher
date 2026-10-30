@@ -3,9 +3,10 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconPlus from "~icons/ph/plus";
 import { onFilesDropped } from "../../api/dragDrop";
-import { IpcError } from "../../api/ipc";
-import { MAX_SKIN_BYTES, type useSkinActions } from "../../features/skins/useSkins";
+import type { SkinVariant } from "../../bindings/SkinVariant";
+import type { useSkinActions } from "../../features/skins/useSkins";
 import { useToast } from "../toast/useToast";
+import { readSkinFile, SkinDialog, SkinFields, stem } from "./SkinDialog";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -20,18 +21,90 @@ const cardButton = [
   ring,
 ].join(" ");
 
-/** 拡張子を除いたファイル名（スキンの名前にする） */
-const stem = (name: string) => name.replace(/\.[^.]*$/, "") || name;
+type Actions = Pick<ReturnType<typeof useSkinActions>, "add" | "addFromPath" | "update">;
+
+/** 追加のポップアップ。ファイルを選び、名前とモデルを決めて、保存を押したときだけライブラリへ足す */
+function AddSkinDialog({ actions, isOpen, onOpenChange, onAdding }: {
+  actions: Actions;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdding: (adding: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [variant, setVariant] = useState<SkinVariant>("classic");
+  const [file, setFile] = useState<{ name: string; png: number[] } | null>(null);
+  // 名前を自分で触ったら、ファイルを選び直しても上書きしない
+  const [edited, setEdited] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const trimmed = name.trim();
+  const canSave = file !== null && trimmed !== "";
+
+  const pickFile = async (picked: File) => {
+    try {
+      const png = await readSkinFile(picked);
+      setFile({ name: picked.name, png });
+      if (!edited) setName(stem(picked.name));
+    } catch (e) {
+      toast.showError(e);
+    }
+  };
+
+  const save = async () => {
+    if (!file) return;
+    setSaving(true);
+    onAdding(true);
+    try {
+      const added = await actions.add.mutateAsync({ name: trimmed, png: file.png });
+      // 追加ではモデルを指定できないので、選んだモデルと違えば更新で直す
+      if (added.variant !== variant) await actions.update.mutateAsync({ skinId: added.id, patch: { name: null, variant, png: null } });
+      onOpenChange(false);
+    } catch (e) {
+      toast.showError(e);
+    } finally {
+      setSaving(false);
+      onAdding(false);
+    }
+  };
+
+  return (
+    <SkinDialog
+      title={t("skins.add")}
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      isPending={saving}
+      canSave={canSave}
+      onSave={() => void save()}
+    >
+      <SkinFields
+        name={name}
+        onName={(n) => {
+          setEdited(true);
+          setName(n);
+        }}
+        variant={variant}
+        onVariant={setVariant}
+        fileName={file?.name ?? null}
+        onFile={(f) => void pickFile(f)}
+        fileLabel={t("skins.chooseFile")}
+        disabled={saving}
+      />
+    </SkinDialog>
+  );
+}
 
 /**
- * 「スキンを追加」のカード（保存したスキンと同じ縦横比 2:3）。押すと PNG を選べ、ウィンドウにファイルを落としても追加できる。
- * 複数のファイルは 1 つずつ順に追加し（並びを保つため）、1 つの失敗が残りを止めない。失敗はファイルごとにトーストで知らせる。
+ * 「スキンを追加」のカード（保存したスキンと同じ縦横比 2:3）。押すと追加のポップアップが開き、
+ * ウィンドウに PNG を落とすと（複数も可）そのままライブラリへ追加する。
+ * ドロップした複数のファイルは 1 つずつ順に追加し（並びを保つため）、1 つの失敗が残りを止めない。失敗はファイルごとにトーストで知らせる。
  * ログインは要らない（ライブラリへ追加するだけ）。
  */
 export function AddSkinCard({ disabled, actions, onAdding }: {
   disabled: boolean;
   /** 親（SavedSkins）と同じ操作の組。適用と追加を同時に走らせないため、取り直しの管理を 1 つにする */
-  actions: Pick<ReturnType<typeof useSkinActions>, "add" | "addFromPath">;
+  actions: Actions;
   /** 追加の一連（ファイルの合間も含む）の最中は真。親がスキンのカードを押せなくするのに使う */
   onAdding: (adding: boolean) => void;
 }) {
@@ -39,7 +112,9 @@ export function AddSkinCard({ disabled, actions, onAdding }: {
   const toast = useToast();
   const [dragging, setDragging] = useState(false);
   const [working, setWorking] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
+  const [isOpen, setOpen] = useState(false);
+  // 開くたびに入力を作り直すための番号
+  const [session, setSession] = useState(0);
 
   // ドロップの受け口は 1 度だけ登録するので、最新の値は ref 越しに読む
   const blocked = disabled || working;
@@ -94,41 +169,21 @@ export function AddSkinCard({ disabled, actions, onAdding }: {
     };
   }, []);
 
-  const onPicked = (files: FileList | null) => {
-    const list = Array.from(files ?? []);
-    // 同じファイルをもう一度選べるように空にする
-    if (picker.current) picker.current.value = "";
-    if (latest.current.blocked) return;
-    void runAll(
-      list.map((file) => async () => {
-        // 読む前に大きさを見る（誤って選んだ巨大なファイルで画面を固めない）。本体の検査と同じ失敗にする
-        if (file.size > MAX_SKIN_BYTES) throw new IpcError({ code: "skin.invalid", params: {}, detail: null });
-        const png = Array.from(new Uint8Array(await file.arrayBuffer()));
-        await latest.current.actions.add.mutateAsync({ name: stem(file.name), png });
-      }),
-    );
-  };
-
   return (
     <div className="relative aspect-[2/3] w-full">
       <Button
         isDisabled={blocked}
         data-drop-target={(dragging && !blocked) || undefined}
-        onPress={() => picker.current?.click()}
+        onPress={() => {
+          setSession((n) => n + 1);
+          setOpen(true);
+        }}
         className={cardButton}
       >
         <IconPlus aria-hidden className="size-6" />
         <span className="whitespace-nowrap text-sm">{t("skins.add")}</span>
       </Button>
-      <input
-        ref={picker}
-        type="file"
-        accept="image/png"
-        multiple
-        hidden
-        tabIndex={-1}
-        onChange={(e) => onPicked(e.currentTarget.files)}
-      />
+      <AddSkinDialog key={session} actions={actions} isOpen={isOpen} onOpenChange={setOpen} onAdding={onAdding} />
     </div>
   );
 }

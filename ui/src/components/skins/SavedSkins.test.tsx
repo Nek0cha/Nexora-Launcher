@@ -304,30 +304,32 @@ describe("import of the current skin", () => {
 });
 
 describe("the card menus inside the screen", () => {
-  const menus = () => screen.getAllByRole("button", { name: "Skin menu" }) as HTMLButtonElement[];
+  // ポップアップが開いている間は、後ろの画面は aria-hidden になる
+  const menus = () => screen.getAllByRole("button", { name: "Skin menu", hidden: true }) as HTMLButtonElement[];
   const openMenu = async (i: number) => {
     fireEvent.click(menus()[i] as HTMLElement);
-    await screen.findByRole("menu");
+    await screen.findByRole("dialog");
   };
-  const pick = (name: string) => {
-    const el = Array.from(document.querySelectorAll("[role^=menuitem]")).find((e) => e.textContent === name);
-    fireEvent.click(el as Element);
-  };
+  const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+  const save = () => fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const anyCard = (name: string) => screen.getByRole("button", { name, hidden: true }) as HTMLButtonElement;
 
   beforeEach(() => {
     vi.mocked(updateSavedSkin).mockResolvedValue(skin("1"));
     vi.mocked(deleteSavedSkin).mockResolvedValue(null);
   });
 
-  it("never applies a card when its menu button or an item is pressed", async () => {
+  it("never applies a card when its menu button or a dialog action is used", async () => {
     mount();
     await screen.findByRole("button", { name: "Skin 2" });
-    // 着ていないカード（Skin 2）のメニュー
-    for (const name of ["Rename", "Slim", "Replace file", "Delete"]) {
-      await openMenu(1);
-      pick(name);
-      await act(async () => {});
-    }
+    // 着ていないカード（Skin 2）のポップアップ
+    await openMenu(1);
+    fireEvent.click(radio("Slim"));
+    save();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await openMenu(1);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(applySavedSkin).not.toHaveBeenCalled();
   });
 
@@ -338,9 +340,10 @@ describe("the card menus inside the screen", () => {
     await screen.findByRole("button", { name: "Skin 2" });
     await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
     await openMenu(0);
-    pick("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(applySavedSkin).toHaveBeenCalledTimes(1));
-    fireEvent.click(card("Skin 3"));
+    fireEvent.click(anyCard("Skin 3"));
     expect(applySavedSkin).toHaveBeenCalledTimes(1);
     expect(menus()[1]?.disabled).toBe(true);
     await act(async () => releaseApply());
@@ -359,10 +362,11 @@ describe("the card menus inside the screen", () => {
     await screen.findByRole("button", { name: "Skin 2" });
     await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
     await openMenu(0);
-    pick("Slim");
+    fireEvent.click(radio("Slim"));
+    save();
     await waitFor(() => expect(updateSavedSkin).toHaveBeenCalled());
     // 一連の間に、別のカードが 1 度でも押せる状態になったかを、DOM の変化で記録する
-    const other = card("Skin 3");
+    const other = anyCard("Skin 3");
     const seen: boolean[] = [other.disabled];
     const observer = new MutationObserver(() => seen.push(other.disabled));
     observer.observe(other, { attributes: true, attributeFilter: ["disabled"] });
@@ -377,6 +381,7 @@ describe("the card menus inside the screen", () => {
     mount();
     await screen.findByRole("button", { name: "Skin 2" });
     await waitFor(() => expect(getCurrentSkin).toHaveBeenCalled());
+    await openMenu(1);
     let release!: () => void;
     const f = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
     vi.spyOn(f, "arrayBuffer").mockImplementation(() => new Promise((r) => (release = () => r(new ArrayBuffer(1)))));
@@ -384,8 +389,9 @@ describe("the card menus inside the screen", () => {
     await act(async () => {
       fireEvent.change(input, { target: { files: [f] } });
     });
-    expect(menus()[1]?.disabled).toBe(true);
-    fireEvent.click(card("Skin 3"));
+    // 読んでいる間はポップアップが開いたままで、保存は押せない
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(anyCard("Skin 3"));
     expect(applySavedSkin).not.toHaveBeenCalled();
     await act(async () => release());
   });

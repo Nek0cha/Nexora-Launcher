@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addSavedSkin, addSavedSkinFromPath } from "../../api/commands";
+import { addSavedSkin, addSavedSkinFromPath, updateSavedSkin } from "../../api/commands";
 import { onFilesDropped, type DragDropHandlers } from "../../api/dragDrop";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
@@ -13,7 +13,7 @@ function Card({ disabled }: { disabled: boolean }) {
   return <AddSkinCard disabled={disabled} actions={actions} onAdding={() => {}} />;
 }
 
-vi.mock("../../api/commands", () => ({ addSavedSkin: vi.fn(), addSavedSkinFromPath: vi.fn() }));
+vi.mock("../../api/commands", () => ({ addSavedSkin: vi.fn(), addSavedSkinFromPath: vi.fn(), updateSavedSkin: vi.fn() }));
 vi.mock("../../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 
 function Toasts() {
@@ -44,6 +44,18 @@ function mount(disabled = false) {
 
 const button = () => screen.getByRole("button", { name: "Add skin" }) as HTMLButtonElement;
 const input = () => document.querySelector("input[type=file]") as HTMLInputElement;
+const nameInput = () => screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+const saveButton = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+const openDialog = async () => {
+  fireEvent.click(button());
+  await screen.findByRole("dialog");
+};
+const choose = async (f: File) => {
+  await act(async () => {
+    fireEvent.change(input(), { target: { files: [f] } });
+  });
+};
 const toasts = () => screen.getByTestId("toasts").querySelectorAll("li");
 const file = (name: string, bytes: number[]) => new File([new Uint8Array(bytes)], name, { type: "image/png" });
 
@@ -58,7 +70,8 @@ beforeEach(async () => {
     handlers = h;
     return unlisten;
   });
-  vi.mocked(addSavedSkin).mockResolvedValue({} as never);
+  vi.mocked(addSavedSkin).mockResolvedValue({ id: "new", variant: "classic" } as never);
+  vi.mocked(updateSavedSkin).mockResolvedValue({} as never);
   vi.mocked(addSavedSkinFromPath).mockResolvedValue({} as never);
 });
 
@@ -106,26 +119,60 @@ describe("AddSkinCard", () => {
     expect(max).toBe(1);
   });
 
-  it("opens the picker, adds each file by name without extension, and a failure does not stop the rest", async () => {
-    vi.mocked(addSavedSkin).mockImplementation(async (name) => {
-      if (name === "bad") throw { code: "skin.invalid", params: {}, detail: "x" };
-      return {} as never;
-    });
+  it("opens a dialog and sends nothing until Save", async () => {
     mount();
-    const click = vi.spyOn(input(), "click");
-    fireEvent.click(button());
-    expect(click).toHaveBeenCalled();
+    await openDialog();
     expect(input().accept).toBe("image/png");
-    expect(input().multiple).toBe(true);
-    await act(async () => {
-      fireEvent.change(input(), { target: { files: [file("bad.png", [1]), file("My Skin.v2.png", [7, 8, 9])] } });
-    });
-    await waitFor(() => expect(addSavedSkin).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(addSavedSkin).mock.calls).toEqual([
-      ["bad", [1]],
-      ["My Skin.v2", [7, 8, 9]],
-    ]);
-    expect(toasts()).toHaveLength(1);
+    expect(saveButton().disabled).toBe(true);
+    await choose(file("My Skin.v2.png", [7, 8, 9]));
+    expect(nameInput().value).toBe("My Skin.v2");
+    expect(saveButton().disabled).toBe(false);
+    expect(addSavedSkin).not.toHaveBeenCalled();
+  });
+
+  it("adds the chosen file with the edited name once, and closes", async () => {
+    mount();
+    await openDialog();
+    await choose(file("a.png", [1, 2]));
+    fireEvent.change(nameInput(), { target: { value: "  Mine  " } });
+    // 名前を触ったあとにファイルを選び直しても、名前は上書きしない
+    await choose(file("b.png", [3]));
+    expect(nameInput().value).toBe("  Mine  ");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(addSavedSkin).toHaveBeenCalledTimes(1));
+    expect(addSavedSkin).toHaveBeenCalledWith("Mine", [3]);
+    expect(updateSavedSkin).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("sets the model afterwards when it differs from the one the skin was added with", async () => {
+    mount();
+    await openDialog();
+    await choose(file("a.png", [1]));
+    fireEvent.click(radio("Slim"));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateSavedSkin).toHaveBeenCalledWith("new", { name: null, variant: "slim", png: null }));
+  });
+
+  it("stays open and reports once when adding fails", async () => {
+    vi.mocked(addSavedSkin).mockRejectedValue({ code: "skin.invalid", params: {}, detail: "x" });
+    mount();
+    await openDialog();
+    await choose(file("a.png", [1]));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("starts empty each time it is opened", async () => {
+    mount();
+    await openDialog();
+    await choose(file("a.png", [1]));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await openDialog();
+    expect(nameInput().value).toBe("");
+    expect(saveButton().disabled).toBe(true);
   });
 
   it("highlights while dragging and clears on leave and drop", async () => {
@@ -164,9 +211,8 @@ describe("AddSkinCard", () => {
     const idle = button().className;
     view.rerender(true);
     expect(button().disabled).toBe(true);
-    const click = vi.spyOn(input(), "click");
     fireEvent.click(button());
-    expect(click).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
     act(() => handlers.enter());
     expect(button().dataset.dropTarget).toBeUndefined();
     await drop(["a.png"]);
@@ -176,18 +222,16 @@ describe("AddSkinCard", () => {
     expect(size(button().className)).toEqual(size(idle));
   });
 
-  it("rejects an oversized picked file before reading it, and the rest of the batch continues", async () => {
+  it("rejects an oversized picked file before reading it, with one toast", async () => {
     mount();
+    await openDialog();
     const big = file("big.png", [1]);
     Object.defineProperty(big, "size", { value: 70 * 1024 });
     const read = vi.spyOn(big, "arrayBuffer");
-    await act(async () => {
-      fireEvent.change(input(), { target: { files: [big, file("ok.png", [5])] } });
-    });
-    await waitFor(() => expect(addSavedSkin).toHaveBeenCalledTimes(1));
+    await choose(big);
+    await waitFor(() => expect(toasts()).toHaveLength(1));
     expect(read).not.toHaveBeenCalled();
-    expect(vi.mocked(addSavedSkin).mock.calls).toEqual([["ok", [5]]]);
-    expect(toasts()).toHaveLength(1);
+    expect(saveButton().disabled).toBe(true);
   });
 
   it("drops the highlight when the card becomes disabled mid-drag", async () => {
