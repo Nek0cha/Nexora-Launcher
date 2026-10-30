@@ -259,7 +259,9 @@ describe("SkinPreview", () => {
   it("logs a texture that fails to load and keeps processing later requests", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const unhandled = vi.fn();
-    process.on("unhandledRejection", unhandled);
+    // CI の型検査には node の型が無いので、必要な形だけを自前で宣言する
+    const proc = (globalThis as unknown as { process: { on(e: string, f: () => void): void; off(e: string, f: () => void): void } }).process;
+    proc.on("unhandledRejection", unhandled);
     const { rerender } = render(<SkinPreview image={SKIN} variant="classic" capeImage={null} />);
     await flush();
     viewer().loadSkin.mockRejectedValueOnce(new Error("bad texture"));
@@ -268,7 +270,7 @@ describe("SkinPreview", () => {
     await flush();
     rerender(<SkinPreview image={SKIN} variant="classic" capeImage={CAPE} />);
     await flush();
-    process.off("unhandledRejection", unhandled);
+    proc.off("unhandledRejection", unhandled);
     expect(unhandled).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith("SkinPreview: skin load failed", expect.any(Error));
     expect(warn).toHaveBeenCalledWith("SkinPreview: cape load failed", expect.any(Error));
