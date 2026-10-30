@@ -2647,6 +2647,7 @@ dependencies = [
  "insta",
  "keyring-core",
  "md-5",
+ "png 0.18.1",
  "quick-xml",
  "regex",
  "reqwest",

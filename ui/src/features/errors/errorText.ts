@@ -6,12 +6,19 @@ export function errorKey(code: string, exists: (key: string) => boolean): string
   return exists(key) ? key : "errors:generic";
 }
 
-/** auth.xbox は XErr の番号ごとの文言があればそれを使い、なければ番号つきの汎用文にする。 */
+/**
+ * auth.xbox は XErr の番号ごとの文言があればそれを使い、なければ番号つきの汎用文にする。
+ * net.http_status の 429（Mojang のアカウント変更の回数制限）は専用の文にする。
+ */
 export function noticeKey(error: ErrorPayload, exists: (key: string) => boolean): string {
   const xerr = error.params.xerr;
   if (error.code === "auth.xbox" && xerr !== undefined) {
     const specific = `errors:auth.xbox_${xerr}`;
     if (exists(specific)) return specific;
+  }
+  if (error.code === "net.http_status" && error.params.status === 429) {
+    const limited = "errors:net.http_status_429";
+    if (exists(limited)) return limited;
   }
   return errorKey(error.code, exists);
 }

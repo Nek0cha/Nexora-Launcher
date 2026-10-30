@@ -161,6 +161,17 @@ impl SkinVariant {
     }
 }
 
+/// 所有しているマント。`url` は取得に使う https の URL。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Cape {
+    pub id: String,
+    pub alias: String,
+    pub url: String,
+    pub active: bool,
+}
+
 /// Minecraft のプロフィール。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
@@ -169,6 +180,8 @@ pub struct Profile {
     pub skin_url: Option<String>,
     /// 使用中のスキンのモデル。プロフィールに書かれていなければ None。
     pub skin_variant: Option<SkinVariant>,
+    /// 所有しているマント。信頼できない URL のものは含めない。
+    pub capes: Vec<Cape>,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +190,16 @@ struct ProfileBody {
     name: String,
     #[serde(default)]
     skins: Vec<SkinBody>,
+    #[serde(default)]
+    capes: Vec<CapeBody>,
+}
+
+#[derive(Deserialize)]
+struct CapeBody {
+    id: String,
+    state: Option<String>,
+    url: Option<String>,
+    alias: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -193,8 +216,12 @@ fn trusted_url(u: &reqwest::Url) -> bool {
 
 /// プロフィールのスキンの URL を、取得に使う https の URL にする。
 /// Minecraft Services は `http://textures.minecraft.net/...` を返すため、http は https に置き換える。
-fn skin_url_from_profile(url: &str) -> Option<String> {
+/// `origin` はテスト用の差し替え（`AuthUrls::texture_origin`）で、指定があればその先頭一致だけを受ける。
+fn skin_url_from_profile(url: &str, origin: Option<&str>) -> Option<String> {
     let mut u = reqwest::Url::parse(url).ok()?;
+    if let Some(origin) = origin {
+        return u.as_str().starts_with(origin).then(|| u.to_string());
+    }
     if u.scheme() == "http" && u.port().is_none() {
         u.set_scheme("https").ok()?;
     }
@@ -226,12 +253,25 @@ pub async fn profile(http: &AuthHttp, urls: &AuthUrls, mc: &McToken) -> Result<P
         .and_then(SkinVariant::parse);
     let skin_url = active
         .and_then(|s| s.url)
-        .and_then(|u| skin_url_from_profile(&u));
+        .and_then(|u| skin_url_from_profile(&u, urls.texture_origin.as_deref()));
+    let capes = b
+        .capes
+        .into_iter()
+        .filter_map(|c| {
+            Some(Cape {
+                url: skin_url_from_profile(&c.url?, urls.texture_origin.as_deref())?,
+                active: c.state.as_deref() == Some("ACTIVE"),
+                alias: c.alias.unwrap_or_else(|| c.id.clone()),
+                id: c.id,
+            })
+        })
+        .collect();
     Ok(Profile {
         id,
         name: b.name,
         skin_url,
         skin_variant,
+        capes,
     })
 }
 
@@ -301,11 +341,52 @@ pub async fn upload_skin(
     Ok(())
 }
 
+/// 使用中のマントを変える。`Some(id)` は `PUT {mc_cape_active}` に `{"capeId": id}`、
+/// `None` は `DELETE {mc_cape_active}`（マントを外す）。
+/// 429 は `HttpStatus { status: 429 }`、5xx と通信の失敗は Offline。本文はエラーに入れない。
+pub async fn set_active_cape(
+    http: &AuthHttp,
+    urls: &AuthUrls,
+    mc: &McToken,
+    cape_id: Option<&str>,
+) -> Result<(), CoreError> {
+    let client = http.client();
+    let request = match cape_id {
+        Some(id) => client
+            .put(&urls.mc_cape_active)
+            .header("Content-Type", "application/json")
+            .body(json!({ "capeId": id }).to_string()),
+        None => client.delete(&urls.mc_cape_active),
+    }
+    .header("Accept", "application/json")
+    .bearer_auth(mc.access.expose_secret());
+    let reply = send_any_status(request).await?;
+    if reply.status >= 500 {
+        return Err(transient_status(reply.status));
+    }
+    if !reply.is_success() {
+        return Err(http_status(reply.status, &urls.mc_cape_active));
+    }
+    Ok(())
+}
+
 /// スキンの画像を取得して `cache/skins/<URL の SHA-256>.png` に保存する。あればそれを返す。
 /// 許可された URL 以外は、通信せずに拒否する。取得はリダイレクトを追わない専用の
 /// クライアントで行う。
 pub async fn cached_skin(paths: &AppPaths, url: &str) -> Result<PathBuf, CoreError> {
-    fetch_skin(paths, url, trusted_url).await
+    cached_skin_at(paths, url, None).await
+}
+
+/// `cached_skin`。`origin` はテスト用の差し替えで、指定があればその先頭一致の URL だけを取得する。
+pub async fn cached_skin_at(
+    paths: &AppPaths,
+    url: &str,
+    origin: Option<&str>,
+) -> Result<PathBuf, CoreError> {
+    match origin {
+        None => fetch_skin(paths, url, trusted_url).await,
+        Some(o) => fetch_skin(paths, url, |u| u.as_str().starts_with(o)).await,
+    }
 }
 
 fn too_large() -> CoreError {
@@ -402,28 +483,31 @@ mod tests {
     fn only_textures_host_without_a_port_is_trusted() {
         let https = Some("https://textures.minecraft.net/texture/a".to_string());
         assert_eq!(
-            skin_url_from_profile("https://textures.minecraft.net/texture/a"),
+            skin_url_from_profile("https://textures.minecraft.net/texture/a", None),
             https
         );
         assert_eq!(
-            skin_url_from_profile("https://textures.minecraft.net:443/texture/a"),
+            skin_url_from_profile("https://textures.minecraft.net:443/texture/a", None),
             https
         );
         assert_eq!(
-            skin_url_from_profile("http://textures.minecraft.net/texture/a"),
+            skin_url_from_profile("http://textures.minecraft.net/texture/a", None),
             https
         );
         assert_eq!(
-            skin_url_from_profile("https://textures.minecraft.net:8443/texture/a"),
+            skin_url_from_profile("https://textures.minecraft.net:8443/texture/a", None),
             None
         );
         assert_eq!(
-            skin_url_from_profile("http://textures.minecraft.net:8080/texture/a"),
+            skin_url_from_profile("http://textures.minecraft.net:8080/texture/a", None),
             None
         );
-        assert_eq!(skin_url_from_profile("http://evil.example/texture/a"), None);
         assert_eq!(
-            skin_url_from_profile("https://evil.example/texture/a"),
+            skin_url_from_profile("http://evil.example/texture/a", None),
+            None
+        );
+        assert_eq!(
+            skin_url_from_profile("https://evil.example/texture/a", None),
             None
         );
     }

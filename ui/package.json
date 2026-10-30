@@ -22,7 +22,8 @@
     "react-aria-components": "~1.22.1",
     "react-dom": "^19.3.0",
     "react-i18next": "^17.0.16",
-    "react-router": "^8.4.0"
+    "react-router": "^8.4.0",
+    "skinview3d": "3.4.2"
   },
   "devDependencies": {
     "@iconify-json/ph": "^1.2.2",

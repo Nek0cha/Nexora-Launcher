@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Button, Dialog, Heading, Input, Modal, ModalOverlay, TextField } from "react-aria-components";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import IconCheck from "~icons/ph/check";
 import IconPlus from "~icons/ph/plus";
 import IconEmpty from "~icons/ph/user-circle";
@@ -14,7 +15,6 @@ import { FailureNotice } from "../components/FailureNotice";
 import { modalClass, overlayClass } from "../components/modal";
 import { useToast } from "../components/toast/useToast";
 import { accountStatus } from "../features/accounts/accountState";
-import { ChangeSkinDialog } from "../features/accounts/ChangeSkinDialog";
 import { SkinFace } from "../features/accounts/SkinFace";
 import { ACCOUNTS_KEY, useAccounts } from "../features/accounts/useAccounts";
 import { LoginDialog } from "../features/login/LoginDialog";
@@ -242,8 +242,12 @@ function AccountRow({
           </Button>
         )}
         <UseButton active={account.isActive} activating={activating} onUse={onUse} className="" />
-        {/* スキンの変更は Microsoft アカウントの行だけに置く。ログインし直しが必要な間は押せない */}
-        <ChangeSkinDialog accountId={account.id} isDisabled={account.needsLogin} />
+        {/* スキン画面への入口は Microsoft アカウントの行だけに置く。ログインし直しが必要な間は出さない */}
+        {!account.needsLogin && (
+          <Link to="/skins" className={rowButton}>
+            {t("accounts.changeSkin")}
+          </Link>
+        )}
         <Button onPress={onRemove} className={rowButton}>
           {t("accounts.remove")}
         </Button>

@@ -5,6 +5,7 @@
     "instances": "インスタンス",
     "sync": "共通設定",
     "browse": "探す",
+    "skins": "スキン",
     "accounts": "アカウント",
     "settings": "設定"
   },
@@ -104,6 +105,26 @@
     "noResults": "一致するコマンドはありません",
     "launchLast": "{{name}} を起動する"
   },
+  "skins": {
+    "saved": "保存したスキン",
+    "defaults": "デフォルトのスキン",
+    "retryDefaults": "再試行",
+    "removeCape": "外す",
+    "preview": "スキンのプレビュー",
+    "add": "スキンを追加",
+    "menu": "スキンのメニュー",
+    "name": "名前",
+    "model": "モデル",
+    "classic": "クラシック",
+    "slim": "スリム",
+    "replace": "ファイルを差し替える",
+    "delete": "削除",
+    "edit": "スキンを編集",
+    "file": "ファイル",
+    "chooseFile": "PNG を選ぶ",
+    "save": "保存",
+    "cancel": "キャンセル"
+  },
   "accounts": {
     "devTitle": "開発用のオフラインアカウント",
     "devHint": "開発ビルドでだけ使えます。製品版では Microsoft アカウントでログインします。",
@@ -123,13 +144,6 @@
     "removeBody": "このパソコンからログインの情報を消します。Microsoft 側で発行済みのトークンが無効になるわけではありません。",
     "removeConfirm": "削除",
     "changeSkin": "スキンを変更",
-    "skinTitle": "スキンを変更",
-    "skinFile": "スキンの画像（PNG）",
-    "skinFileHint": "64×64 または 64×32、64 KiB まで。",
-    "skinModel": "モデル",
-    "skinClassic": "Classic",
-    "skinSlim": "Slim",
-    "skinSubmit": "変更する",
     "cancel": "キャンセル"
   },
   "sidebar": {
@@ -240,6 +254,7 @@
     "close": "通知を閉じる"
   },
   "appBar": {
+    "breadcrumb": "現在の場所",
     "back": "戻る",
     "forward": "進む",
     "minimize": "最小化",

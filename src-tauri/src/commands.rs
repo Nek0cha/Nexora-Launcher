@@ -6,8 +6,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexora_core::app_info::{AppInfo, StartupStatus};
 use nexora_core::auth::login::LoginMethod;
-use nexora_core::auth::minecraft::SkinVariant;
 use nexora_core::auth::service::AccountList;
+use nexora_core::auth::service::CurrentSkin;
 use nexora_core::content::apply::ContentTaskReport;
 use nexora_core::content::identify::IdentifyReport;
 use nexora_core::content::modrinth::{SearchPage, SearchQuery};
@@ -22,6 +22,9 @@ use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
+use nexora_core::skins::defaults::DefaultSkin;
+use nexora_core::skins::library::{self, SavedSkin, SavedSkinPatch};
+use nexora_core::skins::ops as skin_ops;
 use nexora_core::sync::JoinMode;
 use nexora_core::sync::proposals::Resolution;
 use nexora_core::sync::registry::Category;
@@ -627,38 +630,159 @@ pub fn set_dev_offline_username(_name: String) -> CmdResult<String> {
     Err(ErrorPayload::new("app.dev_only"))
 }
 
-/// アカウントの現在のスキンの型（classic か slim）を返す。
+/// アカウントの現在のスキン（画像、ハッシュ、モデル）とマントの一覧を返す。
 #[tauri::command]
-pub async fn get_skin_variant(
+pub async fn get_current_skin(
     state: State<'_, AppState>,
     account_id: String,
-) -> CmdResult<SkinVariant> {
+) -> CmdResult<CurrentSkin> {
     let services = state.services()?;
     let id = parse_account_id(&account_id)?;
     services
         .launcher
         .auth()
-        .skin_variant(id)
+        .current_skin(id)
         .await
         .map_err(ErrorPayload::from)
 }
 
-/// スキンを変更する。`png` は IPC の `number[]` で受ける。
+/// 使用中のマントを変える。`cape_id` が None ならマントを外す。
 #[tauri::command]
-pub async fn change_skin(
+pub async fn set_cape(
     state: State<'_, AppState>,
     account_id: String,
-    variant: SkinVariant,
-    png: Vec<u8>,
+    cape_id: Option<String>,
 ) -> CmdResult<()> {
     let services = state.services()?;
     let id = parse_account_id(&account_id)?;
     services
         .launcher
         .auth()
-        .change_skin(id, variant, png)
+        .set_cape(id, cape_id)
         .await
         .map_err(ErrorPayload::from)
+}
+
+/// 保存したスキンの一覧（追加が新しい順）。
+#[tauri::command]
+pub async fn list_saved_skins(state: State<'_, AppState>) -> CmdResult<Vec<SavedSkin>> {
+    let services = state.services()?;
+    blocking(move || library::list(&services.db)).await
+}
+
+/// 保存したスキンの画像を `data:image/png;base64,...` で返す。
+#[tauri::command]
+pub async fn get_saved_skin_image(
+    state: State<'_, AppState>,
+    skin_id: String,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    blocking(move || {
+        let (png, _) = library::png(&services.db, &skin_id)?;
+        Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
+    })
+    .await
+}
+
+/// 画像（IPC の `number[]`）をライブラリに足す。型は画像から判定する。
+#[tauri::command]
+pub async fn add_saved_skin(
+    state: State<'_, AppState>,
+    name: String,
+    png: Vec<u8>,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || library::add(&services.db, &name, None, &png, now_ms())).await
+}
+
+/// ドラッグ＆ドロップなどで渡されたファイルをライブラリに足す。名前は拡張子を除くファイル名。
+#[tauri::command]
+pub async fn add_saved_skin_from_path(
+    state: State<'_, AppState>,
+    path: String,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || skin_ops::add_from_path(&services.db, std::path::Path::new(&path), now_ms()))
+        .await
+}
+
+#[tauri::command]
+pub async fn update_saved_skin(
+    state: State<'_, AppState>,
+    skin_id: String,
+    patch: SavedSkinPatch,
+) -> CmdResult<SavedSkin> {
+    let services = state.services()?;
+    blocking(move || library::update(&services.db, &skin_id, patch)).await
+}
+
+#[tauri::command]
+pub async fn delete_saved_skin(state: State<'_, AppState>, skin_id: String) -> CmdResult<()> {
+    let services = state.services()?;
+    blocking(move || library::delete(&services.db, &skin_id)).await
+}
+
+/// 保存したスキンをアカウントに適用する。
+#[tauri::command]
+pub async fn apply_saved_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+    skin_id: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    skin_ops::apply_saved(&services.db, services.launcher.auth(), id, &skin_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// デフォルトスキンの一覧。初回はゲームの jar から取り出して（時間がかかる）、以後はキャッシュを返す。
+/// 取得元に届かないときはエラー（画面は再試行のカードを出す）。
+#[tauri::command]
+pub async fn list_default_skins(state: State<'_, AppState>) -> CmdResult<Vec<DefaultSkin>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_default_skins()
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// デフォルトスキンをアカウントに適用する。ライブラリには足さない。知らないキーは `skin.not_found`。
+#[tauri::command]
+pub async fn apply_default_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+    key: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    services
+        .launcher
+        .apply_default_skin(id, &key)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// アカウントの現在のスキンを、まだなら一度だけライブラリに取り込む。取り込まなければ `None`。
+#[tauri::command]
+pub async fn import_current_skin(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<Option<SavedSkin>> {
+    let services = state.services()?;
+    let id = parse_account_id(&account_id)?;
+    // 適用したデフォルトスキンを、現在のスキンとしてライブラリへ取り込まない
+    let defaults = services.launcher.cached_default_skin_hashes().await;
+    skin_ops::import_current_skin(
+        &services.db,
+        services.launcher.auth(),
+        defaults,
+        id,
+        now_ms(),
+    )
+    .await
+    .map_err(ErrorPayload::from)
 }
 
 /// 動いているゲームを止める。強制終了は外部プロセスを呼ぶことがあるため、別スレッドで動かす。

@@ -7,7 +7,7 @@ import { onAccountsChanged } from "../api/events";
 import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
 import i18n from "../i18n";
-import { Sidebar } from "./Sidebar";
+import { ITEMS, Sidebar } from "./Sidebar";
 
 vi.mock("../api/commands", () => ({ listAccounts: vi.fn(), getSkin: vi.fn() }));
 vi.mock("../api/events", () => ({ onAccountsChanged: vi.fn() }));
@@ -76,5 +76,28 @@ describe("Sidebar", () => {
       await i18n.changeLanguage("ja");
     });
     expect(within(nav).getByRole("link", { name: "共通設定" })).toBeTruthy();
+  });
+
+  it("draws every item icon at size-5, the selected filled one too", async () => {
+    mount({ accounts: [account()], devOffline: null });
+    const nav = screen.getByRole("navigation");
+    // 末尾のアカウントの項目（顔の画像）を除いた、ナビの項目
+    const links = within(nav).getAllByRole("link").slice(0, ITEMS.length);
+    expect(links).toHaveLength(ITEMS.length);
+    for (const link of links) {
+      const icon = link.querySelector("svg");
+      expect(icon?.getAttribute("class")).toContain("size-5");
+    }
+    // 先頭の「ホーム」は MemoryRouter の "/" で選択中（塗り）
+    expect(within(nav).getByRole("link", { name: "Home" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("has a skins item between browse and accounts", async () => {
+    mount({ accounts: [account()], devOffline: null });
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Skins" }).getAttribute("href")).toBe("/skins");
+    const keys = ITEMS.map((i) => i.key);
+    expect(keys.indexOf("skins")).toBe(keys.indexOf("browse") + 1);
+    expect(keys.indexOf("accounts")).toBe(keys.indexOf("skins") + 1);
   });
 });

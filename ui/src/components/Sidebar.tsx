@@ -8,6 +8,8 @@ import IconSliders from "~icons/ph/sliders-horizontal";
 import IconSlidersFill from "~icons/ph/sliders-horizontal-fill";
 import IconCompass from "~icons/ph/compass";
 import IconCompassFill from "~icons/ph/compass-fill";
+import IconShirt from "~icons/ph/t-shirt";
+import IconShirtFill from "~icons/ph/t-shirt-fill";
 import IconUser from "~icons/ph/user-circle";
 import IconUserFill from "~icons/ph/user-circle-fill";
 import IconGear from "~icons/ph/gear-six";
@@ -20,17 +22,18 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 type Item = {
   to: string;
-  key: "home" | "instances" | "sync" | "browse" | "accounts" | "settings";
+  key: "home" | "instances" | "sync" | "browse" | "skins" | "accounts" | "settings";
   Icon: IconComponent;
   /** 選択中に使う塗りのアイコン。面の明度と文字の強さに加え、形でも現在地を示す */
   ActiveIcon: IconComponent;
 };
 
-const ITEMS: Item[] = [
+export const ITEMS: Item[] = [
   { to: "/", key: "home", Icon: IconHouse, ActiveIcon: IconHouseFill },
   { to: "/instances", key: "instances", Icon: IconStack, ActiveIcon: IconStackFill },
   { to: "/sync", key: "sync", Icon: IconSliders, ActiveIcon: IconSlidersFill },
   { to: "/browse", key: "browse", Icon: IconCompass, ActiveIcon: IconCompassFill },
+  { to: "/skins", key: "skins", Icon: IconShirt, ActiveIcon: IconShirtFill },
   { to: "/accounts", key: "accounts", Icon: IconUser, ActiveIcon: IconUserFill },
   { to: "/settings", key: "settings", Icon: IconGear, ActiveIcon: IconGearFill },
 ];
@@ -62,9 +65,9 @@ export function Sidebar({ materialOn }: { materialOn: boolean }) {
           {({ isActive }) => (
             <>
               {isActive ? (
-                <ActiveIcon aria-hidden className="size-4 shrink-0" />
+                <ActiveIcon aria-hidden className="size-5 shrink-0" />
               ) : (
-                <Icon aria-hidden className="size-4 shrink-0" />
+                <Icon aria-hidden className="size-5 shrink-0" />
               )}
               <span className="truncate">{t(`nav.${key}`)}</span>
             </>
@@ -107,7 +110,7 @@ function AccountLink() {
         </>
       ) : (
         <>
-          <IconUser aria-hidden className="size-4 shrink-0" />
+          <IconUser aria-hidden className="size-5 shrink-0" />
           <span className="truncate">{t("sidebar.login")}</span>
         </>
       )}

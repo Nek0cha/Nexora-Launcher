@@ -6,7 +6,7 @@ import { getStartupStatus } from "../api/commands";
 import { toErrorPayload } from "../api/ipc";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
 import { FallbackTitleBar } from "../components/appbar/FallbackTitleBar";
-import { Logo } from "../components/appbar/AppBar";
+import { Logo } from "../components/appbar/Brand";
 import { useGateTiming } from "../components/ReadyGate";
 import { errorKey } from "../features/errors/errorText";
 import i18n from "../i18n";

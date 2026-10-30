@@ -2283,3 +2283,198 @@ async fn login_relogin_as_a_different_account_adds_and_activates_it() {
     assert_eq!(old.username, "Alex");
     assert!(old.needs_login);
 }
+
+// ---- マントと現在のスキン ----
+
+use nexora_core::auth::minecraft::{Cape, set_active_cape};
+
+const CAPE_URL: &str = "https://textures.minecraft.net/texture/c";
+
+/// 本物の PNG（幅 w、高さ h、全画素が rgba）。
+fn real_png(w: u32, h: u32, rgba: [u8; 4]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut writer = enc.write_header().unwrap();
+    let data: Vec<u8> = (0..w * h).flat_map(|_| rgba).collect();
+    writer.write_image_data(&data).unwrap();
+    writer.finish().unwrap();
+    out
+}
+
+/// 画像のキャッシュに置く（実際の textures.minecraft.net へは通信しない）。
+fn seed_image(e: &Env, url: &str, bytes: &[u8]) {
+    use sha2::{Digest, Sha256};
+    let dir = e.temp.path().join("cache").join("skins");
+    std::fs::create_dir_all(&dir).unwrap();
+    let name = nexora_core::net::hash::hex(&Sha256::digest(url.as_bytes()));
+    std::fs::write(dir.join(format!("{name}.png")), bytes).unwrap();
+}
+
+/// 認証済みの環境にプロフィールの応答を優先して据える。
+async fn mount_profile_json(server: &MockServer, body: String) {
+    Mock::given(method("GET"))
+        .and(path("/mc/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(body))
+        .with_priority(1)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn profile_reads_capes() {
+    let server = MockServer::start().await;
+    mount_profile(
+        &server,
+        200,
+        &format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","capes":[{{"id":"c1","state":"ACTIVE","url":"http://textures.minecraft.net/texture/c","alias":"Migrator"}},{{"id":"c2","state":"INACTIVE","url":"http://evil.example/c","alias":"Bad"}},{{"id":"c3","state":"INACTIVE","url":"https://textures.minecraft.net/texture/d","alias":"Other"}}]}}"#
+        ),
+    )
+    .await;
+    let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap();
+    // 信頼できない URL のマント (c2) は捨てる
+    assert_eq!(
+        p.capes,
+        vec![
+            Cape {
+                id: "c1".into(),
+                alias: "Migrator".into(),
+                url: CAPE_URL.into(),
+                active: true
+            },
+            Cape {
+                id: "c3".into(),
+                alias: "Other".into(),
+                url: "https://textures.minecraft.net/texture/d".into(),
+                active: false
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn profile_without_capes_has_an_empty_list() {
+    let server = MockServer::start().await;
+    mount_profile(
+        &server,
+        200,
+        &format!(r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}"}}"#),
+    )
+    .await;
+    let p = profile(&AuthHttp::new().unwrap(), &auth_urls(&server), &mc_token())
+        .await
+        .unwrap();
+    assert!(p.capes.is_empty());
+}
+
+#[tokio::test]
+async fn set_cape_puts_the_id_and_deletes_for_none() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mc/profile/capes/active"))
+        .and(header("Authorization", "Bearer MCTOKEN"))
+        .and(wiremock::matchers::body_json(
+            serde_json::json!({"capeId":"c1"}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/mc/profile/capes/active"))
+        .and(header("Authorization", "Bearer MCTOKEN"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let http = AuthHttp::new().unwrap();
+    let urls = auth_urls(&server);
+    set_active_cape(&http, &urls, &mc_token(), Some("c1"))
+        .await
+        .unwrap();
+    set_active_cape(&http, &urls, &mc_token(), None)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn set_cape_401_renews_the_token_once_and_retries() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    mount_refresh(&e.server, None, None).await;
+    for (status, times) in [(401u16, Some(1u64)), (200, None)] {
+        let mock = Mock::given(method("PUT"))
+            .and(path("/mc/profile/capes/active"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("{}"));
+        match times {
+            Some(n) => {
+                mock.up_to_n_times(n)
+                    .with_priority(1)
+                    .mount(&e.server)
+                    .await
+            }
+            None => mock.mount(&e.server).await,
+        }
+    }
+    e.auth.set_cape(id, Some("c1".into())).await.unwrap();
+    assert_eq!(hits_on(&e.server, "/token").await, 1);
+    assert_eq!(hits_on(&e.server, "/mc/profile/capes/active").await, 2);
+}
+
+#[tokio::test]
+async fn current_skin_defaults_to_classic_and_none_when_no_skin() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    mount_profile_json(
+        &e.server,
+        format!(r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[]}}"#),
+    )
+    .await;
+    let cur = e.auth.current_skin(id).await.unwrap();
+    assert_eq!(cur.image, None);
+    assert_eq!(cur.sha256, None);
+    assert_eq!(cur.variant, SkinVariant::Classic);
+    assert!(cur.capes.is_empty());
+}
+
+#[tokio::test]
+async fn current_skin_uses_the_profile_variant() {
+    let e = env().await;
+    mount_chain(&e.server, 86_400, Ownership::Owned).await;
+    let id = e.login().await.unwrap();
+    let skin = real_png(64, 64, [10, 20, 30, 255]);
+    let cape = real_png(64, 32, [1, 2, 3, 255]);
+    seed_image(&e, NEW_SKIN_URL, &skin);
+    seed_image(&e, CAPE_URL, &cape);
+    mount_profile_json(
+        &e.server,
+        format!(
+            r#"{{"id":"{PROFILE_ID}","name":"{PROFILE_NAME}","skins":[{{"state":"ACTIVE","url":"http://textures.minecraft.net/texture/new-skin","variant":"SLIM"}}],"capes":[{{"id":"c1","state":"ACTIVE","url":"http://textures.minecraft.net/texture/c","alias":"Migrator"}}]}}"#
+        ),
+    )
+    .await;
+    let cur = e.auth.current_skin(id).await.unwrap();
+    assert_eq!(cur.variant, SkinVariant::Slim);
+    let image = cur.image.unwrap();
+    assert!(image.starts_with("data:image/png;base64,"));
+    assert_eq!(
+        cur.sha256.as_deref(),
+        Some(nexora_core::skins::pixel_hash(&skin).as_str())
+    );
+    assert_eq!(cur.capes[0].id, "c1");
+    assert!(cur.capes[0].active);
+    assert!(
+        cur.capes[0]
+            .image
+            .as_deref()
+            .unwrap()
+            .starts_with("data:image/png;base64,")
+    );
+    assert_eq!(cur.capes.len(), 1);
+}

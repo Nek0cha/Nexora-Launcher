@@ -1,7 +1,6 @@
 import type { CreatedInstance } from "../bindings/CreatedInstance";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
-import type { SkinVariant } from "../bindings/SkinVariant";
 import type { RunningSession } from "../bindings/RunningSession";
 import type { VersionEntry } from "../bindings/VersionEntry";
 import type { AppInfo } from "../bindings/AppInfo";
@@ -34,6 +33,10 @@ import type { Resolution } from "../bindings/Resolution";
 import type { SyncProfile } from "../bindings/SyncProfile";
 import type { SyncField } from "../bindings/SyncField";
 import type { SyncFieldValue } from "../bindings/SyncFieldValue";
+import type { CurrentSkin } from "../bindings/CurrentSkin";
+import type { SavedSkin } from "../bindings/SavedSkin";
+import type { SavedSkinPatch } from "../bindings/SavedSkinPatch";
+import type { DefaultSkin } from "../bindings/DefaultSkin";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -72,9 +75,6 @@ export const setDevOfflineActive = (active: boolean) => call<null>("set_dev_offl
 export const removeAccount = (accountId: string) => call<null>("remove_account", { accountId });
 export const beginLogin = (method: LoginMethod) => call<string>("begin_login", { method });
 export const getSkin = (accountId: string) => call<string | null>("get_skin", { accountId });
-export const getSkinVariant = (accountId: string) => call<SkinVariant>("get_skin_variant", { accountId });
-export const changeSkin = (accountId: string, variant: SkinVariant, png: number[]) =>
-  call<null>("change_skin", { accountId, variant, png });
 
 export const listContent = (instanceId: string, kind: ContentKind) =>
   call<ContentItem[]>("list_content", { instanceId, kind });
@@ -136,3 +136,20 @@ export const resolveSyncProposal = (
   resolution: Resolution,
   chosenValue?: string,
 ) => call<null>("resolve_sync_proposal", { instanceId, fieldId, resolution, chosenValue: chosenValue ?? null });
+
+export const getCurrentSkin = (accountId: string) => call<CurrentSkin>("get_current_skin", { accountId });
+export const setCape = (accountId: string, capeId: string | null) => call<null>("set_cape", { accountId, capeId });
+export const listSavedSkins = () => call<SavedSkin[]>("list_saved_skins");
+export const getSavedSkinImage = (skinId: string) => call<string>("get_saved_skin_image", { skinId });
+export const addSavedSkin = (name: string, png: number[]) => call<SavedSkin>("add_saved_skin", { name, png });
+export const addSavedSkinFromPath = (path: string) => call<SavedSkin>("add_saved_skin_from_path", { path });
+export const updateSavedSkin = (skinId: string, patch: SavedSkinPatch) =>
+  call<SavedSkin>("update_saved_skin", { skinId, patch });
+export const deleteSavedSkin = (skinId: string) => call<null>("delete_saved_skin", { skinId });
+export const applySavedSkin = (accountId: string, skinId: string) =>
+  call<null>("apply_saved_skin", { accountId, skinId });
+export const importCurrentSkin = (accountId: string) =>
+  call<SavedSkin | null>("import_current_skin", { accountId });
+export const listDefaultSkins = () => call<DefaultSkin[]>("list_default_skins");
+export const applyDefaultSkin = (accountId: string, key: string) =>
+  call<null>("apply_default_skin", { accountId, key });

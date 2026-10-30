@@ -118,4 +118,4 @@ pnpm --filter ui typecheck
 
 ## ライセンス
 
-Apache License 2.0 です。詳しくは `LICENSE` を参照してください。
+Apache License 2.0 です。詳しくは `LICENSE` を参照してください。同梱する第三者のソフトウェアの表示は `THIRD_PARTY_NOTICES.md` にあります。

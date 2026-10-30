@@ -5,6 +5,7 @@
     "instances": "Instances",
     "sync": "Shared settings",
     "browse": "Browse",
+    "skins": "Skins",
     "accounts": "Accounts",
     "settings": "Settings"
   },
@@ -104,6 +105,26 @@
     "noResults": "No matching commands",
     "launchLast": "Launch {{name}}"
   },
+  "skins": {
+    "saved": "Saved skins",
+    "defaults": "Default skins",
+    "retryDefaults": "Retry",
+    "removeCape": "Remove",
+    "preview": "Skin preview",
+    "add": "Add skin",
+    "menu": "Skin menu",
+    "name": "Name",
+    "model": "Model",
+    "classic": "Classic",
+    "slim": "Slim",
+    "replace": "Replace file",
+    "delete": "Delete",
+    "edit": "Edit skin",
+    "file": "File",
+    "chooseFile": "Choose PNG",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
   "accounts": {
     "devTitle": "Development offline account",
     "devHint": "Only in development builds. Release builds sign in with a Microsoft account.",
@@ -123,13 +144,6 @@
     "removeBody": "This removes the sign-in information from this computer. Tokens that Microsoft has already issued are not revoked.",
     "removeConfirm": "Remove",
     "changeSkin": "Change skin",
-    "skinTitle": "Change skin",
-    "skinFile": "Skin image (PNG)",
-    "skinFileHint": "64x64 or 64x32, up to 64 KiB.",
-    "skinModel": "Model",
-    "skinClassic": "Classic",
-    "skinSlim": "Slim",
-    "skinSubmit": "Change",
     "cancel": "Cancel"
   },
   "sidebar": {
@@ -240,6 +254,7 @@
     "close": "Close notification"
   },
   "appBar": {
+    "breadcrumb": "Breadcrumb",
     "back": "Back",
     "forward": "Forward",
     "minimize": "Minimize",

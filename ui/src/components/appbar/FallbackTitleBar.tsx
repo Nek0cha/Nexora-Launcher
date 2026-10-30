@@ -1,6 +1,5 @@
-import { useTranslation } from "react-i18next";
 import { useIsWindows } from "../../app/platform";
-import { Logo } from "./AppBar";
+import { Brand } from "./Brand";
 import { WindowControls } from "./WindowControls";
 
 /**
@@ -9,19 +8,15 @@ import { WindowControls } from "./WindowControls";
  * ほかの OS では OS のタイトルバーがあるので、何も出さない。
  */
 export function FallbackTitleBar() {
-  const { t } = useTranslation();
   const isWindows = useIsWindows();
   if (!isWindows) return null;
   return (
     <header
       data-tauri-drag-region="deep"
       data-testid="fallback-title-bar"
-      className="flex h-10 shrink-0 items-center gap-1 bg-surface-1 pl-3"
+      className="flex h-10 shrink-0 items-center gap-1 bg-surface-1 pl-6"
     >
-      <Logo />
-      <span className="ml-1.5 font-display text-sm font-semibold tracking-[-0.01em] text-text-strong">
-        {t("appName")}
-      </span>
+      <Brand />
       {/* 空きの部分。ここをつかんでウィンドウを動かす */}
       <div className="h-full min-w-8 flex-1" />
       <div className="ml-2 h-full">

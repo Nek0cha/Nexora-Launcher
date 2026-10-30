@@ -79,12 +79,27 @@ describe("AppBar", () => {
     await act(async () => {
       await router.navigate("/instances/i1");
     });
-    await waitFor(() => expect(screen.getByTestId("page-name").textContent).toBe("Survival"));
+    await waitFor(() => expect(screen.getByTestId("page-name").textContent).toContain("Survival"));
+    expect(screen.getByRole("link", { name: "Instances" })).toBeTruthy();
     await act(async () => {
       await i18n.changeLanguage("ja");
       await router.navigate("/settings");
     });
     expect(screen.getByTestId("page-name").textContent).toBe("設定");
+    await act(async () => {
+      await router.navigate("/sync");
+    });
+    expect(screen.getByTestId("page-name").textContent).toBe("共通設定");
+  });
+
+  it("aligns_the_logo_and_name_with_the_sidebar_icon_and_label", () => {
+    mount();
+    // サイドバーのナビの余白 12px + 項目の余白 12px = 24px（pl-6）
+    expect(screen.getByTestId("app-bar").className).toContain("pl-6");
+    // ロゴはアイコンと同じ size-5、次の文字は gap 10px（gap-2.5）でラベルの左端に揃う
+    const brand = screen.getByTestId("brand");
+    expect(brand.className).toContain("gap-2.5");
+    expect(brand.querySelector("svg")?.getAttribute("class")).toContain("size-5");
   });
 
   it("back_and_forward_disabled_at_history_ends", async () => {

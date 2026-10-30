@@ -20,6 +20,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("../migrations/0006_sync.sql")),
         M::up(include_str!("../migrations/0007_sync_snapshot_time.sql")),
         M::up(include_str!("../migrations/0008_sync_snapshot_reason.sql")),
+        M::up(include_str!("../migrations/0009_skin_library.sql")),
     ])
 }
 
@@ -97,6 +98,8 @@ mod tests {
             "java_runtimes",
             "operations",
             "running_sessions",
+            "skin_import_log",
+            "skin_library",
             "sync_profile_instances",
             "sync_profiles",
             "sync_snapshots",
@@ -150,6 +153,7 @@ mod tests {
             M::up(include_str!("../migrations/0006_sync.sql")),
             M::up(include_str!("../migrations/0007_sync_snapshot_time.sql")),
             M::up(include_str!("../migrations/0008_sync_snapshot_reason.sql")),
+            M::up(include_str!("../migrations/0009_skin_library.sql")),
             M::up("CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;"),
         ]);
         let result = Db::open_with(&path, &broken);
@@ -163,7 +167,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 
     #[test]

@@ -33,6 +33,10 @@ pub struct AuthUrls {
     pub mc_license: String,
     pub mc_profile: String,
     pub mc_skins: String,
+    pub mc_cape_active: String,
+    /// スキンやマントの画像の取得先を差し替える（先頭一致の URL）。テスト専用で、本番は None
+    /// （`https://textures.minecraft.net` だけを受ける）。
+    pub texture_origin: Option<String>,
 }
 
 impl Default for AuthUrls {
@@ -50,6 +54,8 @@ impl Default for AuthUrls {
             mc_license: format!("{mc}/entitlements/license"),
             mc_profile: format!("{mc}/minecraft/profile"),
             mc_skins: format!("{mc}/minecraft/profile/skins"),
+            mc_cape_active: format!("{mc}/minecraft/profile/capes/active"),
+            texture_origin: None,
         }
     }
 }
@@ -102,6 +108,10 @@ mod tests {
         assert_eq!(
             u.mc_skins,
             "https://api.minecraftservices.com/minecraft/profile/skins"
+        );
+        assert_eq!(
+            u.mc_cape_active,
+            "https://api.minecraftservices.com/minecraft/profile/capes/active"
         );
     }
 
