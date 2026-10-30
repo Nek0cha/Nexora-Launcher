@@ -1,6 +1,7 @@
 import IconCaret from "~icons/ph/caret-up-down";
 import IconCheck from "~icons/ph/check";
 import { Button, Label, ListBox, ListBoxItem, Popover, Select as AriaSelect, SelectValue } from "react-aria-components";
+import { rowLabel } from "./settingsLayout";
 
 export type Option<T extends string> = { id: T; label: string };
 
@@ -42,7 +43,7 @@ export function Select<T extends string>(props: {
       }}
       className="flex items-center justify-between gap-4"
     >
-      <Label className="text-text">{props.label}</Label>
+      <Label className={rowLabel}>{props.label}</Label>
       <Button className={props.triggerClassName ? `${triggerClass} ${props.triggerClassName}` : triggerClass}>
         {/* 項目の中身（チェックの場所）ごと写さず、文字だけを表示する */}
         <SelectValue className="truncate">{({ selectedText }) => selectedText}</SelectValue>

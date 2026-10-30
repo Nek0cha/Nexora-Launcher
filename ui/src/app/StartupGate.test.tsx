@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
@@ -112,5 +112,45 @@ describe("StartupGate", () => {
     mount();
     expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
     expect(screen.queryByText("app")).toBeNull();
+  });
+
+  describe("startup screen", () => {
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: false }));
+    afterEach(() => vi.useRealTimers());
+    const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+    it("shows the logo screen only after 150ms of starting", async () => {
+      vi.mocked(getStartupStatus).mockResolvedValue({ state: "starting" });
+      mount();
+      await tick(100);
+      expect(screen.queryByTestId("startup-splash")).toBeNull();
+      await tick(60);
+      expect(screen.getByTestId("startup-splash")).toBeTruthy();
+      expect(screen.getByText("Nexora")).toBeTruthy();
+      expect(screen.queryByText("app")).toBeNull();
+    });
+
+    it("never shows the logo screen when ready within 150ms", async () => {
+      vi.mocked(getStartupStatus).mockResolvedValue({ state: "ready" });
+      mount();
+      await tick(0);
+      expect(screen.getByText("app")).toBeTruthy();
+      await tick(500);
+      expect(screen.queryByTestId("startup-splash")).toBeNull();
+    });
+
+    it("keeps the logo screen for 300ms before showing the children", async () => {
+      let status: { state: "starting" } | { state: "ready" } = { state: "starting" };
+      vi.mocked(getStartupStatus).mockImplementation(async () => status);
+      mount();
+      await tick(160);
+      expect(screen.getByTestId("startup-splash")).toBeTruthy();
+      status = { state: "ready" };
+      await tick(110);
+      expect(screen.getByTestId("startup-splash")).toBeTruthy();
+      expect(screen.queryByText("app")).toBeNull();
+      await tick(400);
+      expect(screen.getByText("app")).toBeTruthy();
+    });
   });
 });

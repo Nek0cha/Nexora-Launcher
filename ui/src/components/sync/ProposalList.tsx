@@ -22,6 +22,7 @@ import {
 } from "../../features/sync/proposals";
 import { SYNC_KEY, useSyncProfileValues, useSyncProposals } from "../../features/sync/useInstanceSync";
 import { FailureNotice } from "../FailureNotice";
+import { RadioMark } from "../RadioMark";
 import { useToast } from "../toast/useToast";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -52,13 +53,6 @@ const radioClass = [
   "group flex cursor-default items-center gap-2.5 rounded-md py-1 text-sm text-text",
   "data-disabled:cursor-not-allowed data-disabled:opacity-60",
   "data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-accent",
-].join(" ");
-
-const radioMark = [
-  "size-4 shrink-0 rounded-full border border-line-control bg-surface-1",
-  "transition-[border-width,border-color] duration-(--duration-fast) ease-out-quint",
-  "group-data-selected:border-[5px] group-data-selected:border-accent",
-  "group-data-hovered:border-text-muted group-data-selected:group-data-hovered:border-accent",
 ].join(" ");
 
 type Scope = {
@@ -133,8 +127,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
   const { t, i18n } = useTranslation();
   const client = useQueryClient();
   const toast = useToast();
-  const noteId = useId();
-
   // 解決はいつも直列。進んでいる間は、ほかの選択肢を押せない
   const resolve = useMutation({
     mutationKey: SYNC_KEY,
@@ -146,13 +138,13 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
     },
     onError: toast.showError,
     // 途中で失敗しても、済んだ分を映すために取り直す
-    onSettled: () => void client.invalidateQueries({ queryKey: SYNC_KEY }),
+    // 取り直しが終わるまで進行中のままにする（解決した項目が一瞬、押せる状態で戻らないように）
+    onSettled: () => client.invalidateQueries({ queryKey: SYNC_KEY }),
   });
 
   const ctx: ItemContext = {
     scope,
     busy: resolve.isPending,
-    noteId,
     current: (fieldId) => {
       const found = values.find((v) => v.fieldId === fieldId);
       return found ? formatValue(fieldId, found.value, t) : t("sync.proposals.notSet");
@@ -173,7 +165,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface-1 p-4">
-      <p className="text-sm text-text-muted">{t("sync.proposals.intro")}</p>
       {bulk && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3">
           <Button
@@ -196,9 +187,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
           <ConflictItem key={c.fieldId} conflict={c} ctx={ctx} />
         ))}
       </ul>
-      <p id={noteId} className="text-xs text-text-muted">
-        {t("sync.proposals.ignoreNote")}
-      </p>
     </div>
   );
 }
@@ -206,8 +194,6 @@ export function ProposalList({ view, values, scope }: { view: PendingView; value
 type ItemContext = {
   scope: Scope;
   busy: boolean;
-  /** 「無視」の注記の ID */
-  noteId: string;
   current: (fieldId: string) => string;
   format: (fieldId: string, value: string) => string;
   label: (fieldId: string) => string;
@@ -258,7 +244,6 @@ function SingleItem({ item, ctx }: { item: SingleProposal; ctx: ItemContext }) {
         <Button
           onPress={() => choose("ignore")}
           isDisabled={ctx.busy}
-          aria-describedby={ctx.noteId}
           className={quietButton}
         >
           {t("sync.proposals.ignore")}
@@ -271,7 +256,6 @@ function SingleItem({ item, ctx }: { item: SingleProposal; ctx: ItemContext }) {
 function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemContext }) {
   const { t } = useTranslation();
   const headingId = useId();
-  const noteId = useId();
   const [chosen, setChosen] = useState<string | null>(null);
   const label = ctx.label(conflict.fieldId);
   // 同じ値を出したインスタンスは 1 つの選択肢にまとめる
@@ -297,7 +281,7 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
       >
         {[...byValue].map(([value, ids]) => (
           <Radio key={value} value={value} className={radioClass}>
-            <span aria-hidden className={radioMark} />
+            <RadioMark />
             <span className="font-medium text-text-strong tabular-nums">{ctx.format(conflict.fieldId, value)}</span>
             <span className="text-text-muted"> {ctx.names(ids)}</span>
           </Radio>
@@ -307,7 +291,6 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
         <Button
           onPress={() => chosen !== null && ctx.run(conflictCalls(conflict, { choose: chosen }, ctx.scope.instanceId))}
           isDisabled={ctx.busy || chosen === null}
-          aria-describedby={noteId}
           className={primaryButton}
         >
           {t("sync.proposals.applyChosen")}
@@ -315,15 +298,11 @@ function ConflictItem({ conflict, ctx }: { conflict: ConflictView; ctx: ItemCont
         <Button
           onPress={() => ctx.run(conflictCalls(conflict, "ignore", ctx.scope.instanceId))}
           isDisabled={ctx.busy}
-          aria-describedby={ctx.noteId}
           className={quietButton}
         >
           {t("sync.proposals.ignore")}
         </Button>
       </div>
-      <p id={noteId} className="text-xs text-text-muted">
-        {t("sync.proposals.conflictNote")}
-      </p>
     </li>
   );
 }

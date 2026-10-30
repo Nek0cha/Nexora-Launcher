@@ -11,6 +11,7 @@ import { clearToasts } from "../components/toast/useToast";
 import { LAST_EXIT_KEY, RUNNING_KEY } from "../features/play/useGameSync";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
+import { META_MIN_WIDTH } from "../features/instances/visibleMeta";
 import Instances from "./Instances";
 
 vi.mock("../api/commands", () => ({
@@ -120,8 +121,9 @@ describe("Instances", () => {
 
     const survival = await row("Survival");
     expect(within(survival).getByText("1.21.5")).toBeTruthy();
-    expect(within(survival).getByText("Ready")).toBeTruthy();
-    expect(within(survival).getByText("3 hr 12 min")).toBeTruthy();
+    // 使える状態の印は出さない
+    expect(within(survival).queryByText("Ready")).toBeNull();
+    expect(within(survival).getByText("3h 12m")).toBeTruthy();
     const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
     expect(within(survival).getByText(played)).toBeTruthy();
     // 名前、「コンテンツ」、「設定」のどれからも、そのインスタンスの詳細を開ける
@@ -318,5 +320,108 @@ describe("Instances", () => {
     const alert = await within(toasts()).findByRole("alert");
     expect(alert.textContent).toContain("Could not read or write a file: C:/x");
     expect(alert.textContent).toContain("The folder may have been partly removed. Try deleting it again.");
+  });
+
+  describe("meta line", () => {
+    const played = 1_700_000_000_000;
+    const full = () => instance("i1", "Survival", { lastPlayedAt: played, playTimeMs: 3 * 3_600_000 + 12 * 60_000 });
+
+    it("keeps each label and its value together on one line", async () => {
+      mount([full()]);
+      const li = await row("Survival");
+      for (const label of ["Last played", "Play time"]) {
+        const pair = within(li).getByText(label).parentElement as HTMLElement;
+        expect(pair.className).toContain("whitespace-nowrap");
+      }
+      const meta = li.querySelector("[data-meta]") as HTMLElement;
+      expect(meta.className).toContain("whitespace-nowrap");
+      expect(meta.className).not.toContain("flex-wrap");
+    });
+
+    it("puts everything, hidden or not, in the row tooltip", async () => {
+      mount([full()]);
+      const meta = (await row("Survival")).querySelector("[data-meta]") as HTMLElement;
+      const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
+      expect(meta.getAttribute("title")).toBe(`1.21.5 · Last played ${played} · Play time 3h 12m`);
+    });
+
+    it("also gives the full meta text to screen readers, not only the tooltip", async () => {
+      mount([full()]);
+      const li = await row("Survival");
+      const played = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(1_700_000_000_000);
+      const full_text = `1.21.5 · Last played ${played} · Play time 3h 12m`;
+      const sr = Array.from(li.querySelectorAll(".sr-only")).find((el) => el.textContent === full_text);
+      expect(sr).toBeTruthy();
+      expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("hides play time, then last played, then version as the row narrows, keeping the tooltip", async () => {
+      const widths: number[] = [];
+      let callback: ResizeObserverCallback = () => {};
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(cb: ResizeObserverCallback) {
+            callback = cb;
+          }
+          observe() {}
+          disconnect() {}
+          unobserve() {}
+        },
+      );
+      const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => widths.at(-1) ?? 0);
+      try {
+        mount([full()]);
+        const li = await row("Survival");
+        const resize = async (w: number) => {
+          widths.push(w);
+          await act(async () => callback([], {} as ResizeObserver));
+        };
+        const text = () => (li.querySelector("[data-meta]") as HTMLElement).textContent ?? "";
+        await resize(10_000);
+        expect(text()).toContain("Play time");
+        await resize(META_MIN_WIDTH.playTime - 1);
+        expect(text()).not.toContain("Play time");
+        expect(text()).toContain("Last played");
+        await resize(META_MIN_WIDTH.lastPlayed - 1);
+        expect(text()).not.toContain("Last played");
+        expect(text()).toContain("1.21.5");
+        await resize(META_MIN_WIDTH.version - 1);
+        expect(text()).toBe("");
+        expect((li.querySelector("[data-meta]") as HTMLElement).getAttribute("title")).toContain("Play time 3h 12m");
+        expect(within(li).getByRole("link", { name: "Survival" })).toBeTruthy();
+      } finally {
+        spy.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("shows a state label beside the name only when the instance is not usable", async () => {
+      mount([
+        instance("i1", "Fine"),
+        instance("i2", "Hurt", { state: "broken" }),
+        instance("i3", "Fresh", { state: "installing" }),
+      ]);
+      const fine = await row("Fine");
+      expect(fine.querySelector("[data-state-label]")).toBeNull();
+      for (const [name, label] of [["Hurt", "Broken"], ["Fresh", "Preparing"]] as const) {
+        const li = await row(name);
+        const badge = li.querySelector("[data-state-label]") as HTMLElement;
+        expect(badge.textContent).toBe(label);
+        expect(badge.className).toContain("shrink-0");
+        // 名前と同じ行、名前のリンクの隣
+        expect(badge.parentElement).toBe(within(li).getByRole("link", { name }).parentElement);
+        // 重複して読み上げない（全文の方に含まれる）
+        expect(li.querySelector("[data-meta]")?.textContent).not.toContain(label);
+        expect(Array.from(li.querySelectorAll(".sr-only")).some((el) => el.textContent?.includes(label))).toBe(true);
+      }
+    });
+
+    it("caps the name link to its column so it truncates instead of covering the buttons", async () => {
+      mount([full()]);
+      const link = within(await row("Survival")).getByRole("link", { name: "Survival" });
+      expect(link.className).toContain("max-w-full");
+      expect(link.className).toContain("truncate");
+    });
   });
 });

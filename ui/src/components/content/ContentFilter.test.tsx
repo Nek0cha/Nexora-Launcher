@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyFilter, type FilterState } from "../../features/content/contentFilter";
 import i18n from "../../i18n";
-import { ContentFilter } from "./ContentFilter";
+import { sizeChangingStateClasses } from "../layoutStability";
+import { ChipGroup, ContentFilter, FilterSkeleton } from "./ContentFilter";
 
 function mount(
   props: { state?: FilterState; categories?: string[] | null; showStatus?: boolean; showSearch?: boolean } = {},
@@ -77,5 +78,44 @@ describe("ContentFilter", () => {
     const onChange = mount({ showStatus: true });
     fireEvent.click(screen.getByRole("button", { name: "Dependency" }));
     expect(onChange).toHaveBeenLastCalledWith({ ...emptyFilter, status: ["dependency"] });
+  });
+
+  it("chips change only colour when selected: no size-changing state classes", () => {
+    mount();
+    for (const chip of screen.getAllByRole("button", { name: /Required|Optional|Unsupported/ })) {
+      expect(sizeChangingStateClasses(chip.className)).toEqual([]);
+    }
+  });
+
+  it("keeps a check slot in every chip so selecting does not change its width", () => {
+    const { rerender } = render(
+      <ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={[]} onChange={() => {}} />,
+    );
+    const slot = () => screen.getByRole("button", { name: "Alpha" }).querySelector("[data-check-slot]");
+    const before = slot();
+    expect(before).not.toBeNull();
+    expect(before?.getAttribute("aria-hidden")).toBe("true");
+    expect(before?.querySelector("svg")).not.toBeNull();
+    const frame = before?.className;
+    const emptyMark = before?.innerHTML;
+    rerender(<ChipGroup label="Side" options={[{ id: "a", label: "Alpha" }]} selected={["a"]} onChange={() => {}} />);
+    expect(slot()?.className).toBe(frame);
+    expect(slot()?.querySelector("svg")).not.toBeNull();
+    expect(slot()?.innerHTML).not.toBe(emptyMark);
+  });
+
+  it("the skeleton chips take the same size classes and label width as the real chips, so the filter does not change height", () => {
+    const { container } = render(<FilterSkeleton status />);
+    const skeletonChips = Array.from(container.querySelectorAll("[aria-hidden=true]")).filter((e) =>
+      e.className.includes("rounded-full"),
+    );
+    // クライアント 3、サーバー 3、カテゴリ、状態 3
+    expect(skeletonChips.length).toBeGreaterThan(9);
+    const first = skeletonChips[0] as HTMLElement;
+    for (const token of ["h-7", "px-2.5", "gap-1", "text-xs", "whitespace-nowrap", "border"]) {
+      expect(first.className.split(/\s+/)).toContain(token);
+    }
+    expect(first.querySelector('[class~="size-3.5"]')).not.toBeNull();
+    expect(first.textContent).toBe("Required");
   });
 });

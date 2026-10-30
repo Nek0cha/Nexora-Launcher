@@ -66,7 +66,8 @@ export default function Accounts() {
   const [removeOpen, setRemoveOpen] = useState(false);
 
   // 一覧は accounts://changed でも取り直されるが、届く前に古い表示が残らないよう、成功したらすぐ取り直す
-  const refresh = () => void client.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+  // 取り直しが終わるまで mutation を進行中のままにする。先に終わると、古い表示が一瞬戻ってから新しくなる
+  const refresh = () => client.invalidateQueries({ queryKey: ACCOUNTS_KEY });
   const action = {
     onSuccess: refresh,
     onError: (e: unknown) => toast.showError(e),
@@ -166,6 +167,30 @@ export default function Accounts() {
   );
 }
 
+/**
+ * 「使う」。使用中の行では押せないので、同じ幅の見えない枠に替えて、隣のボタンの位置を変えない。
+ * 枠は読み上げとフォーカスから外す。
+ */
+function UseButton({ active, activating, onUse, className }: {
+  active: boolean;
+  activating: boolean;
+  onUse: () => void;
+  className: string;
+}) {
+  const { t } = useTranslation();
+  if (active)
+    return (
+      <span aria-hidden data-action-slot className={`${rowButton} invisible ${className}`}>
+        {t("accounts.use")}
+      </span>
+    );
+  return (
+    <Button onPress={onUse} isPending={activating} className={`${rowButton} ${className}`}>
+      {t("accounts.use")}
+    </Button>
+  );
+}
+
 function StatusBadges({ active, problem }: { active: boolean; problem: string | null }) {
   const { t } = useTranslation();
   return (
@@ -216,11 +241,7 @@ function AccountRow({
             {t("accounts.relogin")}
           </Button>
         )}
-        {!account.isActive && (
-          <Button onPress={onUse} isPending={activating} className={rowButton}>
-            {t("accounts.use")}
-          </Button>
-        )}
+        <UseButton active={account.isActive} activating={activating} onUse={onUse} className="" />
         {/* スキンの変更は Microsoft アカウントの行だけに置く。ログインし直しが必要な間は押せない */}
         <ChangeSkinDialog accountId={account.id} isDisabled={account.needsLogin} />
         <Button onPress={onRemove} className={rowButton}>
@@ -255,11 +276,7 @@ function DevOfflineRow({
           </span>
           <StatusBadges active={active} problem={null} />
         </div>
-        {!active && (
-          <Button onPress={onUse} isPending={activating} className={`${rowButton} shrink-0`}>
-            {t("accounts.use")}
-          </Button>
-        )}
+        <UseButton active={active} activating={activating} onUse={onUse} className="shrink-0" />
       </div>
       <p className="text-sm text-text-muted">{t("accounts.devHint")}</p>
       <DevUsernameForm initial={username} labelledBy={titleId} />

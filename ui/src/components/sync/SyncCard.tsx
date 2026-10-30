@@ -15,6 +15,7 @@ import { SYNC_KEY, useInstanceSync, useSyncFields } from "../../features/sync/us
 import { FailureNotice } from "../FailureNotice";
 import { Notice } from "../settingsLayout";
 import { useToast } from "../toast/useToast";
+import { InstanceChip } from "./InstanceChip";
 import { JoinSyncDialog } from "./JoinSyncDialog";
 import { ProposalsSection } from "./ProposalList";
 
@@ -72,7 +73,6 @@ function NotJoined({ instanceId, sync, running }: { instanceId: string; sync: In
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col items-start gap-3">
-      <p className="text-sm text-text-muted">{t("sync.card.intro")}</p>
       <Button onPress={() => setOpen(true)} className={secondaryButton}>
         {t("sync.card.start")}
       </Button>
@@ -101,8 +101,9 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   const leave = useMutation({
     mutationKey: SYNC_KEY,
     mutationFn: () => leaveSyncProfile(instanceId),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: SYNC_KEY });
+    onSuccess: async () => {
+      // 取り直しが終わるまで進行中のままにする（外れた後に、参加中の表示が一瞬戻らないように）
+      await client.invalidateQueries({ queryKey: SYNC_KEY });
       toast.show({ kind: "success", message: t("sync.card.left") });
     },
     onError: toast.showError,
@@ -111,7 +112,7 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   const release = useMutation({
     mutationKey: SYNC_KEY,
     mutationFn: (fieldId: string) => setSyncOverride(instanceId, fieldId, null),
-    onSuccess: () => void client.invalidateQueries({ queryKey: SYNC_KEY }),
+    onSuccess: () => client.invalidateQueries({ queryKey: SYNC_KEY }),
     onError: toast.showError,
   });
 
@@ -125,12 +126,16 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
   return (
     <>
       <div className="flex flex-col gap-0.5">
-        <p className="text-text">{t("sync.card.joined", { name: sync.profile?.name })}</p>
-        <p className="text-sm text-text-muted">
-          {others.length > 0
-            ? t("sync.card.members", { names: others.join(t("sync.card.separator")) })
-            : t("sync.card.membersNone")}
-        </p>
+        <p className="text-text">{sync.profile?.name}</p>
+        {others.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 py-1">
+            {others.map((name) => (
+              <li key={name} className="max-w-full">
+                <InstanceChip name={name} />
+              </li>
+            ))}
+          </ul>
+        )}
         {last?.state === "applied" && last.atMs !== null && (
           <p className="text-sm text-text-muted">
             {t("sync.card.lastApplied", { date: date.format(last.atMs) })}
@@ -152,9 +157,10 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
       {last?.state === "skipped" && !skipCoveredByApplicability && (
         <Notice tone="info">{t("sync.card.lastSkipped", { reason: t(reasonKey(last.reason)) })}</Notice>
       )}
-      {/* 適用できる状態のときだけ「反映されます」と言う。反映済み、または反映するものが無いなら何も言わない */}
-      {applicable && !sync.upToDate && last?.reason !== "nothingToApply" && (
-        <Notice tone="info">{running ? t("sync.card.afterPlay") : t("sync.card.nextLaunch")}</Notice>
+      {/* 適用できる状態のときだけ「反映されます」と言う。反映済み、または反映するものが無いなら何も言わない。
+          実行中は、設定の保存の上に出る「次の起動から反映されます」と同じ内容なので、ここでは言わない */}
+      {applicable && !sync.upToDate && last?.reason !== "nothingToApply" && !running && (
+        <Notice tone="info">{t("sync.card.nextLaunch")}</Notice>
       )}
 
       {sync.profile && (
@@ -175,8 +181,8 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
         />
       )}
 
-      {/* 外れる操作は確認を挟まない。外れても設定ファイルは変わらず、また参加できることを横に書く */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
+      {/* 外れる操作は確認を挟まない。外れても設定ファイルは変わらず、また参加できる */}
+      <div className="pt-1">
         <Button
           onPress={() => leave.mutate()}
           isPending={leave.isPending}
@@ -185,7 +191,6 @@ function Joined({ instanceId, sync, running }: { instanceId: string; sync: Insta
         >
           {t("sync.card.leave")}
         </Button>
-        <p className="min-w-0 flex-1 basis-60 text-xs text-text-muted">{t("sync.card.leaveNote")}</p>
       </div>
     </>
   );

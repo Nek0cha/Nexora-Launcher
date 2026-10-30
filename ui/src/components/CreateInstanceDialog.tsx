@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -45,9 +45,11 @@ import {
 } from "../features/instances/useCreateInstance";
 import { FailureNotice } from "./FailureNotice";
 import { InstanceAdvancedFields } from "./InstanceAdvancedFields";
-import { modalClass, overlayClass } from "./modal";
+import { overlayClass, wideModalClass } from "./modal";
+import { ReadyGate, useLatchedPending } from "./ReadyGate";
 import { Select } from "./Select";
-import { controlWidth, inputBase } from "./settingsLayout";
+import { Skeleton } from "./Skeleton";
+import { controlWidth, inputBase, rowLabel } from "./settingsLayout";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -119,7 +121,7 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
         <span>{t("create.open")}</span>
       </Button>
       <ModalOverlay isDismissable className={overlayClass}>
-        <Modal className={modalClass}>
+        <Modal className={wideModalClass}>
           <Dialog className="outline-hidden">{({ close }) => <CreateForm onDone={close} />}</Dialog>
         </Modal>
       </ModalOverlay>
@@ -127,16 +129,116 @@ export function CreateInstanceDialog({ trigger }: { trigger: "primary" | "quiet"
   );
 }
 
-/** ダイアログの中身。開くたびに作り直されるため、入力は毎回まっさらから始まる。 */
+/**
+ * 一覧が終わるのをこれより長くは待たない。回線が応えないときに、スケルトンのままにしないため。
+ * 意図した例外: 待ちの上限を過ぎてから届いた一覧のタブは、読み込み中の無効から有効へ変わる（回線が切れたまま待ち続けるより良いとする）。
+ */
+const MAX_WAIT_MS = 8000;
+
+/** 指定の時間が過ぎたら true になる */
+function useElapsed(ms: number): boolean {
+  const [elapsed, setElapsed] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setElapsed(true), ms);
+    return () => clearTimeout(id);
+  }, [ms]);
+  return elapsed;
+}
+
+/**
+ * ダイアログの中身。開くたびに作り直されるため、入力は毎回まっさらから始まる。
+ * バージョンの一覧と各ローダーの一覧がそろうまで中身を出さず、そろってから、タブの有効・無効、版、既定の名前を一度に決める。
+ * 失敗した一覧も「終わった」ものとして扱い、中身側で理由つきの無効として見せる。
+ */
 function CreateForm({ onDone }: { onDone: () => void }) {
-  const { t } = useTranslation();
-  const reasonId = useId();
   const versions = useVersions(true);
-  // 各ローダーの対応バージョンは、開いたときに取りに行く（キャッシュされる）
+  // 各ローダーの対応バージョンは、先読みされていればそれを使い、無ければ開いたときに取りに行く
   const fabricGames = useLoaderGameVersions("fabric", true);
   const forgeGames = useLoaderGameVersions("forge", true);
   const neoforgeGames = useLoaderGameVersions("neoforge", true);
   const quiltGames = useLoaderGameVersions("quilt", true);
+  const giveUp = useElapsed(MAX_WAIT_MS);
+  // 一度中身を出したら、再試行などで一覧が pending に戻っても枠は戻さない（入力が消えないように）
+  const pending = useLatchedPending(
+    !giveUp && [versions, fabricGames, forgeGames, neoforgeGames, quiltGames].some((q) => q.isPending),
+  );
+  const queries = [{ isPending: pending }];
+  return (
+    <ReadyGate queries={queries} skeleton={<CreateSkeleton />}>
+      <CreateFormBody
+        onDone={onDone}
+        versions={versions}
+        gameQueriesByLoader={{ fabric: fabricGames, forge: forgeGames, neoforge: neoforgeGames, quilt: quiltGames }}
+      />
+    </ReadyGate>
+  );
+}
+
+// ダイアログの面（surface-2）の上では、ふだんのスケルトンの色が溶けるため、一段濃くする
+const onPanel = "bg-surface-3!";
+
+/** 完成形と同じ並びと寸法のスケルトン。タブ、名前、バージョンの行と、下部のボタンの場所を取る */
+function CreateSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="create-skeleton" aria-busy="true" className="flex max-h-[calc(85vh-1rem)] flex-col">
+      <span role="status" className="sr-only">
+        {t("create.loadingLoaderVersions")}
+      </span>
+      <Heading slot="title" className="px-5 pt-5 font-display text-lg font-semibold text-text-strong">
+        {t("create.title")}
+      </Heading>
+      <div className="min-h-0 flex-1">
+        <div className="px-5 pt-4">
+          {/* 実際のタブと同じ文字の高さ・余白で並べ、見えない文字で行の高さを同じにする */}
+          <div className="flex gap-5 border-b border-line" aria-hidden>
+            {["w-14", "w-12", "w-12", "w-16", "w-12"].map((w, i) => (
+              <span key={i} className={`relative -mb-px border-b-2 border-transparent px-1 pb-2 text-sm ${w}`}>
+                <span className="invisible">Vanilla</span>
+                <Skeleton className={`absolute top-0 left-0 h-5 w-full ${onPanel}`} />
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-col gap-3 pt-4 pb-5">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex h-9 items-center justify-between gap-4">
+                <Skeleton className={`h-5 w-16 ${onPanel}`} />
+                <Skeleton className={`h-9 ${controlWidth} ${onPanel}`} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-line">
+          <div className="flex h-11 items-center px-5">
+            <Skeleton className={`h-5 w-24 ${onPanel}`} />
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+        <Button slot="close" className={secondaryButton}>
+          {t("create.cancel")}
+        </Button>
+        <Button type="submit" isDisabled className={submitButton}>
+          {t("create.submit")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type GameQueries = Record<"fabric" | "forge" | "neoforge" | "quilt", UseQueryResult<string[]>>;
+
+function CreateFormBody({
+  onDone,
+  versions,
+  gameQueriesByLoader,
+}: {
+  onDone: () => void;
+  versions: UseQueryResult<{ id: string }[]>;
+  gameQueriesByLoader: GameQueries;
+}) {
+  const { t } = useTranslation();
+  const reasonId = useId();
   const create = useCreateInstance();
   const profiles = useSyncProfiles().data ?? [];
   const [useShared, setUseShared] = useState(false);
@@ -144,20 +246,23 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   // 選んだ共通設定が消えていたら、先頭にする
   const profileId = profiles.find((p) => p.id === chosenProfile)?.id ?? profiles[0]?.id ?? null;
   const [loader, setLoader] = useState<LoaderKind>("vanilla");
-  const [version, setVersion] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  // 最初の描画で最新の正式版と既定の名前を決める（一覧は、中身を出す前にそろっている）
+  const [version, setVersion] = useState<string | null>(() => versions.data?.[0]?.id ?? null);
+  const [name, setName] = useState(() => {
+    const newest = versions.data?.[0]?.id;
+    return newest === undefined ? "" : nextName("", null, newest);
+  });
   const [chosenLoaderVersion, setChosenLoaderVersion] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(ADVANCED_DEFAULTS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const vanillaIds = versions.data?.map((v) => v.id) ?? [];
   const gameVersions: Partial<Record<LoaderKind, string[]>> = {
-    fabric: fabricGames.data,
-    forge: forgeGames.data,
-    neoforge: neoforgeGames.data,
-    quilt: quiltGames.data,
+    fabric: gameQueriesByLoader.fabric.data,
+    forge: gameQueriesByLoader.forge.data,
+    neoforge: gameQueriesByLoader.neoforge.data,
+    quilt: gameQueriesByLoader.quilt.data,
   };
-  const gameQueriesByLoader = { fabric: fabricGames, forge: forgeGames, neoforge: neoforgeGames, quilt: quiltGames };
   const gameQueries = Object.values(gameQueriesByLoader);
   const failedGames = gameQueries.find((q) => q.error);
   const loaderVersions = useLoaderVersions(loader, version, loader !== "vanilla");
@@ -173,7 +278,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     setVersion(nextVersion);
   };
 
-  // 一覧が届いたら、最初の項目（最新の正式版）を選ぶ
+  // バージョンの一覧が最初に失敗し、再試行で届いたときに、最初の項目（最新の正式版）を選ぶ
   const first = versions.data?.[0]?.id;
   useEffect(() => {
     if (version !== null || first === undefined) return;
@@ -188,18 +293,18 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     // select は毎回作り直されるが、判定に使う値はこの 3 つだけである
   }, [fallback, loader, version]);
 
-  const tabInfo = (l: LoaderKind): TabState | { enabled: false; reason: null } => {
+  const tabInfo = (l: LoaderKind): TabState | { enabled: false; reason: "failed" } => {
     if (l !== "vanilla") {
-      // 取得に失敗した一覧は「読み込み中」のままにしない。理由はダイアログの下部に出す
-      if (gameQueriesByLoader[l].error) return { enabled: false, reason: null };
-      // バージョンの一覧がまだ届いていない間は、ローダーの一覧も揃っていないものとして扱う
+      // 取得に失敗した一覧は「読み込み中」のままにせず、理由つきの無効にする。詳しい失敗はダイアログの下部に出す
+      if (gameQueriesByLoader[l].error || versions.error) return { enabled: false, reason: "failed" };
+      // 届いていない一覧（待ちの上限を過ぎたもの）は、読み込み中の無効として扱う
       if (version === null) return { enabled: false, reason: "loading" };
     }
     return tabState(l, vanillaIds, gameVersions);
   };
   const tabTitle = (s: ReturnType<typeof tabInfo>) => {
-    if (s.enabled || s.reason === null) return undefined;
-    return { noVersions: t("create.tabNoVersions"), loading: t("create.loadingLoaderVersions") }[s.reason];
+    if (s.enabled) return undefined;
+    return { noVersions: t("create.tabNoVersions"), loading: t("create.loadingLoaderVersions"), failed: t("create.tabFailed") }[s.reason];
   };
 
   const loaderVersion = loader === "vanilla" ? null : pickLoaderVersion(loaderVersions.data ?? [], chosenLoaderVersion);
@@ -251,7 +356,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
       <Heading slot="title" className="px-5 pt-5 font-display text-lg font-semibold text-text-strong">
         {t("create.title")}
       </Heading>
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <Tabs
           selectedKey={loader}
           onSelectionChange={(key) => {
@@ -291,7 +396,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
           {/* 中身はどのタブでも同じ欄なので、選んでいるタブの id を持つ 1 つのパネルを使い回す */}
           <TabPanel id={loader} className="flex flex-col gap-3 pt-4 pb-5 outline-none">
             <TextField value={name} onChange={setName} maxLength={64} autoFocus className="flex items-center justify-between gap-4">
-              <Label className="text-text">{t("create.name")}</Label>
+              <Label className={rowLabel}>{t("create.name")}</Label>
               {/* 空欄のまま作ると、既定の名前を使う。そのことを入力例として見せる */}
               <Input placeholder={currentDefault ?? undefined} className={inputClass} />
             </TextField>
@@ -425,7 +530,7 @@ function QueryRow({
     return (
       <div role="alert" className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-text">{label}</span>
+          <span className={rowLabel}>{label}</span>
           <Button onPress={() => void query.refetch()} isPending={query.isFetching} className={`${secondaryButton} ${controlWidth} justify-center`}>
             <IconRetry aria-hidden className="size-4" />
             <span>{t("create.retry")}</span>
@@ -440,7 +545,7 @@ function QueryRow({
     // 文が長いため、高さは折り返しに合わせて伸ばす
     return (
       <div className="flex items-center justify-between gap-4">
-        <span className="text-text">{label}</span>
+        <span className={rowLabel}>{label}</span>
         <span
           role="status"
           className={`flex min-h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 py-1.5 text-sm text-text-muted`}
@@ -454,7 +559,7 @@ function QueryRow({
     // 届いた後の Select と同じ行の形と高さにして、置き換わってもレイアウトを動かさない
     return (
       <div aria-busy="true" className="flex items-center justify-between gap-4">
-        <span className="text-text">{label}</span>
+        <span className={rowLabel}>{label}</span>
         <span className={`flex h-9 ${controlWidth} items-center rounded-md border border-line bg-surface-1 px-3 text-sm text-text-muted`}>
           {loadingText}
         </span>

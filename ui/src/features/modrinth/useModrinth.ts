@@ -1,4 +1,4 @@
-import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import {
   changeContentVersion,
@@ -26,12 +26,16 @@ export const SEARCH_PAGE_SIZE = 20;
 
 const searchKey = (instanceId: string | null, query: SearchQuery) => ["modrinth-search", instanceId, query] as const;
 
-/** 検索。条件が変わると別のキャッシュになり、古い結果は新しい入力に混ざらない（placeholderData は使わない）。 */
+/**
+ * 検索。条件が変わると別のキャッシュになり、古い結果は新しい入力に混ざらない。
+ * 新しい結果が届くまでは、前の結果を `isPlaceholderData` つきで残す（一覧を空にして画面が跳ねるのを避ける）。
+ */
 export function useModrinthSearch(instanceId: string | null, query: SearchQuery) {
   return useInfiniteQuery({
     queryKey: searchKey(instanceId, query),
     queryFn: ({ pageParam }) => searchModrinth(instanceId, query, pageParam),
     initialPageParam: 0,
+    placeholderData: keepPreviousData,
     getNextPageParam: (last) => {
       const next = last.offset + SEARCH_PAGE_SIZE;
       return next < last.total && last.hits.length > 0 ? next : undefined;

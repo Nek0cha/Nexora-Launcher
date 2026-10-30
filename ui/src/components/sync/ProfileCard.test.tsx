@@ -11,6 +11,7 @@ import {
 } from "../../api/commands";
 import type { SyncMember } from "../../bindings/SyncMember";
 import type { SyncProfile } from "../../bindings/SyncProfile";
+import type { DragState } from "../../features/sync/chipDrag";
 import i18n from "../../i18n";
 import { ProfileCard } from "./ProfileCard";
 
@@ -37,11 +38,11 @@ const profile: SyncProfile = {
 
 const onJoin = vi.fn();
 
-function mount({ p = profile, unjoined = [{ id: "i3", name: "Modded" }] as SyncMember[] } = {}) {
+function mount({ p = profile, unjoined = [{ id: "i3", name: "Modded" }] as SyncMember[], drag = null as DragState | null } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ProfileCard profile={p} unjoined={unjoined} onJoin={onJoin} />
+      <ProfileCard profile={p} unjoined={unjoined} onJoin={onJoin} drag={drag} />
     </QueryClientProvider>,
   );
 }
@@ -222,5 +223,40 @@ describe("ProfileCard", () => {
     await press(within(dialog).getByRole("button", { name: "キャンセル" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(deleteSyncProfile).not.toHaveBeenCalled();
+  });
+
+  it("lays the category switches out in a wrapping row and never wraps inside one", () => {
+    mount();
+    const buttons = screen.getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+    expect(buttons).toHaveLength(7);
+    expect((buttons[0]?.parentElement as HTMLElement).className).toContain("flex-wrap");
+    for (const b of buttons) {
+      expect(b.className).toContain("whitespace-nowrap");
+      expect(b.className).toContain("shrink-0");
+    }
+  });
+
+  it("shows the drop target by colour only: the card keeps its border width, padding and size classes", () => {
+    const tokens = (drag: DragState | null) => {
+      mount({ drag });
+      const card = screen.getByRole("region", { name: "いつもの" });
+      const out = card.className.split(/\s+/).filter(Boolean);
+      cleanup();
+      return out;
+    };
+    const idle = tokens(null);
+    const over = tokens({
+      instanceId: "i3",
+      profileId: null,
+      name: "Modded",
+      x: 0,
+      y: 0,
+      zone: { kind: "profile", profileId: "p1" },
+    });
+    expect(over.filter((c) => !idle.includes(c)).sort()).toEqual(["bg-surface-2", "border-accent"]);
+    expect(idle.filter((c) => !over.includes(c)).sort()).toEqual(["border-line"]);
+    // 面と枠の色以外（border 幅、p-4、gap）は同じ
+    expect(over).toContain("border");
+    expect(over).toContain("p-4");
   });
 });

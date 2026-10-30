@@ -27,6 +27,18 @@ afterEach(() => {
 });
 
 describe("Settings route", () => {
+  it("does not repeat the label under the download count", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      theme: "dark",
+      language: "en",
+      maxConcurrentDownloads: 8,
+      lastAddedInstance: null,
+    });
+    mount();
+    await screen.findByText("Concurrent downloads");
+    expect(screen.queryByText("How many files are downloaded in parallel.")).toBeNull();
+  });
+
   it("shows an error instead of a blank screen when loading fails", async () => {
     vi.mocked(getSettings).mockRejectedValue(new IpcError({ code: "db.failed", params: {}, detail: "secret path" }));
     mount();

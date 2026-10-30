@@ -155,10 +155,10 @@ describe("SyncCard when not joined", () => {
 });
 
 describe("SyncCard when joined", () => {
-  it("shows the name, the other members and the last time it was applied", async () => {
+  it("shows the name, the other members as chips and the last time it was applied", async () => {
     mount(joined);
-    expect(await screen.findByText("共通設定「いつもの」を使っています")).toBeTruthy();
-    expect(card().textContent).toContain("一緒に使っているインスタンス：Creative、Modded");
+    expect(await screen.findByText("いつもの")).toBeTruthy();
+    expect(within(card()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Creative", "Modded"]);
     const date = new Intl.DateTimeFormat("ja", { dateStyle: "medium", timeStyle: "short" }).format(
       joined.lastApplied!.atMs!,
     );
@@ -175,19 +175,21 @@ describe("SyncCard when joined", () => {
 
   it("does not promise the next launch when there was nothing to apply", async () => {
     mount({ ...joined, upToDate: false, lastApplied: { state: "skipped", atMs: 1, reason: "nothingToApply" } });
-    await screen.findByText(/を使っています/);
+    await screen.findByText("いつもの");
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
-  it("says it applies after the current session while the game runs", async () => {
+  it("leaves the timing to the settings form while the game runs", async () => {
     mount({ ...joined, upToDate: false }, { running: true });
-    expect(await screen.findByText("いまのプレイが終わった後に反映されます。")).toBeTruthy();
+    await screen.findByText("いつもの");
+    expect(card().textContent).not.toContain("いまのプレイが終わった後に反映されます");
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
-  it("says when no other instance uses the shared settings", async () => {
+  it("shows no member chips when no other instance uses the shared settings", async () => {
     mount({ ...joined, members: [{ id: "i1", name: "Survival" }] });
-    expect(await screen.findByText("ほかに参加しているインスタンスはまだありません。")).toBeTruthy();
+    await screen.findByText("いつもの");
+    expect(within(card()).queryAllByRole("listitem")).toEqual([]);
   });
 
   it.each([
@@ -196,7 +198,7 @@ describe("SyncCard when joined", () => {
     ["versionMismatch", "設定ファイルが、このゲームのバージョンのものと合っていません。"],
   ] as const)("explains why it cannot apply (%s)", async (applicability, text) => {
     mount({ ...joined, applicability });
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     expect(card().textContent).toContain("このインスタンスにはまだ適用できません。");
     expect(card().textContent).toContain(text);
   });
@@ -210,20 +212,20 @@ describe("SyncCard when joined", () => {
 
   it("keeps asking for a first launch when the settings file cannot be created", async () => {
     mount({ ...joined, hasOptions: false, applicability: "needsFirstLaunch", upToDate: false, lastApplied: null });
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     expect(card().textContent).toContain("一度起動すると、設定を読み取れるようになります。");
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
   it("does not promise the next launch when it cannot apply", async () => {
     mount({ ...joined, upToDate: false, applicability: "needsFirstLaunch" });
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     expect(card().textContent).not.toContain("次の起動時に反映されます");
   });
 
   it("does not show a reason when it can apply", async () => {
     mount(joined);
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     expect(card().textContent).not.toContain("まだ適用できません");
   });
 
@@ -275,7 +277,7 @@ describe("SyncCard when joined", () => {
 
   it("has no badge or proposal text when nothing changed in game", async () => {
     mount({ ...joined, pendingCount: 0 });
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     expect(screen.queryByTestId("proposal-badge")).toBeNull();
     expect(card().textContent).not.toContain("変えた設定");
   });
@@ -286,12 +288,9 @@ describe("SyncCard when joined", () => {
     expect(screen.getByTestId("proposal-badge").textContent).toBe("2");
   });
 
-  it("leaves without a confirmation and notes that it can be undone", async () => {
+  it("leaves without a confirmation", async () => {
     mount(joined);
-    await screen.findByText("共通設定「いつもの」を使っています");
-    expect(card().textContent).toContain(
-      "外れても、このインスタンスの設定はそのまま残ります。あとでまた参加できます。",
-    );
+    await screen.findByText("いつもの");
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "共通設定から外れる" }));
     });
@@ -301,7 +300,7 @@ describe("SyncCard when joined", () => {
 
   it("never shows the internal words", async () => {
     mount({ ...joined, upToDate: false, applicability: "versionMismatch" });
-    await screen.findByText("共通設定「いつもの」を使っています");
+    await screen.findByText("いつもの");
     for (const word of ["同期プロファイル", "options.txt", "DataVersion", "codec"]) {
       expect(card().textContent).not.toContain(word);
     }

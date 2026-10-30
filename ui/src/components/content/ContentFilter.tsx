@@ -1,12 +1,16 @@
 import { useId } from "react";
 import { Input, type Key, SearchField, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import IconCheck from "~icons/ph/check";
+import IconCheck from "~icons/ph/check-circle-fill";
+import IconCircle from "~icons/ph/circle";
 import IconSearch from "~icons/ph/magnifying-glass";
+import type { ErrorPayload } from "../../bindings/ErrorPayload";
 import type { Side } from "../../bindings/Side";
 import type { FilterState, StatusKey } from "../../features/content/contentFilter";
 import i18n, { type resources } from "../../i18n";
+import { FailureNotice } from "../FailureNotice";
 import { inputBase } from "../settingsLayout";
+import { Skeleton } from "../Skeleton";
 
 type CategorySlug = keyof (typeof resources)["ja"]["common"]["content"]["category"];
 
@@ -19,8 +23,12 @@ export function isKnownCategory(slug: string): boolean {
 }
 
 // 選べる値の札。選んだ札は面を明るくし、色だけに頼らないようチェックの印も付ける
+// 寸法は状態で変えない。読み込み中の場所取り（ChipSkeleton）と共有し、折り返しまで本物と同じにする
+const chipGeometry =
+  "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs whitespace-nowrap";
+
 const chipClass = [
-  "inline-flex h-7 cursor-default items-center gap-1 rounded-full border border-line px-2.5 text-xs text-text-muted",
+  `${chipGeometry} cursor-default border-line text-text-muted`,
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "hover:bg-surface-2 hover:text-text pressed:bg-surface-3",
   "selected:border-line-strong selected:bg-surface-3 selected:text-text-strong",
@@ -58,7 +66,10 @@ export function ChipGroup<T extends string>(props: {
           <ToggleButton key={o.id} id={o.id} className={chipClass}>
             {({ isSelected }) => (
               <>
-                {isSelected && <IconCheck aria-hidden className="-ml-0.5 size-3.5" />}
+                {/* 印は選ばれていない札にも出し（空の丸）、選んでも幅が変わらないようにする */}
+                <span aria-hidden data-check-slot className="-ml-0.5 grid size-3.5 shrink-0 place-items-center">
+                  {isSelected ? <IconCheck className="size-3.5" /> : <IconCircle className="size-3.5 opacity-60" />}
+                </span>
                 <span>{o.label}</span>
               </>
             )}
@@ -107,6 +118,8 @@ export function ContentFilter(props: {
   state: FilterState;
   onChange: (next: FilterState) => void;
   categories: string[] | null;
+  /** カテゴリの取得に失敗したときの理由。あれば、カテゴリの場所に理由を出す */
+  categoriesError?: ErrorPayload | null;
   showStatus: boolean;
   showSearch?: boolean;
   statuses?: StatusKey[];
@@ -132,6 +145,12 @@ export function ContentFilter(props: {
         selected={state.server}
         onChange={(server) => onChange({ ...state, server })}
       />
+      {props.categoriesError && (
+        <div data-testid="categories-failed" className="flex flex-col gap-2">
+          <span className="text-xs text-text-muted">{t("content.filter.categories")}</span>
+          <FailureNotice error={props.categoriesError} />
+        </div>
+      )}
       {props.categories !== null && props.categories.length > 0 && (
         <ChipGroup
           label={t("content.filter.categories")}
@@ -151,6 +170,53 @@ export function ContentFilter(props: {
           onChange={(status) => onChange({ ...state, status })}
         />
       )}
+    </div>
+  );
+}
+
+/** 札と同じ寸法の場所取り。文字は見えないが同じ幅を取るので、折り返しも本物と同じになる */
+export function ChipSkeleton({ label }: { label: string }) {
+  return (
+    <div aria-hidden className={`${chipGeometry} border-transparent bg-surface-2 motion-safe:animate-pulse`}>
+      <span className="-ml-0.5 size-3.5 shrink-0" />
+      <span className="invisible">{label}</span>
+    </div>
+  );
+}
+
+function ChipGroupSkeleton({ labels }: { labels: string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Skeleton className="h-[18px] w-16" />
+      <div className="flex flex-wrap gap-1.5">
+        {labels.map((label) => (
+          <ChipSkeleton key={label} label={label} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Modrinth の MOD のカテゴリ。完成形の折り返しに近づけるための並び（取得できたものと違っても、高さはほぼ同じ）
+const skeletonCategories = [
+  "adventure", "cursed", "decoration", "economy", "equipment", "food", "game-mechanics", "library", "magic",
+  "management", "minigame", "mobs", "optimization", "social", "storage", "technology", "transportation",
+  "utility", "worldgen",
+];
+
+/**
+ * 絞り込みの列と同じ並びと寸法のスケルトン。見出しと札の数は、完成形（クライアント、サーバー、カテゴリ、状態）に合わせる。
+ * 札は本物と同じ幅の場所取りで、折り返しも同じになる。
+ */
+export function FilterSkeleton({ status }: { status: boolean }) {
+  const { t } = useTranslation();
+  const sideLabels = sides.map((id) => t(`content.filter.side.${id}`));
+  return (
+    <div className="flex flex-col gap-4">
+      <ChipGroupSkeleton labels={sideLabels} />
+      <ChipGroupSkeleton labels={sideLabels} />
+      <ChipGroupSkeleton labels={skeletonCategories.map(categoryLabel)} />
+      {status && <ChipGroupSkeleton labels={defaultStatuses.map((id) => t(`content.filter.statusValue.${id}`))} />}
     </div>
   );
 }

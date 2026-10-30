@@ -8,17 +8,13 @@ import { useSettings, useSettingsWriteError, useUpdateSetting } from "../feature
 import { detectLanguage, type Lang } from "../i18n";
 import type { Theme } from "../bindings/Theme";
 
-// 1段の行は 44px、ラベルと説明の2段の行は 52px（mode-app の行の高さ）
-function Section({ title, twoLine = false, children }: { title: string; twoLine?: boolean; children: ReactNode }) {
+// 行の高さは 44px（mode-app の行の高さ）
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-xs font-medium tracking-[0.08em] text-text-muted">{title}</h2>
       {/* 設定の項目は細い線で区切る */}
-      <div
-        className={`flex flex-col divide-y divide-line border-y border-line [&>*]:py-1 ${twoLine ? "[&>*]:min-h-13" : "[&>*]:min-h-11"}`}
-      >
-        {children}
-      </div>
+      <div className="flex flex-col divide-y divide-line border-y border-line [&>*]:min-h-11 [&>*]:py-1">{children}</div>
     </section>
   );
 }
@@ -74,10 +70,9 @@ export default function Settings() {
           onChange={(value) => update.mutate({ key: "language", value })}
         />
       </Section>
-      <Section title={t("downloads.section")} twoLine>
+      <Section title={t("downloads.section")}>
         <NumberField
           label={t("downloads.label")}
-          description={t("downloads.description")}
           value={data.maxConcurrentDownloads}
           min={1}
           max={16}

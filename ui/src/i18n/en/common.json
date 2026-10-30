@@ -66,6 +66,7 @@
       "quilt": "Quilt"
     },
     "tabNoVersions": "No supported versions",
+    "tabFailed": "Couldn't load",
     "loadingLoaderVersions": "Loading loader versions",
     "noLoaderVersions": "No loader versions are available for this Minecraft version",
     "retryLoaders": "Retry loading loaders",
@@ -141,6 +142,7 @@
     "reload": "Reload"
   },
   "startup": {
+    "loading": "Starting up",
     "title": "Nexora could not start",
     "body": "A problem occurred while loading data. Please include the details below when reporting it."
   },
@@ -163,7 +165,7 @@
     "retry": "Retry",
     "preparing": "Getting ready…",
     "waiting": "Signing in with your browser…",
-    "waitingHint": "Finish signing in in the browser that opened. If it didn't open, open it again or sign in with a code.",
+    "waitingHint": "Finish signing in in the browser that opened.",
     "reopen": "Open the browser again",
     "useCode": "Sign in with a code",
     "codeInstruction": "Open the page below and enter the code.",
@@ -217,7 +219,7 @@
       "modeAuto": "Auto",
       "modeManual": "Manual",
       "jvmArgs": "JVM arguments",
-      "jvmArgsHelp": "Separate arguments with spaces. Wrap a value that contains spaces in double quotes (\"). A double quote itself can't be passed. Nexora's own arguments come after yours, so an option that keeps the last value may be overridden.",
+      "jvmArgsHelp": "Separate arguments with spaces. Wrap a value that contains spaces in double quotes (\"). A double quote itself can't be passed. Nexora's own arguments come after yours, so they can override the same option.",
       "xmxWarning": "-Xmx is ignored. The memory setting is used instead.",
       "nextLaunch": "Changes take effect the next time the game starts.",
       "notFound": "This instance doesn't exist.",
@@ -263,6 +265,7 @@
     "confirm": "Force stop"
   },
   "content": {
+    "loading": "Loading content",
     "filter": {
       "search": "Filter by name",
       "client": "Client side",
@@ -454,11 +457,7 @@
   "sync": {
     "card": {
       "title": "Settings sync",
-      "intro": "Keep settings such as key bindings and volume the same as your other instances.",
       "start": "Match settings with other instances",
-      "joined": "Using the shared settings “{{name}}”",
-      "members": "Also using them: {{names}}",
-      "membersNone": "No other instance uses them yet.",
       "separator": ", ",
       "lastApplied": "Last applied: {{date}}",
       "neverApplied": "Not applied yet.",
@@ -471,7 +470,6 @@
       "release": "Use shared value",
       "releaseLabel": "Use the shared value for {{name}}",
       "leave": "Stop using shared settings",
-      "leaveNote": "This instance keeps its current settings when it stops. You can join again later.",
       "left": "Stopped using shared settings"
     },
     "applicability": {
@@ -522,13 +520,9 @@
       "titleFor": "Match settings for {{name}}"
     },
     "screen": {
-      "intro": "Keep key bindings, volume and other settings the same across instances. Drag an instance onto a card, or pick one from “Add instance”, to join it. Joining changes nothing right away. It applies at the next launch.",
       "create": "Create shared settings",
       "createFrom": "Start from instance",
-      "emptyBody": "Keep key bindings, volume and other settings the same across instances. First, pick an instance to start the shared settings from.",
-      "noInstancesBody": "Shared settings keep settings the same across instances. Create an instance first.",
       "unjoined": "Instances not joined",
-      "unjoinedHint": "Drag one onto a card to join it.",
       "unjoinedNone": "Every instance has joined shared settings.",
       "name": "Name of the shared settings",
       "categories": "Settings to match",
@@ -667,7 +661,6 @@
       "countProfile_other": "{{count}} settings were changed in the instances that use these settings",
       "review": "Review",
       "hide": "Hide",
-      "intro": "These settings were changed in game. They are not added to the shared settings on their own. Choose for each one.",
       "list": "Changed settings",
       "current": "Shared now",
       "thisInstance": "This instance",
@@ -675,14 +668,12 @@
       "keepForInstance": "Keep for this instance only",
       "keepFor": "Keep for {{names}} only",
       "ignore": "Ignore",
-      "ignoreNote": "If you choose Ignore, the shared value comes back on the next launch.",
       "applyAll_one": "Apply this {{count}} to all",
       "applyAll_other": "Apply these {{count}} to all",
       "conflictsExcluded": "Settings with different values are left out of applying all. Choose for each one.",
       "conflict": "The instances have different values. Choose one value to apply to all.",
       "conflictChoices": "Values of {{name}}",
       "applyChosen": "Apply the chosen value to all",
-      "conflictNote": "The instances with the other values also get this value on the next launch.",
       "notSet": "Not set",
       "applied": "Added to the shared settings. The instances get it on their next launch."
     }

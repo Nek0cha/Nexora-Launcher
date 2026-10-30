@@ -14,7 +14,6 @@
   },
   "downloads": {
     "section": "Downloads",
-    "label": "Concurrent downloads",
-    "description": "How many files are downloaded in parallel."
+    "label": "Concurrent downloads"
   }
 }

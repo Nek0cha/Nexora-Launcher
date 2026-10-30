@@ -371,31 +371,36 @@ export function ContentRow(props: {
           {item.description !== null && <span className="truncate text-xs text-text-muted">{item.description}</span>}
         </div>
       </div>
-      {/* 更新があるときだけ出す。無効の MOD にも出す（更新しても無効のまま） */}
-      {props.updating ? (
-        <span className="inline-flex h-7 shrink-0 items-center gap-1 px-2 text-xs text-text-muted">
-          <IconSpinner aria-hidden className="size-3.5 motion-safe:animate-spin" />
-          <span>{t("modrinth.updating")}</span>
-        </span>
-      ) : (
-        props.update && (
-          <TooltipTrigger delay={300}>
-            <Button
-              aria-label={t("modrinth.updateNamed", { name, version: props.update.versionNumber })}
-              isDisabled={props.busy}
-              onPress={() => props.onUpdate?.(item)}
-              className={updateButton}
-            >
-              <IconUpdate aria-hidden className="size-3.5 shrink-0" />
-              {/* 狭い一覧では絵だけにして、名前の幅を残す（版はツールチップで分かる） */}
-              <span className="hidden @lg:inline">{t("modrinth.update")}</span>
-            </Button>
-            <Tooltip offset={6} className={tooltipClass}>
-              {t("modrinth.updateTo", { version: props.update.versionNumber })}
-            </Tooltip>
-          </TooltipTrigger>
-        )
-      )}
+      {/* 更新があるときだけ中身を出す。無効の MOD にも出す（更新しても無効のまま）。
+          更新を扱う一覧（MOD）では、確認が終わる前から場所を同じ幅で取る */}
+      {props.onUpdate !== undefined ? (
+        <div data-testid="row-update-slot" className="flex min-w-8 shrink-0 justify-end @lg:min-w-24">
+          {props.updating ? (
+            <span className="inline-flex h-7 shrink-0 items-center gap-1 px-2 text-xs text-text-muted">
+              <IconSpinner aria-hidden className="size-3.5 motion-safe:animate-spin" />
+              <span>{t("modrinth.updating")}</span>
+            </span>
+          ) : (
+            props.update && (
+              <TooltipTrigger delay={300}>
+                <Button
+                  aria-label={t("modrinth.updateNamed", { name, version: props.update.versionNumber })}
+                  isDisabled={props.busy}
+                  onPress={() => props.onUpdate?.(item)}
+                  className={updateButton}
+                >
+                  <IconUpdate aria-hidden className="size-3.5 shrink-0" />
+                  {/* 狭い一覧では絵だけにして、名前の幅を残す（版はツールチップで分かる） */}
+                  <span className="hidden @lg:inline">{t("modrinth.update")}</span>
+                </Button>
+                <Tooltip offset={6} className={tooltipClass}>
+                  {t("modrinth.updateTo", { version: props.update.versionNumber })}
+                </Tooltip>
+              </TooltipTrigger>
+            )
+          )}
+        </div>
+      ) : null}
       <Button
         aria-label={t("content.row.enable", { name })}
         aria-pressed={item.enabled}

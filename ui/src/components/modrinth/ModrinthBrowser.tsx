@@ -35,8 +35,10 @@ import { useDebouncedValue } from "../../features/modrinth/useDebounced";
 import { useInstallContent, useModrinthSearch, usePreviewInstall } from "../../features/modrinth/useModrinth";
 import { SETTINGS_KEY, useSettings } from "../../features/settings/useSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { ChipGroup, ContentFilter, ContentSearchField } from "../content/ContentFilter";
+import { ChipGroup, ChipSkeleton, ContentFilter, ContentSearchField, FilterSkeleton } from "../content/ContentFilter";
 import { FailureNotice } from "../FailureNotice";
+import { ReadyGate, useDelayedFlag, useLatchedPending } from "../ReadyGate";
+import { Skeleton } from "../Skeleton";
 import { useToast } from "../toast/useToast";
 import { AddToInstanceMenu } from "./AddToInstanceMenu";
 import { StableLabel } from "../StableLabel";
@@ -124,43 +126,136 @@ const optionClass =
 function VersionSelect(props: { value: string | null; onChange: (value: string | null) => void }) {
   const { t } = useTranslation();
   const versions = useVersions(true);
+  const versionsError = versions.error ? toErrorPayload(versions.error) : null;
   const options = [
     { id: ANY_VERSION, label: t("modrinth.anyVersion") },
     ...(versions.data ?? []).map((v) => ({ id: v.id, label: v.id })),
   ];
   return (
-    <AriaSelect
-      value={props.value ?? ANY_VERSION}
-      onChange={(key) => {
-        if (key !== null) props.onChange(key === ANY_VERSION ? null : String(key));
-      }}
-      className="flex flex-col gap-2"
-    >
-      <Label className="text-xs text-text-muted">{t("modrinth.mcVersion")}</Label>
-      <Button className={triggerClass}>
-        <SelectValue className="tabular truncate">{({ selectedText }) => selectedText}</SelectValue>
-        <IconCaret aria-hidden className="size-4 shrink-0 text-text-muted" />
-      </Button>
-      <Popover
-        offset={4}
-        className={`min-w-(--trigger-width) rounded-lg border border-line bg-surface-2 p-1 shadow-float ${popoverMotion}`}
+    <div className="flex flex-col gap-2">
+      <AriaSelect
+        value={props.value ?? ANY_VERSION}
+        onChange={(key) => {
+          if (key !== null) props.onChange(key === ANY_VERSION ? null : String(key));
+        }}
+        className="flex flex-col gap-2"
       >
-        <ListBox items={options} className="scroll-thin max-h-72 overflow-auto outline-none">
-          {(o) => (
-            <ListBoxItem id={o.id} textValue={o.label} className={optionClass}>
-              {({ isSelected }) => (
-                <>
-                  <span className="grid size-4 shrink-0 place-items-center">
-                    {isSelected && <IconCheck aria-hidden className="size-4 text-accent" />}
-                  </span>
-                  <span className="tabular truncate">{o.label}</span>
-                </>
-              )}
-            </ListBoxItem>
-          )}
-        </ListBox>
-      </Popover>
-    </AriaSelect>
+        <Label className="text-xs text-text-muted">{t("modrinth.mcVersion")}</Label>
+        <Button className={triggerClass}>
+          <SelectValue className="tabular truncate">{({ selectedText }) => selectedText}</SelectValue>
+          <IconCaret aria-hidden className="size-4 shrink-0 text-text-muted" />
+        </Button>
+        <Popover
+          offset={4}
+          className={`min-w-(--trigger-width) rounded-lg border border-line bg-surface-2 p-1 shadow-float ${popoverMotion}`}
+        >
+          <ListBox items={options} className="scroll-thin max-h-72 overflow-auto outline-none">
+            {(o) => (
+              <ListBoxItem id={o.id} textValue={o.label} className={optionClass}>
+                {({ isSelected }) => (
+                  <>
+                    <span className="grid size-4 shrink-0 place-items-center">
+                      {isSelected && <IconCheck aria-hidden className="size-4 text-accent" />}
+                    </span>
+                    <span className="tabular truncate">{o.label}</span>
+                  </>
+                )}
+              </ListBoxItem>
+            )}
+          </ListBox>
+        </Popover>
+      </AriaSelect>
+      {versionsError && (
+        <div role="alert" data-testid="versions-failed" className="flex flex-col items-start gap-1">
+          <FailureNotice error={versionsError} />
+          <Button onPress={() => void versions.refetch()} className={textButton}>
+            {t("modrinth.retry")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 並び順の切り替えと同じ枠。見えない文字で幅を決めるので、どの言語でも完成形と同じ幅になる */
+function SortSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-hidden
+      className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-transparent bg-surface-2 p-0.5 motion-safe:animate-pulse"
+    >
+      {sortOptions.map((id) => (
+        <span key={id} className="inline-flex h-7 items-center rounded-sm px-2.5 text-xs">
+          <span className="invisible">{t(`modrinth.sortValue.${id}`)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const SKELETON_HITS = 8;
+
+/**
+ * 検索画面と同じ並びと寸法のスケルトン。左の列（絞り込み）と、結果の行（アイコン、名前、説明、下の行）を
+ * 完成形の数と大きさに近づけて置く。
+ */
+function BrowserSkeleton({ fixed }: { fixed: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="modrinth-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+      <span role="status" className="sr-only">
+        {t("modrinth.searching")}
+      </span>
+      <div className="scroll-thin flex min-h-0 flex-col gap-4 overflow-hidden pr-1 [scrollbar-gutter:stable]">
+        {fixed ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-[18px] w-16" />
+            <Skeleton className="h-5 w-32" />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-[18px] w-24" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-[18px] w-16" />
+              <div className="flex flex-wrap gap-1.5">
+                {loaderOptions.map((id) => (
+                  <ChipSkeleton key={id} label={t(`create.tab.${id}`)} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        <FilterSkeleton status={false} />
+      </div>
+      <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
+        <div className="flex shrink-0 items-center gap-3 pb-1">
+          <Skeleton className="h-9 min-w-0 flex-1" />
+          <Skeleton className="h-9 w-32 shrink-0" />
+          <SortSkeleton />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col divide-y divide-line overflow-hidden pr-1">
+          {Array.from({ length: SKELETON_HITS }, (_, i) => (
+            // 高さは実際の結果 1 件（HitCard の上下 py-4、アイコン 48px、説明 2 行、下の行）を幅 600px 前後で測った値
+            <div key={i} className="grid h-[169.3px] shrink-0 grid-cols-[auto_minmax(0,1fr)] content-start gap-x-4 py-4">
+              <Skeleton className="size-12" />
+              <div className="flex min-w-0 flex-col gap-2">
+                <Skeleton className="h-5 w-48 max-w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
+              <div className="col-start-2 mt-2.5 flex items-center gap-3">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="ml-auto h-8 w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -319,6 +414,17 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
     [text, instance, mcVersion, loaders, filter.categories, filter.client, filter.server, sort],
   );
   const search = useModrinthSearch(instance?.id ?? null, query);
+  const versions = useVersions(!instance);
+  // 最初の表示は、絞り込みの材料（カテゴリ、バージョン、インスタンス、設定、導入済み）と最初の結果がそろってから。
+  // 無効にしている問い合わせは待たない。そろったあとに pending へ戻っても枠には戻さない
+  const gatePending = useLatchedPending(
+    categories.isPending ||
+      instances.isPending ||
+      settings.isPending ||
+      search.isPending ||
+      (!instance && versions.isPending) ||
+      (instance !== undefined && content.isPending),
+  );
 
   // ページの境目で同じ結果が二度来ることがあるので、最初のものだけを残す
   const hits = useMemo(() => {
@@ -339,135 +445,151 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
   };
 
   const error = search.error ? toErrorPayload(search.error) : null;
+  // 新しい条件の結果を待っていて、いまは前の結果を見せている
+  const refreshing = search.isPlaceholderData;
+  // 薄くするのは待ちが長いときだけ。すぐ返るときに薄くして戻すと、フィルターを押すたびにちらつく
+  const dimmed = useDelayedFlag(refreshing);
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
-      {/* 絞り込みは左の列（コンテンツの一覧と同じ並び）。長いときはこの列の中でスクロールする */}
-      <div data-testid="modrinth-facets" className="scroll-thin flex min-h-0 flex-col gap-4 overflow-auto pr-1">
-        {instance ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-xs text-text-muted">{t("modrinth.fixedLabel")}</span>
-            <p className="flex items-center gap-1.5 text-sm text-text">
-              <IconLock aria-hidden className="size-3.5 shrink-0 text-text-muted" />
-              <span>
-                {t("modrinth.fixed", { version: instance.mcVersion, loader: t(`create.tab.${instance.loader}`) })}
-              </span>
-            </p>
-          </div>
-        ) : (
-          <>
-            <VersionSelect value={mcVersion} onChange={setMcVersion} />
-            <ChipGroup
-              label={t("modrinth.loader")}
-              options={loaderOptions.map((id) => ({ id, label: t(`create.tab.${id}`) }))}
-              selected={loaders}
-              onChange={setLoaders}
-            />
-          </>
-        )}
-        <ContentFilter
-          state={filter}
-          onChange={setFilter}
-          categories={categories.data ?? null}
-          showStatus={false}
-          showSearch={false}
-        />
-      </div>
-      <div className="flex min-h-0 flex-col gap-2">
-        <div className="flex shrink-0 items-center gap-3 pb-1">
-          <ContentSearchField
-            label={t("modrinth.search")}
-            value={filter.query}
-            onChange={(q) => setFilter((f) => ({ ...f, query: q }))}
-            className="min-w-0 flex-1"
-          />
-          {total !== null && (
-            <span className="tabular shrink-0 text-sm text-text-muted">
-              {t("modrinth.total", { value: number.format(total) })}
-            </span>
-          )}
-          <SortToggle value={sort} onChange={setSort} />
-        </div>
-        <div className="scroll-thin min-h-0 flex-1 overflow-auto pr-1">
-          {search.isPending && !error ? (
-            <p className="py-2 text-sm text-text-muted" role="status">
-              {t("modrinth.searching")}
-            </p>
-          ) : error && hits.length === 0 ? (
-            <div role="alert" className="flex flex-col items-start gap-3 py-2">
-              {error.code === "net.offline" ? (
-                <p className="flex items-center gap-2 text-sm text-text">
-                  <IconOffline aria-hidden className="size-4 shrink-0 text-text-muted" />
-                  <span>{t("modrinth.offline")}</span>
+    <>
+      <ReadyGate queries={[{ isPending: gatePending }]} skeleton={<BrowserSkeleton fixed={instance !== undefined} />}>
+        <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
+          {/* 絞り込みは左の列（コンテンツの一覧と同じ並び）。長いときはこの列の中でスクロールする */}
+          <div data-testid="modrinth-facets" className="scroll-thin flex min-h-0 flex-col gap-4 overflow-auto pr-1 [scrollbar-gutter:stable]">
+            {instance ? (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-text-muted">{t("modrinth.fixedLabel")}</span>
+                <p className="flex items-center gap-1.5 text-sm text-text">
+                  <IconLock aria-hidden className="size-3.5 shrink-0 text-text-muted" />
+                  <span>
+                    {t("modrinth.fixed", { version: instance.mcVersion, loader: t(`create.tab.${instance.loader}`) })}
+                  </span>
                 </p>
-              ) : (
-                <FailureNotice error={error} />
-              )}
-              <Button onPress={() => void search.refetch()} className={textButton}>
-                {t("modrinth.retry")}
-              </Button>
+              </div>
+            ) : (
+              <>
+                <VersionSelect value={mcVersion} onChange={setMcVersion} />
+                <ChipGroup
+                  label={t("modrinth.loader")}
+                  options={loaderOptions.map((id) => ({ id, label: t(`create.tab.${id}`) }))}
+                  selected={loaders}
+                  onChange={setLoaders}
+                />
+              </>
+            )}
+            <ContentFilter
+              state={filter}
+              onChange={setFilter}
+              categories={categories.data ?? null}
+              categoriesError={categories.error ? toErrorPayload(categories.error) : null}
+              showStatus={false}
+              showSearch={false}
+            />
+          </div>
+          <div className="flex min-h-0 flex-col gap-2">
+            <div className="flex shrink-0 items-center gap-3 pb-1">
+              <ContentSearchField
+                label={t("modrinth.search")}
+                value={filter.query}
+                onChange={(q) => setFilter((f) => ({ ...f, query: q }))}
+                className="min-w-0 flex-1"
+              />
+              {/* 件数の場所は、決まる前から同じ幅で取る（出たときに検索欄が縮まない） */}
+              <span data-testid="modrinth-total" className="tabular min-w-32 shrink-0 text-right text-sm text-text-muted">
+                {total !== null && t("modrinth.total", { value: number.format(total) })}
+              </span>
+              <SortToggle value={sort} onChange={setSort} />
             </div>
-          ) : hits.length === 0 ? (
-            <p className="py-2 text-sm text-text-muted">{t("modrinth.noResults")}</p>
-          ) : (
-            <>
-              <ul aria-label={t("modrinth.results")} className="@container flex flex-col divide-y divide-line">
-                {hits.map((hit) => (
-                  <li key={hit.projectId}>
-                    <HitCard
-                      hit={hit}
-                      onOpen={open}
-                      showLoaders={!instance}
-                      actions={
-                        instance && installed.has(hit.projectId) ? (
-                          <Button isDisabled className={actionButton}>
-                            <IconCheck aria-hidden className="size-3.5 shrink-0" />
-                            <StableLabel labels={installLabels(t)} active={2} />
-                          </Button>
-                        ) : instance ? (
-                          <Button
-                            isDisabled={pending.has(hit.projectId)}
-                            onPress={() => void add(hit, instance)}
-                            className={actionButton}
-                          >
-                            <IconPlus aria-hidden className="size-3.5 shrink-0" />
-                            <StableLabel labels={installLabels(t)} active={pending.has(hit.projectId) ? 1 : 0} />
-                          </Button>
-                        ) : (
-                          <AddToInstanceMenu
-                            hit={hit}
-                            instances={instanceList}
-                            lastAdded={lastAdded}
-                            pending={pending.has(hit.projectId)}
-                            onAdd={(target) => void add(hit, target)}
-                          />
-                        )
-                      }
-                    />
-                  </li>
-                ))}
-              </ul>
-              {search.isFetchNextPageError && error && (
-                <div role="alert" className="py-2">
-                  <FailureNotice error={error} />
-                </div>
-              )}
-              {search.hasNextPage && (
-                <div className="flex justify-center py-4">
-                  <Button
-                    onPress={() => void search.fetchNextPage()}
-                    isPending={search.isFetchingNextPage}
-                    className={actionButton}
-                  >
-                    {t("modrinth.loadMore")}
+            {/* 検索し直している間は、前の結果を残して薄くする（空にしたりスケルトンに戻したりしない） */}
+            <div
+              data-testid="modrinth-results"
+              aria-busy={dimmed}
+              className={`scroll-thin min-h-0 flex-1 overflow-auto pr-1 transition-opacity duration-(--duration-fast) ease-out-quint ${
+                dimmed ? "opacity-60" : ""
+              }`}
+            >
+              {search.isPending && !error ? (
+                <p className="py-2 text-sm text-text-muted" role="status">
+                  {t("modrinth.searching")}
+                </p>
+              ) : error && hits.length === 0 ? (
+                <div role="alert" className="flex flex-col items-start gap-3 py-2">
+                  {error.code === "net.offline" ? (
+                    <p className="flex items-center gap-2 text-sm text-text">
+                      <IconOffline aria-hidden className="size-4 shrink-0 text-text-muted" />
+                      <span>{t("modrinth.offline")}</span>
+                    </p>
+                  ) : (
+                    <FailureNotice error={error} />
+                  )}
+                  <Button onPress={() => void search.refetch()} className={textButton}>
+                    {t("modrinth.retry")}
                   </Button>
                 </div>
+              ) : hits.length === 0 ? (
+                <p className="py-2 text-sm text-text-muted">{t("modrinth.noResults")}</p>
+              ) : (
+                <>
+                  <ul aria-label={t("modrinth.results")} className="@container flex flex-col divide-y divide-line">
+                    {hits.map((hit) => (
+                      <li key={hit.projectId}>
+                        <HitCard
+                          hit={hit}
+                          onOpen={open}
+                          showLoaders={!instance}
+                          actions={
+                            instance && installed.has(hit.projectId) ? (
+                              <Button isDisabled className={actionButton}>
+                                <IconCheck aria-hidden className="size-3.5 shrink-0" />
+                                <StableLabel labels={installLabels(t)} active={2} />
+                              </Button>
+                            ) : instance ? (
+                              <Button
+                                isDisabled={pending.has(hit.projectId)}
+                                onPress={() => void add(hit, instance)}
+                                className={actionButton}
+                              >
+                                <IconPlus aria-hidden className="size-3.5 shrink-0" />
+                                <StableLabel labels={installLabels(t)} active={pending.has(hit.projectId) ? 1 : 0} />
+                              </Button>
+                            ) : (
+                              <AddToInstanceMenu
+                                hit={hit}
+                                instances={instanceList}
+                                lastAdded={lastAdded}
+                                pending={pending.has(hit.projectId)}
+                                onAdd={(target) => void add(hit, target)}
+                              />
+                            )
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  {search.isFetchNextPageError && error && (
+                    <div role="alert" className="py-2">
+                      <FailureNotice error={error} />
+                    </div>
+                  )}
+                  {search.hasNextPage && (
+                    <div className="flex justify-center py-4">
+                      <Button
+                        onPress={() => void search.fetchNextPage()}
+                        isPending={search.isFetchingNextPage}
+                        isDisabled={refreshing}
+                        className={actionButton}
+                      >
+                        {t("modrinth.loadMore")}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
+      </ReadyGate>
       {dialog}
-    </div>
+    </>
   );
 }

@@ -27,7 +27,8 @@ export function useSyncProfileActions() {
   const { t } = useTranslation();
   const client = useQueryClient();
   const toast = useToast();
-  const refresh = () => void client.invalidateQueries({ queryKey: SYNC_KEY });
+  // 取り直しが終わるまで mutation を進行中のままにする。先に終わると、画面が一瞬古い値に戻ってから新しい値になる
+  const refresh = () => client.invalidateQueries({ queryKey: SYNC_KEY });
 
   const rename = useMutation({
     mutationKey: SYNC_KEY,

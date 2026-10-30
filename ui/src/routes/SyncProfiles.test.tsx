@@ -13,6 +13,7 @@ import {
   pendingSyncProposals,
   previewJoinSyncProfile,
   resolveSyncProposal,
+  setSyncCategories,
 } from "../api/commands";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSync } from "../bindings/InstanceSync";
@@ -118,14 +119,17 @@ afterEach(() => {
 describe("SyncProfiles empty states", () => {
   it("asks to create an instance first when there is none", async () => {
     mount({ list: [] });
-    expect(await screen.findByText("共通設定は、インスタンスどうしで設定を揃える仕組みです。先にインスタンスを作ってください。")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "インスタンスを作成" })).toBeTruthy();
+    // 説明の文は置かず、操作だけを出す
+    expect(screen.queryByText(/揃える仕組み/)).toBeNull();
     expect(screen.getByRole("button", { name: "インスタンスを作成" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "共通設定を作る" })).toBeNull();
   });
 
   it("explains and offers to create one when there are no shared settings", async () => {
     mount();
-    expect(await screen.findByText(/まず、元にするインスタンスを選んで共通設定を作ります。/)).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "共通設定を作る" })).toBeTruthy();
+    expect(screen.queryByText(/元にするインスタンスを選んで/)).toBeNull();
     await press(screen.getByRole("button", { name: "共通設定を作る" }));
     const menu = await screen.findByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Survival", "Creative", "Modded"]);
@@ -156,7 +160,9 @@ describe("SyncProfiles", () => {
     expect(within(side).queryByText("Survival")).toBeNull();
     expect(within(side).getByText("Creative")).toBeTruthy();
     expect(within(side).getByText("Modded")).toBeTruthy();
-    expect(screen.getByText(/次の起動時に反映されます。/)).toBeTruthy();
+    // 上にも脇にも、ドラッグや反映の時期を説明する文は置かない
+    expect(screen.queryByText(/次の起動時に反映されます。/)).toBeNull();
+    expect(within(side).queryByText("カードへドラッグすると参加します。")).toBeNull();
   });
 
   it("says when every instance has joined", async () => {
@@ -302,5 +308,35 @@ describe("SyncProfiles proposals", () => {
     await waitFor(() =>
       expect(resolveSyncProposal).toHaveBeenCalledWith("i2", "key_key.jump", "applyToProfile", undefined),
     );
+  });
+});
+
+describe("SyncProfiles category chips", () => {
+  it("keeps a chip in its new state until the profiles are fetched again, so it does not flash back", async () => {
+    const p = profile("p1", "いつもの", ["i1"]);
+    vi.mocked(setSyncCategories).mockResolvedValue(null);
+    mount({ profiles: [p] });
+    const card = await screen.findByRole("region", { name: "いつもの" });
+    const chip = within(card).getByRole("button", { name: "マウス" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    // 保存の後の取り直しを止めておく
+    let release: (v: SyncProfile[]) => void = () => {};
+    vi.mocked(listSyncProfiles).mockReturnValue(new Promise((r) => (release = r)));
+    const seen: (string | null)[] = [];
+    const observer = new MutationObserver(() => seen.push(chip.getAttribute("aria-pressed")));
+    observer.observe(chip, { attributes: true, attributeFilter: ["aria-pressed"] });
+    await press(chip);
+    await waitFor(() => expect(setSyncCategories).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => {
+      release([{ ...p, categories: ["keys", "mouse"] }]);
+    });
+    observer.disconnect();
+    // 押した後は true になるだけで、false に戻らない
+    expect(seen).not.toContain("false");
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
   });
 });
