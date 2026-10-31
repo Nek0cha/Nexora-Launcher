@@ -89,6 +89,9 @@
     "name_empty": "Enter a name.",
     "not_found": "That skin was not found."
   },
+  "screenshot": {
+    "not_found": "That screenshot was not found."
+  },
   "sync": {
     "no_options": "This instance has never been launched, so its settings cannot be read yet. Launch it once, then try again.",
     "profile_not_found": "The shared settings profile was not found. Reopen the list and try again.",

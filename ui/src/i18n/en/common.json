@@ -221,6 +221,7 @@
     "detail": {
       "tabSettings": "Settings",
       "tabContent": "Content",
+      "tabScreenshots": "Screenshots",
       "name": "Name",
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
@@ -278,6 +279,23 @@
     "body": "Force stopping may lose any progress since the last save.",
     "wait": "Wait",
     "confirm": "Force stop"
+  },
+  "screenshots": {
+    "empty": "No screenshots yet",
+    "gallery": "Screenshots",
+    "open": "Open {{name}}",
+    "viewer": "Screenshot",
+    "previous": "Previous image",
+    "next": "Next image",
+    "close": "Close",
+    "delete": "Delete",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteBody": "The file will be deleted. This can't be undone.",
+    "imported": "Added {{count}} screenshots",
+    "importedSome": "Added {{added}}. {{skipped}} weren't images or couldn't be read",
+    "importNone": "No images to add",
+    "dropTarget": "Drop here to add",
+    "dropAccepts": "PNG and JPEG files"
   },
   "content": {
     "loading": "Loading content",

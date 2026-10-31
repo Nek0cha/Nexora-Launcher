@@ -45,6 +45,7 @@ import { useTasks } from "../features/tasks/useTasks";
 /** Modrinth からの導入と更新のタスクの種類（core の CONTENT_KIND と同じ） */
 const CONTENT_TASK_KIND = "content";
 import { ContentTab } from "./ContentTab";
+import { ScreenshotsTab } from "./ScreenshotsTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -87,7 +88,7 @@ const iconButton = [
 
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
-type DetailTab = "settings" | "content";
+type DetailTab = "settings" | "content" | "screenshots";
 
 export default function InstanceDetail() {
   const { t } = useTranslation();
@@ -136,8 +137,8 @@ export default function InstanceDetail() {
     activeDuplicate(tasks, instance.id) !== undefined ||
     hasActiveTask(tasks, CONTENT_TASK_KIND, instance.id);
 
-  // コンテンツのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
-  const layout = tab === "content" ? "h-full min-h-[34rem] max-w-5xl" : "max-w-2xl";
+  // コンテンツとスクリーンショットのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
+  const layout = tab === "settings" ? "max-w-2xl" : "h-full min-h-[34rem] max-w-5xl";
 
   return (
     <div className={`flex ${layout} flex-col gap-6 p-10`}>
@@ -170,7 +171,7 @@ export default function InstanceDetail() {
           </Link>
         </div>
       </header>
-      {/* タブは中身のあるものだけを出す。スクリーンショットとログは後のフェーズで足す */}
+      {/* タブは中身のあるものだけを出す。ログは後のフェーズで足す */}
       <Tabs
         selectedKey={tab}
         onSelectionChange={(key) => setTab(key as DetailTab)}
@@ -180,6 +181,9 @@ export default function InstanceDetail() {
           <Tab id="content" className={tabClass}>
             {t("instances.detail.tabContent")}
           </Tab>
+          <Tab id="screenshots" className={tabClass}>
+            {t("instances.detail.tabScreenshots")}
+          </Tab>
           <Tab id="settings" className={tabClass}>
             {t("instances.detail.tabSettings")}
           </Tab>
@@ -187,6 +191,10 @@ export default function InstanceDetail() {
         {/* コンテンツは開くたびに作り直す（開いたときにディスクと照合し、特定する） */}
         <TabPanel id="content" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
           <ContentTab key={instance.id} instance={instance} busy={contentLocked} />
+        </TabPanel>
+        {/* スクリーンショットも開くたびに作り直す（開いたときにフォルダを読み直す） */}
+        <TabPanel id="screenshots" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
+          <ScreenshotsTab key={instance.id} instance={instance} />
         </TabPanel>
         {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
         <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">
