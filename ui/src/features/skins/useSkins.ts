@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   addSavedSkin,
   addSavedSkinFromPath,
@@ -35,6 +35,35 @@ const DEFAULT_SKINS_KEY = ["default-skins"] as const;
 export const CHANGE_COOLDOWN_MS = 3000;
 /** HTTP 429 で止められたあとの冷却。すぐ押し直すとさらに長く止められるので長めにとる */
 export const RATE_LIMITED_COOLDOWN_MS = 30000;
+
+// 冷却は画面を離れても続けたいので、フックの外（モジュール）に持つ。Mojang の制限は画面と関係なく続く
+let cooling = false;
+let coolTimer: ReturnType<typeof setTimeout> | undefined;
+const coolListeners = new Set<() => void>();
+
+function setCooling(value: boolean) {
+  if (cooling === value) return;
+  cooling = value;
+  coolListeners.forEach((listener) => listener());
+}
+
+function subscribeCooling(listener: () => void) {
+  coolListeners.add(listener);
+  return () => void coolListeners.delete(listener);
+}
+
+/** 冷却に入る。ms を渡すとその時間で明け、渡さなければ（取り直しの間）明けるのを止めておく */
+function cool(ms?: number) {
+  clearTimeout(coolTimer);
+  setCooling(true);
+  if (ms !== undefined) coolTimer = setTimeout(() => setCooling(false), ms);
+}
+
+/** テスト用: 前のテストの冷却を持ち越さない */
+export function resetCooldown() {
+  clearTimeout(coolTimer);
+  setCooling(false);
+}
 
 function isRateLimited(error: unknown): boolean {
   const { code, params } = toErrorPayload(error);
@@ -96,15 +125,7 @@ export function useDefaultSkins() {
 export function useSkinActions(accountId: string | null) {
   const client = useQueryClient();
   // 冷却は busy に含める。進行中から冷却へ隙間なくつなぎ、全部の操作が同じ見た目（無効）のまま続くようにする
-  const [cooling, setCooling] = useState(false);
-  const coolTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(coolTimer.current), []);
-  /** 冷却に入る。ms を渡すとその時間で明け、渡さなければ（取り直しの間）明けるのを止めておく */
-  const cool = (ms?: number) => {
-    clearTimeout(coolTimer.current);
-    setCooling(true);
-    if (ms !== undefined) coolTimer.current = setTimeout(() => setCooling(false), ms);
-  };
+  const isCooling = useSyncExternalStore(subscribeCooling, () => cooling);
   // サイドバーの顔（SKIN_KEY）も、スキンが変われば取り直す
   const refresh = () =>
     Promise.all([
@@ -140,21 +161,23 @@ export function useSkinActions(accountId: string | null) {
     onSuccess: () => changed(refresh),
     onError: limited,
   });
+  // ライブラリだけの変更は手元の記録しか変えないので、Mojang のプロフィール（現在のスキン）は取り直さない
+  const refreshSaved = () => client.invalidateQueries({ queryKey: [...SKINS_KEY, "saved"] });
   const add = useMutation({
     mutationFn: ({ name, png }: { name: string; png: number[] }) => addSavedSkin(name, png),
-    onSuccess: refresh,
+    onSuccess: refreshSaved,
   });
   const addFromPath = useMutation({
     mutationFn: ({ path }: { path: string }) => addSavedSkinFromPath(path),
-    onSuccess: refresh,
+    onSuccess: refreshSaved,
   });
   const update = useMutation({
     mutationFn: ({ skinId, patch }: { skinId: string; patch: SavedSkinPatch }) => updateSavedSkin(skinId, patch),
-    onSuccess: refresh,
+    onSuccess: refreshSaved,
   });
   const remove = useMutation({
     mutationFn: ({ skinId }: { skinId: string }) => deleteSavedSkin(skinId),
-    onSuccess: refresh,
+    onSuccess: refreshSaved,
   });
   const setCapeMutation = useMutation({
     mutationFn: ({ capeId }: { capeId: string | null }) => setCape(need(), capeId),
@@ -163,6 +186,6 @@ export function useSkinActions(accountId: string | null) {
   });
 
   const busy =
-    cooling || [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
+    isCooling || [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
   return { apply, applyDefault, add, addFromPath, update, remove, setCape: setCapeMutation, busy };
 }

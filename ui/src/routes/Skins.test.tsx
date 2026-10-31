@@ -20,7 +20,7 @@ import type { Account } from "../bindings/Account";
 import type { AccountList } from "../bindings/AccountList";
 import { ACCOUNTS_KEY } from "../features/accounts/useAccounts";
 import i18n from "../i18n";
-import { CHANGE_COOLDOWN_MS } from "../features/skins/useSkins";
+import { CHANGE_COOLDOWN_MS, resetCooldown } from "../features/skins/useSkins";
 import Skins from "./Skins";
 
 vi.mock("../api/commands", () => ({
@@ -78,6 +78,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  resetCooldown();
   vi.resetAllMocks();
 });
 

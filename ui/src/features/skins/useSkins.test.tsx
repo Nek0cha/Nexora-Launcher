@@ -11,6 +11,7 @@ import { SKIN_KEY } from "../accounts/useAccounts";
 import {
   CHANGE_COOLDOWN_MS,
   RATE_LIMITED_COOLDOWN_MS,
+  resetCooldown,
   useCurrentSkin,
   useDefaultSkins,
   useImportCurrentSkin,
@@ -22,6 +23,7 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => {
+  resetCooldown();
   vi.useRealTimers();
   cleanup();
   vi.resetAllMocks();
@@ -208,6 +210,18 @@ describe("useSkinActions cooldown", () => {
     expect(hook.result.current.busy).toBe(true);
     await wait(1);
     expect(hook.result.current.busy).toBe(false);
+  });
+
+  it("keeps the cooldown when the screen is left and opened again", async () => {
+    const { hook } = setup(async () => null);
+    act(() => hook.result.current.setCape.mutate({ capeId: "c1" }));
+    await settle();
+    hook.unmount();
+
+    const again = renderHook(() => useSkinActions("a1"), { wrapper: wrapperFor() });
+    expect(again.result.current.busy).toBe(true);
+    await wait(CHANGE_COOLDOWN_MS);
+    expect(again.result.current.busy).toBe(false);
   });
 
   it("starts the cooldown after applying a saved skin and a default skin", async () => {
