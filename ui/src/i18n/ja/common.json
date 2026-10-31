@@ -730,6 +730,18 @@
       "title": "モッドパックを読み込む",
       "files": "ファイル",
       "submit": "読み込む"
+    },
+    "export": {
+      "open": "mrpack として書き出す",
+      "title": "モッドパックとして書き出す",
+      "version": "版",
+      "includeConfig": "config を含める",
+      "unidentified": "Modrinth で特定できなかったファイル",
+      "warning": "配布が許可されているファイルか、確認してください。",
+      "confirm": "確認しました",
+      "submit": "書き出す",
+      "loading": "内容を調べています",
+      "done": "書き出しました"
     }
   }
 }

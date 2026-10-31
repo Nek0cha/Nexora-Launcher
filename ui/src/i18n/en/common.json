@@ -730,6 +730,18 @@
       "title": "Import a modpack",
       "files": "Files",
       "submit": "Import"
+    },
+    "export": {
+      "open": "Export as mrpack",
+      "title": "Export as a modpack",
+      "version": "Version",
+      "includeConfig": "Include config",
+      "unidentified": "Files not found on Modrinth",
+      "warning": "Make sure you are allowed to redistribute these files.",
+      "confirm": "I checked",
+      "submit": "Export",
+      "loading": "Checking contents",
+      "done": "Exported"
     }
   }
 }
