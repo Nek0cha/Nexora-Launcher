@@ -17,6 +17,7 @@ import { onFilesDropped, type DragDropHandlers } from "../../api/dragDrop";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { SavedSkins } from "./SavedSkins";
+import { resetCooldown } from "../../features/skins/useSkins";
 
 vi.mock("../../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 vi.mock("../../api/commands", () => ({
@@ -86,6 +87,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  resetCooldown();
   vi.resetAllMocks();
 });
 

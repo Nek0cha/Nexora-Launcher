@@ -6,6 +6,7 @@ import type { DefaultSkin } from "../../bindings/DefaultSkin";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { DefaultSkins } from "./DefaultSkins";
+import { resetCooldown } from "../../features/skins/useSkins";
 
 vi.mock("../../api/commands", () => ({
   addSavedSkin: vi.fn(),
@@ -57,6 +58,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  resetCooldown();
   vi.useRealTimers();
   vi.clearAllMocks();
 });

@@ -6,6 +6,7 @@ import type { CapeView } from "../../bindings/CapeView";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { CapePicker } from "./CapePicker";
+import { resetCooldown } from "../../features/skins/useSkins";
 
 vi.mock("../../api/commands", () => ({
   getCurrentSkin: vi.fn(),
@@ -41,6 +42,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  resetCooldown();
   vi.clearAllMocks();
 });
 

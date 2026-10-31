@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applySavedSkin, deleteSavedSkin, listSavedSkins, updateSavedSkin } from "../../api/commands";
 import type { SavedSkin } from "../../bindings/SavedSkin";
-import { useSavedSkins, useSkinActions } from "../../features/skins/useSkins";
+import { useSavedSkins, useSkinActions, resetCooldown } from "../../features/skins/useSkins";
 import i18n from "../../i18n";
 import { clearToasts, useToastList } from "../toast/useToast";
 import { SkinCard } from "./SkinCard";
@@ -112,6 +112,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  resetCooldown();
   vi.resetAllMocks();
 });
 
