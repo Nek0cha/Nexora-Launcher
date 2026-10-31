@@ -1,6 +1,7 @@
 //! Modrinth のモッドパック（`.mrpack`）のインポートとエクスポート。
 
 pub mod archive;
+pub mod export;
 pub mod fetch;
 pub mod manifest;
 pub mod safe_path;
