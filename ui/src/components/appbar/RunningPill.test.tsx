@@ -69,7 +69,7 @@ describe("RunningPill", () => {
   });
 
   it("single_game_shows_name_stop_and_log", async () => {
-    mount(["a"]);
+    const { router } = mount(["a"]);
     const pill = screen.getByTestId("running-pill");
     expect(within(pill).getByText("Alpha")).toBeTruthy();
     await act(async () => {
@@ -79,7 +79,10 @@ describe("RunningPill", () => {
     await act(async () => {
       fireEvent.click(within(pill).getByRole("button", { name: "Open logs for Alpha" }));
     });
-    expect(openInstanceFolder).toHaveBeenCalledWith("a", "logs");
+    // フォルダではなく、詳細のログのタブへ移る
+    expect(openInstanceFolder).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/instances/a");
+    expect(router.state.location.state).toEqual({ tab: "logs" });
   });
 
   it("two_games_show_two_dots", () => {
@@ -146,7 +149,9 @@ describe("RunningPill", () => {
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Open logs for Beta" }));
     });
-    expect(openInstanceFolder).toHaveBeenLastCalledWith("b", "logs");
+    expect(router.state.location.pathname).toBe("/instances/b");
+    expect(router.state.location.state).toEqual({ tab: "logs" });
+    expect(openInstanceFolder).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Open details for Beta" }));
     });

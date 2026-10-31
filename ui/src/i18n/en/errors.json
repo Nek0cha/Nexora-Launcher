@@ -89,6 +89,9 @@
     "name_empty": "Enter a name.",
     "not_found": "That skin was not found."
   },
+  "log": {
+    "not_found": "That log was not found."
+  },
   "screenshot": {
     "not_found": "That screenshot was not found."
   },

@@ -12,6 +12,7 @@ import {
   listRunning,
   listSyncFields,
   listSyncProfiles,
+  listGameLogs,
   listScreenshots,
   openInstanceFolder,
   systemMemoryMb,
@@ -37,6 +38,8 @@ vi.mock("../api/commands", () => ({
   systemMemoryMb: vi.fn(),
   openInstanceFolder: vi.fn(),
   listScreenshots: vi.fn(),
+  listGameLogs: vi.fn(),
+  readGameLog: vi.fn(),
   listContent: vi.fn(),
   identifyContent: vi.fn(),
   setContentEnabled: vi.fn(),
@@ -146,7 +149,7 @@ describe("InstanceDetail", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Survival" })).toBeTruthy();
     expect(screen.getByText("1.21.5")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Settings" })).toBeTruthy();
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByRole("link", { name: "Instances" }).getAttribute("href")).toBe("/instances");
     expect((await saveButton()).disabled).toBe(true);
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
@@ -336,7 +339,7 @@ describe("InstanceDetail", () => {
     const tab = await screen.findByRole("tab", { name: "Content" });
     expect(tab.getAttribute("aria-selected")).toBe("true");
     const detailTabs = within(screen.getByRole("tablist", { name: "Survival" })).getAllByRole("tab");
-    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Screenshots", "Settings"]);
+    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Screenshots", "Logs", "Settings"]);
     expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
     await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
     expect(listContent).toHaveBeenCalledWith("i1", "mod");
@@ -348,6 +351,15 @@ describe("InstanceDetail", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Screenshots" }));
     expect(await screen.findByRole("button", { name: "Open a" })).toBeTruthy();
     expect(listScreenshots).toHaveBeenCalledWith("i1");
+  });
+
+  it("opens the logs tab when asked through the location state", async () => {
+    vi.mocked(listGameLogs).mockResolvedValue([]);
+    mount([instance()], { state: { tab: "logs" } });
+    const tab = await screen.findByRole("tab", { name: "Logs" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByText("No logs yet")).toBeTruthy();
+    expect(listGameLogs).toHaveBeenCalledWith("i1");
   });
 
   it("opens the settings tab when asked through the location state", async () => {
