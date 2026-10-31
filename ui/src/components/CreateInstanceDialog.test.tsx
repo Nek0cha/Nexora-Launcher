@@ -132,8 +132,8 @@ describe("CreateInstanceDialog", () => {
     mount();
     const dialog = await open();
     await waitFor(() => expect(nameInput(dialog).value).toBe("1.21.5"));
-    // 名前の欄は中身と同時に出るため、フォーカスは少し遅れて移る
-    await waitFor(() => expect(document.activeElement).toBe(nameInput(dialog)));
+    // 名前の欄は中身と同時に出るため、フォーカスは少し遅れて移る。遅い CI（macOS）でも間に合うよう長めに待つ
+    await waitFor(() => expect(document.activeElement).toBe(nameInput(dialog)), { timeout: 5000 });
     expect(within(dialog).getByRole("button", { name: /Version/ }).textContent).toContain("1.21.5");
   });
 
