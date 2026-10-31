@@ -113,6 +113,21 @@ pub enum CoreError {
     /// 指定の中身の行が無い（一覧が古いなど）。
     #[error("the content was not found: {path}")]
     ContentNotFound { path: String },
+    /// `.mrpack` として読めない（壊れている、必須の項目が無いなど）。
+    #[error("the mrpack file is invalid: {reason}")]
+    MrpackInvalid { reason: String },
+    /// `.mrpack` の形式や内容が Nexora の対応外（`formatVersion`、未知の依存、導入できないローダーなど）。
+    #[error("the mrpack file is not supported: {reason}")]
+    MrpackUnsupported { reason: String },
+    /// `.mrpack` の中のパスが安全でない（親ディレクトリへの参照、絶対パスなど）。
+    #[error("the mrpack file has an unsafe path: {path}")]
+    MrpackUnsafePath { path: String },
+    /// `.mrpack` が展開やダウンロードの上限を超えた。
+    #[error("the mrpack file exceeds a limit: {reason}")]
+    MrpackLimit { reason: String },
+    /// Modrinth で特定できないファイルがあるのに、確認なしで書き出そうとした。
+    #[error("the export includes files that were not identified and needs confirmation")]
+    MrpackNeedsConfirmation,
     /// 指定のスクリーンショットが無い（一覧が古い、または名前がフォルダ直下の画像ではない）。
     #[error("the screenshot was not found")]
     ScreenshotNotFound,
@@ -258,6 +273,11 @@ impl CoreError {
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::SkinNameEmpty => "skin.name_empty",
             CoreError::SkinNotFound => "skin.not_found",
+            CoreError::MrpackInvalid { .. } => "mrpack.invalid",
+            CoreError::MrpackUnsupported { .. } => "mrpack.unsupported",
+            CoreError::MrpackUnsafePath { .. } => "mrpack.unsafe_path",
+            CoreError::MrpackLimit { .. } => "mrpack.limit",
+            CoreError::MrpackNeedsConfirmation => "mrpack.needs_confirmation",
             CoreError::ScreenshotNotFound => "screenshot.not_found",
             CoreError::LogNotFound => "log.not_found",
             CoreError::SyncNoOptions => "sync.no_options",
@@ -354,8 +374,14 @@ impl CoreError {
             CoreError::ContentIncompatible { names } => {
                 params.insert("names".into(), ParamValue::Str(names.clone()));
             }
-            CoreError::InvalidSkin { reason } => {
+            CoreError::InvalidSkin { reason }
+            | CoreError::MrpackInvalid { reason }
+            | CoreError::MrpackUnsupported { reason }
+            | CoreError::MrpackLimit { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
+            }
+            CoreError::MrpackUnsafePath { path } => {
+                params.insert("path".into(), ParamValue::Str(path.clone()));
             }
             CoreError::CommandTooLong { length } => {
                 params.insert("length".into(), ParamValue::Num(*length as f64));
@@ -821,6 +847,48 @@ mod tests {
         assert_eq!(
             p.params.get("name"),
             Some(&ParamValue::Str("Fabric API".into()))
+        );
+    }
+
+    #[test]
+    fn phase7_mrpack_errors_carry_their_params() {
+        for (err, code, key, value) in [
+            (
+                CoreError::MrpackInvalid { reason: "r".into() },
+                "mrpack.invalid",
+                "reason",
+                "r",
+            ),
+            (
+                CoreError::MrpackUnsupported { reason: "r".into() },
+                "mrpack.unsupported",
+                "reason",
+                "r",
+            ),
+            (
+                CoreError::MrpackLimit { reason: "r".into() },
+                "mrpack.limit",
+                "reason",
+                "r",
+            ),
+            (
+                CoreError::MrpackUnsafePath {
+                    path: "../a".into(),
+                },
+                "mrpack.unsafe_path",
+                "path",
+                "../a",
+            ),
+        ] {
+            assert_eq!(err.code(), code);
+            assert_eq!(
+                err.to_payload().params.get(key),
+                Some(&ParamValue::Str(value.into()))
+            );
+        }
+        assert_eq!(
+            CoreError::MrpackNeedsConfirmation.code(),
+            "mrpack.needs_confirmation"
         );
     }
 
