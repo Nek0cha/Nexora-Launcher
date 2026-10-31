@@ -59,6 +59,11 @@ function cool(ms?: number) {
   if (ms !== undefined) coolTimer = setTimeout(() => setCooling(false), ms);
 }
 
+/** 変更のあとの冷却の最中か。Mojang へ送る操作だけを止めたい画面（ライブラリの編集は続けられる）が使う */
+export function useCooling(): boolean {
+  return useSyncExternalStore(subscribeCooling, () => cooling);
+}
+
 /** テスト用: 前のテストの冷却を持ち越さない */
 export function resetCooldown() {
   clearTimeout(coolTimer);
@@ -125,7 +130,7 @@ export function useDefaultSkins() {
 export function useSkinActions(accountId: string | null) {
   const client = useQueryClient();
   // 冷却は busy に含める。進行中から冷却へ隙間なくつなぎ、全部の操作が同じ見た目（無効）のまま続くようにする
-  const isCooling = useSyncExternalStore(subscribeCooling, () => cooling);
+  const isCooling = useCooling();
   // サイドバーの顔（SKIN_KEY）も、スキンが変われば取り直す
   const refresh = () =>
     Promise.all([
@@ -185,7 +190,9 @@ export function useSkinActions(accountId: string | null) {
     onError: limited,
   });
 
-  const busy =
-    isCooling || [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
-  return { apply, applyDefault, add, addFromPath, update, remove, setCape: setCapeMutation, busy };
+  const pending = [apply, applyDefault, add, addFromPath, update, remove, setCapeMutation].some((m) => m.isPending);
+  // 冷却の間も、変更の取り直しが終わるまでは進行中のまま。実行中（まだ成功していない）だけを見たいときは working を使う
+  const busy = isCooling || pending;
+  const working = !isCooling && pending;
+  return { apply, applyDefault, add, addFromPath, update, remove, setCape: setCapeMutation, busy, working };
 }

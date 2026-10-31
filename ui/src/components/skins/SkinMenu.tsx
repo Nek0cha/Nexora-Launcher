@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import IconDots from "~icons/ph/dots-three";
 import type { SavedSkin } from "../../bindings/SavedSkin";
 import type { SkinVariant } from "../../bindings/SkinVariant";
-import type { useSkinActions } from "../../features/skins/useSkins";
+import { useCooling, type useSkinActions } from "../../features/skins/useSkins";
 import { useToast } from "../toast/useToast";
 import { readSkinFile, SkinDialog, SkinFields } from "./SkinDialog";
 
@@ -51,7 +51,10 @@ function SkinEditDialog({ skin, worn, canApply, actions, isOpen, onOpenChange, o
   const trimmed = name.trim();
   const nameChanged = trimmed !== "" && trimmed !== skin.name;
   const variantChanged = variant !== skin.variant;
-  const canSave = trimmed !== "" && (nameChanged || variantChanged || file !== null);
+  // 着ているスキンの見た目が変わる保存は Mojang へ送るので、冷却の間は保存できない。名前だけの変更は手元の記録だけなので保存できる
+  const cooling = useCooling();
+  const sendsToMojang = worn && canApply && (variantChanged || file !== null);
+  const canSave = trimmed !== "" && (nameChanged || variantChanged || file !== null) && !(sendsToMojang && cooling);
 
   const pickFile = async (picked: File) => {
     try {
@@ -73,7 +76,7 @@ function SkinEditDialog({ skin, worn, canApply, actions, isOpen, onOpenChange, o
         skinId: skin.id,
         patch: { name: nameChanged ? trimmed : null, variant: variantChanged ? variant : null, png: file?.png ?? null },
       });
-      if (worn && canApply && (variantChanged || file !== null)) await actions.apply.mutateAsync({ skinId: skin.id });
+      if (sendsToMojang) await actions.apply.mutateAsync({ skinId: skin.id });
       onOpenChange(false);
     } catch (e) {
       toast.showError(e);
