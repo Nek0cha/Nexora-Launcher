@@ -116,6 +116,11 @@ pub struct PackHarness {
 
 impl PackHarness {
     pub async fn new() -> Self {
+        Self::new_with_api(None).await
+    }
+
+    /// `api` を指定すると、Modrinth の API だけ別の場所（落ちたサーバーなど）にする。
+    pub async fn new_with_api(api: Option<String>) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::from_root(temp.path().join("data"));
         paths.ensure_dirs().unwrap();
@@ -140,7 +145,7 @@ impl PackHarness {
             forge_maven: "http://127.0.0.1:1".into(),
             forge_promotions: "http://127.0.0.1:1".into(),
             neoforge_maven: "http://127.0.0.1:1".into(),
-            modrinth_api: modrinth.uri(),
+            modrinth_api: api.unwrap_or_else(|| modrinth.uri()),
             modrinth_cdn: modrinth.uri(),
         };
         let (tasks, recorder) = SnapshotRecorder::manager();
@@ -251,5 +256,77 @@ impl PackHarness {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
         panic!("task {task_id} never reached {phase:?}");
+    }
+}
+
+impl PackHarness {
+    /// 新しく作った Fabric（1.99-test、0.16.10）のインスタンスの `mods/` にファイルを置いて返す。
+    /// 導入はしない（フォルダーとファイルだけ）。
+    pub fn seed_instance(&self, mods: &[(&str, &[u8])]) -> nexora_core::instance::Instance {
+        let new = nexora_core::instance::NewInstance {
+            name: "Seeded".into(),
+            loader: nexora_core::meta::loader::LoaderKind::Fabric,
+            loader_version: Some("0.16.10".into()),
+            ..nexora_core::instance::NewInstance::vanilla("Seeded", "1.99-test")
+        };
+        let inst = nexora_core::instance::create(self.launcher.db(), &self.paths, &new, 0).unwrap();
+        let dir = nexora_core::instance::game_dir(&self.paths, &inst).join("mods");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, body) in mods {
+            std::fs::write(dir.join(name), body).unwrap();
+        }
+        inst
+    }
+
+    /// `known` の各ファイルを Modrinth で特定できることにする（ハッシュの照会と版の詳細）。
+    /// 要素は (本文, 版の ID, ダウンロードの経路)。
+    pub async fn serve_identified(&self, known: &[(&[u8], &str, &str)]) {
+        let mut by_hash = serde_json::Map::new();
+        let mut versions = Vec::new();
+        for (body, version_id, route) in known {
+            let sha1 = sha1_hex(body);
+            by_hash.insert(
+                sha1.clone(),
+                json!({
+                    "id": version_id, "project_id": format!("proj-{version_id}"),
+                    "version_number": "1.0", "dependencies": [],
+                }),
+            );
+            versions.push(json!({
+                "id": version_id, "project_id": format!("proj-{version_id}"),
+                "version_number": "1.0",
+                "files": [{
+                    "url": format!("{}{route}", self.modrinth.uri()),
+                    "filename": "x.jar",
+                    "hashes": { "sha1": sha1, "sha512": hex(&Sha512::digest(body)) },
+                    "size": body.len(), "primary": true,
+                }],
+            }));
+        }
+        Mock::given(method("POST"))
+            .and(path("/version_files"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(Value::Object(by_hash)))
+            .mount(&self.modrinth)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(Value::Array(versions)))
+            .mount(&self.modrinth)
+            .await;
+    }
+
+    /// 起動中の行を入れる。
+    pub fn mark_running(&self, instance_id: &str) {
+        let id = instance_id.to_string();
+        self.launcher
+            .db()
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO running_sessions VALUES (?1, 1, 1, 1, 'acc', 'x.log')",
+                    [id],
+                )?;
+                Ok(())
+            })
+            .unwrap();
     }
 }

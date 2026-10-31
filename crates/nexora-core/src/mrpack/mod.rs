@@ -6,7 +6,7 @@ pub mod fetch;
 pub mod manifest;
 pub mod safe_path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::meta::loader::{LoaderKind, LoaderVersionEntry};
@@ -24,6 +24,43 @@ pub struct MrpackInfo {
     pub loader_version: Option<String>,
     /// クライアントで使うファイルの数。
     pub file_count: u32,
+}
+
+/// 書き出す前の確認に出す、内訳。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportPreview {
+    /// Modrinth の参照として書くファイルの数。
+    pub referenced: u32,
+    /// Modrinth で特定できず、実ファイルとして入れるファイルの名前。
+    pub unidentified: Vec<String>,
+    /// 無効のため書き出さないファイルの数。
+    pub disabled: u32,
+}
+
+/// 書き出しの設定。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportOptions {
+    /// パックの版の文字列。空白だけは断る。
+    pub version_id: String,
+    /// `config/` を含めるか。
+    pub include_config: bool,
+    /// 特定できないファイルを実ファイルとして入れることに、利用者が同意したか。
+    pub accept_unidentified: bool,
+}
+
+/// 導入処理の表記のローダーの版を、`.mrpack` の `dependencies` の表記にする。
+/// Forge と NeoForge の `<Minecraft の版>-<ビルド>` は、ビルドだけにする。
+pub fn pack_version_for(kind: LoaderKind, mc_version: &str, installer_version: &str) -> String {
+    if matches!(kind, LoaderKind::Forge | LoaderKind::Neoforge)
+        && let Some(build) = installer_version.strip_prefix(&format!("{mc_version}-"))
+    {
+        return build.to_string();
+    }
+    installer_version.to_string()
 }
 
 /// パックのローダーの版を、導入処理の一覧にある表記に写す。一覧に無ければ `None`。

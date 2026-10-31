@@ -311,3 +311,174 @@ fn vanilla_instance_exports_without_a_loader_key() {
     let target = pack.manifest().unwrap().target().unwrap();
     assert_eq!(target.loader, LoaderKind::Vanilla);
 }
+
+// ---- Launcher を通した書き出し ----
+
+use common::mrpack::PackHarness;
+use nexora_core::mrpack::{ExportOptions, pack_version_for};
+
+fn options(accept: bool, config: bool) -> ExportOptions {
+    ExportOptions {
+        version_id: "1.0.0".into(),
+        include_config: config,
+        accept_unidentified: accept,
+    }
+}
+
+/// 特定できるファイル 1 つ、できないファイル 1 つ、無効のファイル 1 つの `mods/` を持つインスタンス。
+async fn mixed_instance(h: &PackHarness) -> nexora_core::instance::Instance {
+    let inst = h.seed_instance(&[
+        ("known.jar", b"known"),
+        ("unknown.jar", b"unknown"),
+        ("off.jar.disabled", b"off"),
+    ]);
+    h.serve_identified(&[(b"known", "ver-known", "/known.jar")])
+        .await;
+    inst
+}
+
+#[tokio::test]
+async fn preview_counts_identified_unidentified_and_disabled() {
+    let h = PackHarness::new().await;
+    let inst = mixed_instance(&h).await;
+
+    let preview = h.launcher.preview_mrpack_export(&inst.id).await.unwrap();
+
+    assert_eq!(preview.referenced, 1);
+    assert_eq!(preview.unidentified, ["unknown.jar"]);
+    assert_eq!(preview.disabled, 1);
+}
+
+#[tokio::test]
+async fn export_writes_a_pack_the_importer_can_read() {
+    let h = PackHarness::new().await;
+    let inst = mixed_instance(&h).await;
+    let config = nexora_core::instance::game_dir(&h.paths, &inst).join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("a.toml"), b"a").unwrap();
+    let dest = h.packs.join("out.mrpack");
+
+    h.launcher
+        .export_mrpack(&inst.id, dest.clone(), options(true, true))
+        .await
+        .unwrap();
+
+    let info = h.launcher.inspect_mrpack(dest.clone()).await.unwrap();
+    assert_eq!(info.name, "Seeded");
+    assert_eq!(info.version_id, "1.0.0");
+    assert_eq!(info.mc_version, "1.99-test");
+    assert_eq!(info.loader, nexora_core::meta::loader::LoaderKind::Fabric);
+    assert_eq!(info.loader_version.as_deref(), Some("0.16.10"));
+    assert_eq!(info.file_count, 1);
+    let names: Vec<String> = zip::ZipArchive::new(std::fs::File::open(&dest).unwrap())
+        .unwrap()
+        .file_names()
+        .filter_map(Result::ok)
+        .map(|n| n.into_owned())
+        .collect();
+    assert!(names.contains(&"overrides/mods/unknown.jar".to_string()));
+    assert!(names.contains(&"overrides/config/a.toml".to_string()));
+    assert!(!names.iter().any(|n| n.contains("off.jar")));
+}
+
+#[tokio::test]
+async fn export_without_confirmation_is_refused_when_files_are_unidentified() {
+    let h = PackHarness::new().await;
+    let inst = mixed_instance(&h).await;
+    let dest = h.packs.join("out.mrpack");
+
+    let err = h
+        .launcher
+        .export_mrpack(&inst.id, dest.clone(), options(false, false))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), "mrpack.needs_confirmation");
+    assert!(!dest.exists());
+}
+
+#[tokio::test]
+async fn export_without_unidentified_files_needs_no_confirmation() {
+    let h = PackHarness::new().await;
+    let inst = h.seed_instance(&[("known.jar", b"known")]);
+    h.serve_identified(&[(b"known", "ver-known", "/known.jar")])
+        .await;
+    let dest = h.packs.join("out.mrpack");
+
+    h.launcher
+        .export_mrpack(&inst.id, dest.clone(), options(false, false))
+        .await
+        .unwrap();
+
+    assert!(dest.exists());
+}
+
+#[tokio::test]
+async fn export_while_offline_fails_with_offline_and_writes_nothing() {
+    let h = PackHarness::new_with_api(Some("http://127.0.0.1:1".into())).await;
+    let inst = h.seed_instance(&[("known.jar", b"known")]);
+    let dest = h.packs.join("out.mrpack");
+
+    let err = h
+        .launcher
+        .export_mrpack(&inst.id, dest.clone(), options(true, false))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), "net.offline");
+    assert!(!dest.exists());
+}
+
+#[tokio::test]
+async fn export_is_allowed_while_the_game_runs() {
+    let h = PackHarness::new().await;
+    let inst = h.seed_instance(&[("known.jar", b"known")]);
+    h.serve_identified(&[(b"known", "ver-known", "/known.jar")])
+        .await;
+    h.mark_running(&inst.id);
+    let dest = h.packs.join("out.mrpack");
+
+    h.launcher
+        .export_mrpack(&inst.id, dest.clone(), options(false, false))
+        .await
+        .unwrap();
+
+    assert!(dest.exists());
+}
+
+#[tokio::test]
+async fn a_blank_version_id_is_refused() {
+    let h = PackHarness::new().await;
+    let inst = h.seed_instance(&[]);
+    let mut opts = options(true, false);
+    opts.version_id = "   ".into();
+
+    let err = h
+        .launcher
+        .export_mrpack(&inst.id, h.packs.join("out.mrpack"), opts)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), "mrpack.invalid");
+}
+
+#[test]
+fn forge_versions_are_written_without_the_minecraft_prefix() {
+    use nexora_core::meta::loader::LoaderKind;
+    assert_eq!(
+        pack_version_for(LoaderKind::Forge, "1.20.1", "1.20.1-47.2.0"),
+        "47.2.0"
+    );
+    assert_eq!(
+        pack_version_for(LoaderKind::Neoforge, "1.21.1", "21.1.77"),
+        "21.1.77"
+    );
+    assert_eq!(
+        pack_version_for(LoaderKind::Neoforge, "1.20.1", "1.20.1-47.1.106"),
+        "47.1.106"
+    );
+    assert_eq!(
+        pack_version_for(LoaderKind::Fabric, "1.21.1", "0.16.10"),
+        "0.16.10"
+    );
+}

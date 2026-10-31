@@ -3,12 +3,17 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::content::modrinth::{self, FileInfo, FullVersion};
 use crate::install::kib;
 use crate::mrpack::archive;
+use crate::mrpack::export::{ExportEntry, loader_dependency_key, plan_entries, write_pack};
 use crate::mrpack::fetch::{MAX_REDIRECTS, download_pack_files, staged_path};
 use crate::mrpack::manifest::{Manifest, PackFile, PackTarget};
 use crate::mrpack::safe_path::{PathGuard, ensure_contained};
-use crate::mrpack::{Limits, MrpackInfo, loader_version_for};
+use crate::mrpack::{
+    ExportOptions, ExportPreview, Limits, MrpackInfo, loader_version_for, pack_version_for,
+};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// ダウンロードしたファイルを、置き場所へ移す前に置いておく場所（インスタンスのフォルダーの中）。
 const STAGING_DIR: &str = ".mrpack-staging";
@@ -166,6 +171,132 @@ impl Launcher {
         Ok(())
     }
 
+    /// 書き出す前の内訳。Modrinth に問い合わせるため、通信できなければ `Offline`。
+    pub async fn preview_mrpack_export(
+        &self,
+        instance_id: &str,
+    ) -> Result<ExportPreview, CoreError> {
+        let gathered = self.gather_export(instance_id).await?;
+        Ok(ExportPreview {
+            referenced: u32::try_from(
+                gathered
+                    .entries
+                    .iter()
+                    .filter(|e| matches!(e, ExportEntry::Referenced { .. }))
+                    .count(),
+            )
+            .unwrap_or(u32::MAX),
+            unidentified: gathered.unidentified(),
+            disabled: gathered.skips.disabled,
+        })
+    }
+
+    /// インスタンスを `.mrpack` として `dest` に書く。起動中でも書ける（読むだけ）。
+    /// 特定できないファイルがあるのに `accept_unidentified` が偽なら、何も書かずに断る。
+    pub async fn export_mrpack(
+        &self,
+        instance_id: &str,
+        dest: PathBuf,
+        options: ExportOptions,
+    ) -> Result<(), CoreError> {
+        let version_id = options.version_id.trim().to_string();
+        if version_id.is_empty() {
+            return Err(CoreError::MrpackInvalid {
+                reason: "the version is empty".into(),
+            });
+        }
+        let gathered = self.gather_export(instance_id).await?;
+        if !options.accept_unidentified && !gathered.unidentified().is_empty() {
+            return Err(CoreError::MrpackNeedsConfirmation);
+        }
+        let inst = &gathered.instance;
+        let mut dependencies = BTreeMap::new();
+        dependencies.insert("minecraft".to_string(), inst.mc_version.clone());
+        if let (Some(key), Some(version)) = (
+            loader_dependency_key(inst.loader),
+            inst.loader_version.as_deref(),
+        ) {
+            dependencies.insert(
+                key.to_string(),
+                pack_version_for(inst.loader, &inst.mc_version, version),
+            );
+        }
+        let config_dir = options
+            .include_config
+            .then(|| gathered.game_dir.join("config"))
+            .filter(|dir| dir.is_dir());
+        let name = inst.name.clone();
+        let entries = gathered.entries;
+        blocking(move || {
+            write_pack(
+                &dest,
+                &name,
+                &version_id,
+                dependencies,
+                &entries,
+                config_dir.as_deref(),
+            )
+        })
+        .await
+    }
+
+    /// 書き出す中身を集める。有効な全ファイルを、その場で Modrinth に引き直す。
+    async fn gather_export(&self, instance_id: &str) -> Result<Gathered, CoreError> {
+        let instance = instance::get(&self.env.db, instance_id)?;
+        let game_dir = instance::game_dir(&self.env.paths, &instance);
+        let mut items = Vec::new();
+        for kind in [
+            ContentKind::Mod,
+            ContentKind::ResourcePack,
+            ContentKind::Shader,
+        ] {
+            items.extend(self.list_content(instance_id, kind).await?);
+        }
+        let sha1s: Vec<String> = items
+            .iter()
+            .filter(|i| i.enabled)
+            .map(|i| i.sha1.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let found = self.lookup_files(&sha1s).await?;
+        let (entries, skips) = plan_entries(&items, &found, &game_dir);
+        Ok(Gathered {
+            instance,
+            game_dir,
+            entries,
+            skips,
+        })
+    }
+
+    /// SHA-1 から、Modrinth のファイル情報（URL、ハッシュ、大きさ）を引く。分からないものは含まれない。
+    async fn lookup_files(&self, sha1s: &[String]) -> Result<HashMap<String, FileInfo>, CoreError> {
+        let (http, api) = (&self.env.http, self.env.urls.modrinth_api.as_str());
+        let infos = modrinth::versions_by_hash(http, api, sha1s).await?;
+        let ids: Vec<String> = infos
+            .values()
+            .map(|v| v.version_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let mut versions: HashMap<String, FullVersion> = HashMap::new();
+        for chunk in ids.chunks(100) {
+            for version in modrinth::versions_by_ids(http, api, chunk).await? {
+                versions.insert(version.id.clone(), version);
+            }
+        }
+        let mut out = HashMap::new();
+        for (sha1, info) in infos {
+            let file = versions
+                .get(&info.version_id)
+                .and_then(|v| v.files.iter().find(|f| f.sha1.eq_ignore_ascii_case(&sha1)));
+            if let Some(file) = file {
+                out.insert(sha1, file.clone());
+            }
+        }
+        Ok(out)
+    }
+
     /// 失敗したインポートのインスタンスを、行もフォルダーも消す。共有のキャッシュは消さない。
     async fn discard_import(&self, id: &str) {
         let (db, paths, owned) = (self.env.db.clone(), self.env.paths.clone(), id.to_string());
@@ -176,6 +307,29 @@ impl Launcher {
                 "failed to remove the failed import"
             );
         }
+    }
+}
+
+/// 書き出す中身と、その元になったインスタンス。
+struct Gathered {
+    instance: Instance,
+    game_dir: PathBuf,
+    entries: Vec<ExportEntry>,
+    skips: crate::mrpack::export::ExportSkips,
+}
+
+impl Gathered {
+    /// 実ファイルとして入れるファイルの名前。
+    fn unidentified(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter_map(|e| match e {
+                ExportEntry::Embedded { zip_path, .. } => {
+                    Some(zip_path.rsplit('/').next().unwrap_or(zip_path).to_string())
+                }
+                ExportEntry::Referenced { .. } => None,
+            })
+            .collect()
     }
 }
 

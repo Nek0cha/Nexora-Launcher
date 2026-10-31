@@ -175,6 +175,8 @@ pub fn run() {
             commands::content_task_report,
             commands::inspect_mrpack,
             commands::import_mrpack,
+            commands::preview_mrpack_export,
+            commands::export_mrpack,
             commands::list_sync_profiles,
             commands::create_sync_profile_from_instance,
             commands::rename_sync_profile,
