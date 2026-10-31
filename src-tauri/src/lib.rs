@@ -173,6 +173,7 @@ pub fn run() {
             commands::list_content_versions,
             commands::change_content_version,
             commands::content_task_report,
+            commands::inspect_mrpack,
             commands::list_sync_profiles,
             commands::create_sync_profile_from_instance,
             commands::rename_sync_profile,

@@ -75,3 +75,141 @@ impl PackBuilder {
         })
     }
 }
+
+// ---- Launcher を通すテストの環境 ----
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use nexora_core::auth::http::AuthHttp;
+use nexora_core::auth::service::AuthService;
+use nexora_core::auth::store::{MemoryStore, SecretStore};
+use nexora_core::db::Db;
+use nexora_core::install::Urls;
+use nexora_core::launcher::Launcher;
+use nexora_core::net::HostPolicy;
+use nexora_core::net::hash::{hex, sha1_hex};
+use nexora_core::paths::AppPaths;
+use nexora_core::task::TaskManager;
+use sha2::{Digest, Sha512};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use super::{
+    FABRIC_VERSION, FakeLoaderMeta, FakeMojang, FixedProbe, RecordingGame, SnapshotRecorder,
+    auth_urls, http, serve,
+};
+
+/// Minecraft `1.99-test` と Fabric を配る偽の配信元と、パックのファイルを配る Modrinth の偽物を持つ環境。
+pub struct PackHarness {
+    pub _temp: tempfile::TempDir,
+    pub launcher: Launcher,
+    pub tasks: TaskManager,
+    pub recorder: Arc<SnapshotRecorder>,
+    pub paths: AppPaths,
+    pub fake: FakeMojang,
+    /// Modrinth の API とパックのファイルの配信を兼ねる。
+    pub modrinth: MockServer,
+    /// `.mrpack` を置く場所。
+    pub packs: PathBuf,
+}
+
+impl PackHarness {
+    pub async fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_root(temp.path().join("data"));
+        paths.ensure_dirs().unwrap();
+        let packs = temp.path().join("packs");
+        std::fs::create_dir_all(&packs).unwrap();
+        let fake = FakeMojang::start().await;
+        let loaders = FakeLoaderMeta::start(&fake).await;
+        let list = format!(r#"[{{"loader":{{"version":"{FABRIC_VERSION}","stable":true}}}}]"#);
+        serve(
+            &fake.server,
+            "/fabric/v2/versions/loader/1.99-test",
+            list.as_bytes(),
+        )
+        .await;
+        let modrinth = MockServer::start().await;
+        let urls = Urls {
+            manifest: fake.manifest_url(),
+            runtime_index: fake.runtime_index_url(),
+            resources: fake.resources_url(),
+            fabric_meta: loaders.fabric_url(),
+            quilt_meta: loaders.quilt_url(),
+            forge_maven: "http://127.0.0.1:1".into(),
+            forge_promotions: "http://127.0.0.1:1".into(),
+            neoforge_maven: "http://127.0.0.1:1".into(),
+            modrinth_api: modrinth.uri(),
+            modrinth_cdn: modrinth.uri(),
+        };
+        let (tasks, recorder) = SnapshotRecorder::manager();
+        let db = Db::open_in_memory().unwrap();
+        let auth_server = MockServer::start().await;
+        let auth = AuthService::new(
+            db.clone(),
+            paths.clone(),
+            AuthHttp::new().unwrap(),
+            auth_urls(&auth_server),
+            Some(Arc::new(MemoryStore::default()) as Arc<dyn SecretStore>),
+            Some("cid".into()),
+        );
+        let launcher = Launcher::with(
+            paths.clone(),
+            db,
+            tasks.clone(),
+            Arc::new(RecordingGame::default()),
+            http(),
+            urls,
+            Arc::new(FixedProbe(17)),
+            auth,
+        )
+        .with_pack_policy(HostPolicy::lenient_for_tests(&["127.0.0.1"]));
+        Self {
+            _temp: temp,
+            launcher,
+            tasks,
+            recorder,
+            paths,
+            fake,
+            modrinth,
+            packs,
+        }
+    }
+
+    /// `name` という `.mrpack` を `packs` に書き、そのパスを返す。
+    pub fn write_pack(&self, name: &str, builder: PackBuilder) -> PathBuf {
+        let path = self.packs.join(name);
+        builder.write(&path);
+        path
+    }
+
+    /// `route` で `body` を配る（パックのファイルのダウンロード元）。
+    pub async fn serve_file(&self, route: &str, body: &[u8]) {
+        Mock::given(method("GET"))
+            .and(path(route.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(body.to_vec()))
+            .mount(&self.modrinth)
+            .await;
+    }
+
+    /// 索引の `files[]` の 1 件。本文のハッシュとサイズ、`route` のダウンロード URL を持つ。
+    pub fn file_entry(
+        &self,
+        pack_path: &str,
+        body: &[u8],
+        route: &str,
+        env: Option<Value>,
+    ) -> Value {
+        let mut v = json!({
+            "path": pack_path,
+            "hashes": { "sha1": sha1_hex(body), "sha512": hex(&Sha512::digest(body)) },
+            "downloads": [format!("{}{route}", self.modrinth.uri())],
+            "fileSize": body.len(),
+        });
+        if let Some(env) = env {
+            v["env"] = env;
+        }
+        v
+    }
+}

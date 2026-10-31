@@ -1,6 +1,7 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
 mod content;
+mod mrpack;
 
 pub use content::{InstallPreview, VersionChoice};
 
@@ -49,7 +50,7 @@ use crate::meta::mojang::manifest::{
 };
 use crate::meta::mojang::rules::RuleEnv;
 use crate::meta::write_atomic;
-use crate::net::{Depth, Http};
+use crate::net::{Depth, HostPolicy, Http};
 use crate::paths::AppPaths;
 use crate::settings;
 use crate::skins::defaults::{self, DefaultSkin};
@@ -106,6 +107,8 @@ pub struct Launcher {
     updates: Arc<UpdateCache>,
     /// 導入と更新のタスクの結果（新しい順に一定数だけ）。
     reports: Arc<Mutex<content::ReportStore>>,
+    /// `.mrpack` のファイルを取ってよい配信元。
+    pack_policy: HostPolicy,
 }
 
 fn already_running(instance_id: &str) -> CoreError {
@@ -190,7 +193,16 @@ impl Launcher {
             reattached: Arc::new(AtomicBool::new(false)),
             updates: Arc::new(UpdateCache::default()),
             reports: Arc::default(),
+            pack_policy: crate::mrpack::fetch::production_policy(),
         }
+    }
+
+    /// 結合テスト用。`.mrpack` のファイルを取ってよい配信元を差し替える。
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_pack_policy(mut self, policy: HostPolicy) -> Self {
+        self.pack_policy = policy;
+        self
     }
 
     /// 結合テスト用。更新の確認のキャッシュが使う時計を差し替える。

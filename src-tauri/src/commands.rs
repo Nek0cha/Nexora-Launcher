@@ -23,6 +23,7 @@ use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
+use nexora_core::mrpack::MrpackInfo;
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::skins::defaults::DefaultSkin;
 use nexora_core::skins::library::{self, SavedSkin, SavedSkinPatch};
@@ -418,6 +419,17 @@ pub fn content_task_report(
     task_id: String,
 ) -> CmdResult<Option<ContentTaskReport>> {
     Ok(state.services()?.launcher.content_task_report(&task_id))
+}
+
+/// `.mrpack` を読んで、確認ダイアログに出す要約を返す。何も書き込まない。
+#[tauri::command]
+pub async fn inspect_mrpack(state: State<'_, AppState>, path: String) -> CmdResult<MrpackInfo> {
+    let services = state.services()?;
+    services
+        .launcher
+        .inspect_mrpack(std::path::PathBuf::from(path))
+        .await
+        .map_err(ErrorPayload::from)
 }
 
 /// Modrinth のプロジェクトのページ。`slug` は小文字の英数字、`-`、`_` だけを受け付ける。
