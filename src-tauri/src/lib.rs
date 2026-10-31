@@ -205,6 +205,9 @@ pub fn run() {
             commands::import_current_skin,
             commands::stop_instance,
             commands::open_instance_folder,
+            commands::list_screenshots,
+            commands::delete_screenshot,
+            commands::import_screenshots,
             commands::system_memory_mb,
         ])
         .run(tauri::generate_context!())

@@ -16,6 +16,7 @@ use nexora_core::content::updates::UpdateCheck;
 use nexora_core::content::{ContentItem, ContentKind};
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
+use nexora_core::instance::screenshots::{ImportReport, Screenshot};
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
@@ -815,6 +816,57 @@ pub async fn open_instance_folder(
             }
             .to_payload()
         })
+}
+
+/// スクリーンショットの一覧（新しい順）。画像は asset プロトコルで表示するので、
+/// このインスタンスのフォルダだけを表示してよい範囲に加える。
+#[tauri::command]
+pub async fn list_screenshots(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<Vec<Screenshot>> {
+    let services = state.services()?;
+    let (dir, shots) = blocking(move || {
+        let dir = services
+            .launcher
+            .instance_folder(&instance_id, FolderKind::Screenshots)?;
+        let shots = services.launcher.list_screenshots(&instance_id)?;
+        Ok((dir, shots))
+    })
+    .await?;
+    app.asset_protocol_scope()
+        .allow_directory(&dir, false)
+        .map_err(|err| {
+            tracing::warn!(%err, "failed to allow the screenshots folder");
+            CoreError::Unexpected {
+                message: "failed to allow the screenshots folder".to_string(),
+            }
+            .to_payload()
+        })?;
+    Ok(shots)
+}
+
+#[tauri::command]
+pub async fn delete_screenshot(
+    state: State<'_, AppState>,
+    instance_id: String,
+    name: String,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    blocking(move || services.launcher.delete_screenshot(&instance_id, &name)).await
+}
+
+/// ドロップされた画像のファイルをスクリーンショットのフォルダへ写す。
+#[tauri::command]
+pub async fn import_screenshots(
+    state: State<'_, AppState>,
+    instance_id: String,
+    paths: Vec<String>,
+) -> CmdResult<ImportReport> {
+    let services = state.services()?;
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
+    blocking(move || services.launcher.import_screenshots(&instance_id, &paths)).await
 }
 
 #[tauri::command]

@@ -33,6 +33,7 @@ use crate::install::{
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
+use crate::instance::screenshots::{self, ImportReport, Screenshot};
 use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode, NewInstance};
 use crate::java::verify::{JavaProbe, SystemProbe};
 use crate::java::{find_registered, finish_runtime, prepare_runtime, requirement};
@@ -779,6 +780,27 @@ impl Launcher {
             source,
         })?;
         Ok(dir)
+    }
+
+    /// インスタンスのスクリーンショットを新しい順に返す。
+    pub fn list_screenshots(&self, instance_id: &str) -> Result<Vec<Screenshot>, CoreError> {
+        let dir = self.instance_folder(instance_id, FolderKind::Screenshots)?;
+        screenshots::list(&dir)
+    }
+
+    pub fn delete_screenshot(&self, instance_id: &str, name: &str) -> Result<(), CoreError> {
+        let dir = self.instance_folder(instance_id, FolderKind::Screenshots)?;
+        screenshots::delete(&dir, name)
+    }
+
+    /// 画像のファイルをインスタンスのスクリーンショットのフォルダへ写す。
+    pub fn import_screenshots(
+        &self,
+        instance_id: &str,
+        paths: &[PathBuf],
+    ) -> Result<ImportReport, CoreError> {
+        let dir = self.instance_folder(instance_id, FolderKind::Screenshots)?;
+        screenshots::import(&dir, paths)
     }
 
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {
