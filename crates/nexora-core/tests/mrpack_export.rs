@@ -136,6 +136,58 @@ fn plan_entries_splits_identified_unidentified_and_disabled() {
 }
 
 #[test]
+fn a_file_the_instance_runs_is_never_exported_as_client_unsupported() {
+    // Modrinth のプロジェクトが「クライアントは非対応」としていても、このインスタンスは実際に使っている。
+    // 実在のパックで往復すると、そのまま写した印のせいで、読み込み直したときにそのファイルが入らなくなった
+    let dir = tempfile::tempdir().unwrap();
+    let items = vec![
+        item(
+            "mods/a.jar",
+            true,
+            "k1",
+            (Some(Side::Unsupported), Some(Side::Required)),
+        ),
+        item(
+            "mods/b.jar",
+            true,
+            "k2",
+            (Some(Side::Optional), Some(Side::Unsupported)),
+        ),
+    ];
+    let found = HashMap::from([
+        (
+            "k1".to_string(),
+            file_info("k1", "https://cdn.modrinth.com/a"),
+        ),
+        (
+            "k2".to_string(),
+            file_info("k2", "https://cdn.modrinth.com/b"),
+        ),
+    ]);
+
+    let (entries, _) = plan_entries(&items, &found, dir.path());
+
+    let sides: Vec<_> = entries
+        .iter()
+        .map(|e| match e {
+            ExportEntry::Referenced {
+                env_client,
+                env_server,
+                ..
+            } => (*env_client, *env_server),
+            other => panic!("expected a reference, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        sides,
+        [
+            (Some(Side::Required), Some(Side::Required)),
+            (Some(Side::Optional), Some(Side::Unsupported)),
+        ]
+    );
+}
+
+#[test]
 fn a_known_file_without_a_sha512_is_embedded_instead() {
     let dir = tempfile::tempdir().unwrap();
     let items = vec![item("mods/a.jar", true, "k1", (None, None))];

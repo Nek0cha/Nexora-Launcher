@@ -46,6 +46,16 @@ pub fn loader_dependency_key(kind: LoaderKind) -> Option<&'static str> {
     }
 }
 
+/// このインスタンスが実際に使っているファイルは、クライアントで「非対応」とは書かない。
+/// Modrinth のプロジェクトがクライアント非対応としていても、書いてしまうと、読み込み直したときに
+/// そのファイルが入らなくなる（実在のパックを往復させて確かめた）。
+fn client_env(side: Option<Side>) -> Option<Side> {
+    match side {
+        Some(Side::Unsupported) => Some(Side::Required),
+        other => other,
+    }
+}
+
 /// 有効な中身を、参照にするか実ファイルにするかに振り分ける。
 /// `found` は SHA-1 をキーにした Modrinth のファイル情報。`sha512` と URL が揃っているものだけ参照にする。
 pub fn plan_entries(
@@ -67,7 +77,7 @@ pub fn plan_entries(
             Some(file) => ExportEntry::Referenced {
                 zip_path: item.rel_path.clone(),
                 file: file.clone(),
-                env_client: item.client_side,
+                env_client: client_env(item.client_side),
                 env_server: item.server_side,
             },
             None => ExportEntry::Embedded {
