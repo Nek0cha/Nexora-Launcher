@@ -10,6 +10,8 @@ import type { Settings } from "../bindings/Settings";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import type { AccountList } from "../bindings/AccountList";
 import type { FolderKind } from "../bindings/FolderKind";
+import type { ImportReport } from "../bindings/ImportReport";
+import type { Screenshot } from "../bindings/Screenshot";
 import type { LoginMethod } from "../bindings/LoginMethod";
 import type { LoaderKind } from "../bindings/LoaderKind";
 import type { LoaderVersionEntry } from "../bindings/LoaderVersionEntry";
@@ -153,3 +155,10 @@ export const importCurrentSkin = (accountId: string) =>
 export const listDefaultSkins = () => call<DefaultSkin[]>("list_default_skins");
 export const applyDefaultSkin = (accountId: string, key: string) =>
   call<null>("apply_default_skin", { accountId, key });
+
+export const listScreenshots = (instanceId: string) =>
+  call<Screenshot[]>("list_screenshots", { instanceId });
+export const deleteScreenshot = (instanceId: string, name: string) =>
+  call<null>("delete_screenshot", { instanceId, name });
+export const importScreenshots = (instanceId: string, paths: string[]) =>
+  call<ImportReport>("import_screenshots", { instanceId, paths });

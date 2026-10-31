@@ -4,6 +4,7 @@ pub mod copy;
 pub mod dir_name;
 pub mod folder;
 pub mod lock;
+pub mod screenshots;
 
 use std::path::PathBuf;
 

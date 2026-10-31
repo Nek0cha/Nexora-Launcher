@@ -12,6 +12,7 @@ import {
   listRunning,
   listSyncFields,
   listSyncProfiles,
+  listScreenshots,
   openInstanceFolder,
   systemMemoryMb,
   updateInstance,
@@ -35,6 +36,7 @@ vi.mock("../api/commands", () => ({
   updateInstance: vi.fn(),
   systemMemoryMb: vi.fn(),
   openInstanceFolder: vi.fn(),
+  listScreenshots: vi.fn(),
   listContent: vi.fn(),
   identifyContent: vi.fn(),
   setContentEnabled: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock("../api/commands", () => ({
 }));
 
 vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
+vi.mock("../api/assets", () => ({ fileUrl: (path: string) => `asset://${path}` }));
 
 const instance = (patch: Partial<Instance> = {}): Instance => ({
   id: "i1", name: "Survival", dirName: "Survival", mcVersion: "1.21.5", state: "ready",
@@ -143,7 +146,7 @@ describe("InstanceDetail", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Survival" })).toBeTruthy();
     expect(screen.getByText("1.21.5")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Settings" })).toBeTruthy();
-    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
     expect(screen.getByRole("link", { name: "Instances" }).getAttribute("href")).toBe("/instances");
     expect((await saveButton()).disabled).toBe(true);
     fireEvent.change(nameInput(), { target: { value: "Creative" } });
@@ -333,10 +336,18 @@ describe("InstanceDetail", () => {
     const tab = await screen.findByRole("tab", { name: "Content" });
     expect(tab.getAttribute("aria-selected")).toBe("true");
     const detailTabs = within(screen.getByRole("tablist", { name: "Survival" })).getAllByRole("tab");
-    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Settings"]);
+    expect(detailTabs.map((t) => t.textContent)).toEqual(["Content", "Screenshots", "Settings"]);
     expect(await screen.findByRole("tab", { name: /^Mods/ })).toBeTruthy();
     await waitFor(() => expect(identifyContent).toHaveBeenCalledWith("i1"));
     expect(listContent).toHaveBeenCalledWith("i1", "mod");
+  });
+
+  it("shows the screenshots of the instance in its own tab", async () => {
+    vi.mocked(listScreenshots).mockResolvedValue([{ name: "a.png", path: "C:/shots/a.png", modifiedMs: 1, size: 1 }]);
+    mount([instance()], { state: null });
+    fireEvent.click(await screen.findByRole("tab", { name: "Screenshots" }));
+    expect(await screen.findByRole("button", { name: "Open a" })).toBeTruthy();
+    expect(listScreenshots).toHaveBeenCalledWith("i1");
   });
 
   it("opens the settings tab when asked through the location state", async () => {

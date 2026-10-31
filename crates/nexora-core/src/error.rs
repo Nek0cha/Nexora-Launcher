@@ -113,6 +113,9 @@ pub enum CoreError {
     /// 指定の中身の行が無い（一覧が古いなど）。
     #[error("the content was not found: {path}")]
     ContentNotFound { path: String },
+    /// 指定のスクリーンショットが無い（一覧が古い、または名前がフォルダ直下の画像ではない）。
+    #[error("the screenshot was not found")]
+    ScreenshotNotFound,
     /// ローダーの無い（バニラの）インスタンスには MOD を入れられない。
     #[error("the instance has no mod loader")]
     ContentNoLoader,
@@ -252,6 +255,7 @@ impl CoreError {
             CoreError::InvalidSkin { .. } => "skin.invalid",
             CoreError::SkinNameEmpty => "skin.name_empty",
             CoreError::SkinNotFound => "skin.not_found",
+            CoreError::ScreenshotNotFound => "screenshot.not_found",
             CoreError::SyncNoOptions => "sync.no_options",
             CoreError::SyncProfileNotFound => "sync.profile_not_found",
             CoreError::SyncNotMember => "sync.not_member",
@@ -750,6 +754,7 @@ mod tests {
     fn skin_library_codes_are_stable() {
         assert_eq!(CoreError::SkinNameEmpty.code(), "skin.name_empty");
         assert_eq!(CoreError::SkinNotFound.code(), "skin.not_found");
+        assert_eq!(CoreError::ScreenshotNotFound.code(), "screenshot.not_found");
     }
 
     #[test]

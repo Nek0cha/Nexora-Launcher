@@ -221,6 +221,7 @@
     "detail": {
       "tabSettings": "設定",
       "tabContent": "コンテンツ",
+      "tabScreenshots": "スクリーンショット",
       "name": "名前",
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
@@ -278,6 +279,23 @@
     "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
     "wait": "待つ",
     "confirm": "強制終了"
+  },
+  "screenshots": {
+    "empty": "スクリーンショットはまだありません",
+    "gallery": "スクリーンショットの一覧",
+    "open": "{{name}} を開く",
+    "viewer": "スクリーンショット",
+    "previous": "前の画像",
+    "next": "次の画像",
+    "close": "閉じる",
+    "delete": "削除",
+    "deleteTitle": "{{name}} を削除しますか？",
+    "deleteBody": "ファイルが削除されます。元に戻せません。",
+    "imported": "{{count}} 枚を追加しました",
+    "importedSome": "{{added}} 枚を追加しました。{{skipped}} 件は画像ではないか、読めませんでした",
+    "importNone": "追加できる画像がありませんでした",
+    "dropTarget": "ここに落として追加",
+    "dropAccepts": "PNG と JPEG のファイル"
   },
   "content": {
     "loading": "コンテンツを読み込んでいます",
