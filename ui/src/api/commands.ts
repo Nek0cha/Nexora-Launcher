@@ -10,7 +10,9 @@ import type { Settings } from "../bindings/Settings";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import type { AccountList } from "../bindings/AccountList";
 import type { FolderKind } from "../bindings/FolderKind";
+import type { GameLog } from "../bindings/GameLog";
 import type { ImportReport } from "../bindings/ImportReport";
+import type { LogContent } from "../bindings/LogContent";
 import type { Screenshot } from "../bindings/Screenshot";
 import type { LoginMethod } from "../bindings/LoginMethod";
 import type { LoaderKind } from "../bindings/LoaderKind";
@@ -162,3 +164,7 @@ export const deleteScreenshot = (instanceId: string, name: string) =>
   call<null>("delete_screenshot", { instanceId, name });
 export const importScreenshots = (instanceId: string, paths: string[]) =>
   call<ImportReport>("import_screenshots", { instanceId, paths });
+
+export const listGameLogs = (instanceId: string) => call<GameLog[]>("list_game_logs", { instanceId });
+export const readGameLog = (instanceId: string, name: string) =>
+  call<LogContent>("read_game_log", { instanceId, name });

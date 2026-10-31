@@ -222,6 +222,7 @@
       "tabSettings": "Settings",
       "tabContent": "Content",
       "tabScreenshots": "Screenshots",
+      "tabLogs": "Logs",
       "name": "Name",
       "memory": "Memory",
       "memoryMb": "Maximum memory (MB)",
@@ -279,6 +280,17 @@
     "body": "Force stopping may lose any progress since the last save.",
     "wait": "Wait",
     "confirm": "Force stop"
+  },
+  "logs": {
+    "empty": "No logs yet",
+    "launch": "Launch",
+    "search": "Search the log",
+    "level": "Level to show",
+    "levels": { "all": "All", "warn": "Warnings+", "error": "Errors" },
+    "content": "Game log",
+    "copy": "Copy the shown lines",
+    "copied": "Copied the log",
+    "openFolder": "Open the logs folder"
   },
   "screenshots": {
     "empty": "No screenshots yet",

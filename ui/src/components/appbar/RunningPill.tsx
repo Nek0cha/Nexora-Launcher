@@ -110,9 +110,9 @@ export function RunningPill() {
                   <RunningPopover
                     entries={entries}
                     flow={flow}
-                    onNavigate={(id) => {
+                    onNavigate={(id, tab) => {
                       setOpen(false);
-                      navigate(`/instances/${id}`);
+                      navigate(`/instances/${id}`, tab ? { state: { tab } } : undefined);
                     }}
                   />
                 </Dialog>
@@ -121,7 +121,7 @@ export function RunningPill() {
             {single && (
               <>
                 <StopButton entry={single} flow={flow} />
-                <LogButton entry={single} />
+                <LogButton entry={single} onOpen={(id) => navigate(`/instances/${id}`, { state: { tab: "logs" } })} />
               </>
             )}
           </motion.div>

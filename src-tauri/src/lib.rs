@@ -208,6 +208,8 @@ pub fn run() {
             commands::list_screenshots,
             commands::delete_screenshot,
             commands::import_screenshots,
+            commands::list_game_logs,
+            commands::read_game_log,
             commands::system_memory_mb,
         ])
         .run(tauri::generate_context!())

@@ -33,6 +33,7 @@ use crate::install::{
 use crate::instance::copy::copy_dir;
 use crate::instance::folder::FolderKind;
 use crate::instance::lock::InstanceLocks;
+use crate::instance::logs::{self, GameLog, LogContent};
 use crate::instance::screenshots::{self, ImportReport, Screenshot};
 use crate::instance::{self, Instance, InstanceState, JavaMode, MemoryMode, NewInstance};
 use crate::java::verify::{JavaProbe, SystemProbe};
@@ -801,6 +802,18 @@ impl Launcher {
     ) -> Result<ImportReport, CoreError> {
         let dir = self.instance_folder(instance_id, FolderKind::Screenshots)?;
         screenshots::import(&dir, paths)
+    }
+
+    /// インスタンスのゲームのログを新しい順に返す（起動ごとに 1 つ）。
+    pub fn list_game_logs(&self, instance_id: &str) -> Result<Vec<GameLog>, CoreError> {
+        let dir = self.instance_folder(instance_id, FolderKind::Logs)?;
+        logs::list(&dir)
+    }
+
+    /// ゲームのログの末尾を読む。
+    pub fn read_game_log(&self, instance_id: &str, name: &str) -> Result<LogContent, CoreError> {
+        let dir = self.instance_folder(instance_id, FolderKind::Logs)?;
+        logs::read(&dir, name)
     }
 
     pub fn list_running(&self) -> Result<Vec<RunningSession>, CoreError> {

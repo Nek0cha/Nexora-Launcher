@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Button,
   Input,
@@ -45,6 +45,7 @@ import { useTasks } from "../features/tasks/useTasks";
 /** Modrinth からの導入と更新のタスクの種類（core の CONTENT_KIND と同じ） */
 const CONTENT_TASK_KIND = "content";
 import { ContentTab } from "./ContentTab";
+import { LogsTab } from "./LogsTab";
 import { ScreenshotsTab } from "./ScreenshotsTab";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
@@ -88,7 +89,7 @@ const iconButton = [
 
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
-type DetailTab = "settings" | "content" | "screenshots";
+type DetailTab = "settings" | "content" | "screenshots" | "logs";
 
 export default function InstanceDetail() {
   const { t } = useTranslation();
@@ -98,11 +99,18 @@ export default function InstanceDetail() {
   const tasks = useTasks();
   // フォルダを開けなかったときはトーストで出す
   const toast = useToast();
-  // 既定はコンテンツのタブ。一覧の「設定」から来たときなど、遷移の state で設定のタブを頼まれたらそれを開く
+  // 既定はコンテンツのタブ。一覧の「設定」やピルのログのボタンから来たときなど、遷移の state で頼まれたタブを開く
   const location = useLocation();
-  const [tab, setTab] = useState<DetailTab>(() =>
-    (location.state as { tab?: unknown } | null)?.tab === "settings" ? "settings" : "content",
-  );
+  const [tab, setTab] = useState<DetailTab>(() => {
+    const asked = (location.state as { tab?: unknown } | null)?.tab;
+    return asked === "settings" || asked === "logs" ? asked : "content";
+  });
+
+  // 詳細を開いたまま、ピルのログのボタンなどから別のタブを頼まれたときも切り替える
+  useEffect(() => {
+    const asked = (location.state as { tab?: unknown } | null)?.tab;
+    if (asked === "settings" || asked === "logs") setTab(asked);
+  }, [location.key, location.state]);
 
   // 取り直しの失敗では、手元の一覧を使い続ける
   if (!data && error)
@@ -171,7 +179,7 @@ export default function InstanceDetail() {
           </Link>
         </div>
       </header>
-      {/* タブは中身のあるものだけを出す。ログは後のフェーズで足す */}
+      {/* タブは中身のあるものだけを出す */}
       <Tabs
         selectedKey={tab}
         onSelectionChange={(key) => setTab(key as DetailTab)}
@@ -184,6 +192,9 @@ export default function InstanceDetail() {
           <Tab id="screenshots" className={tabClass}>
             {t("instances.detail.tabScreenshots")}
           </Tab>
+          <Tab id="logs" className={tabClass}>
+            {t("instances.detail.tabLogs")}
+          </Tab>
           <Tab id="settings" className={tabClass}>
             {t("instances.detail.tabSettings")}
           </Tab>
@@ -195,6 +206,10 @@ export default function InstanceDetail() {
         {/* スクリーンショットも開くたびに作り直す（開いたときにフォルダを読み直す） */}
         <TabPanel id="screenshots" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
           <ScreenshotsTab key={instance.id} instance={instance} />
+        </TabPanel>
+        {/* ログも開くたびに作り直す（開いたときにファイルを読み直す） */}
+        <TabPanel id="logs" className="flex min-h-0 flex-1 flex-col pt-6 outline-none">
+          <LogsTab key={instance.id} instance={instance} />
         </TabPanel>
         {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
         <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">

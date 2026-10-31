@@ -116,6 +116,9 @@ pub enum CoreError {
     /// 指定のスクリーンショットが無い（一覧が古い、または名前がフォルダ直下の画像ではない）。
     #[error("the screenshot was not found")]
     ScreenshotNotFound,
+    /// 指定のゲームのログが無い（一覧が古い、または名前が起動ごとのログではない）。
+    #[error("the game log was not found")]
+    LogNotFound,
     /// ローダーの無い（バニラの）インスタンスには MOD を入れられない。
     #[error("the instance has no mod loader")]
     ContentNoLoader,
@@ -256,6 +259,7 @@ impl CoreError {
             CoreError::SkinNameEmpty => "skin.name_empty",
             CoreError::SkinNotFound => "skin.not_found",
             CoreError::ScreenshotNotFound => "screenshot.not_found",
+            CoreError::LogNotFound => "log.not_found",
             CoreError::SyncNoOptions => "sync.no_options",
             CoreError::SyncProfileNotFound => "sync.profile_not_found",
             CoreError::SyncNotMember => "sync.not_member",
@@ -755,6 +759,7 @@ mod tests {
         assert_eq!(CoreError::SkinNameEmpty.code(), "skin.name_empty");
         assert_eq!(CoreError::SkinNotFound.code(), "skin.not_found");
         assert_eq!(CoreError::ScreenshotNotFound.code(), "screenshot.not_found");
+        assert_eq!(CoreError::LogNotFound.code(), "log.not_found");
     }
 
     #[test]

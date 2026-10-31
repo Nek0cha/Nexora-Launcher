@@ -2,9 +2,7 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconLog from "~icons/ph/file-text";
 import IconStop from "~icons/ph/stop-fill";
-import { openInstanceFolder } from "../../api/commands";
 import type { StopFlow, StopState } from "../../features/play/useStopFlow";
-import { useToast } from "../toast/useToast";
 
 export type RunningEntry = { id: string; name: string; stop: StopState };
 
@@ -55,19 +53,13 @@ export function StopButton({ entry, flow }: { entry: RunningEntry; flow: StopFlo
   );
 }
 
-/**
- * ログを開くボタン。ランチャーがゲームの出力を書くフォルダ（logs/game/<id>）を開く。
- * 場所は Rust 側で決める（UI から任意のパスは開かない）。
- */
-export function LogButton({ entry }: { entry: RunningEntry }) {
+/** ログを開くボタン。押すと、そのインスタンスの詳細のログのタブへ移る（移り方は呼び出し側が決める）。 */
+export function LogButton({ entry, onOpen }: { entry: RunningEntry; onOpen: (instanceId: string) => void }) {
   const { t } = useTranslation();
-  const toast = useToast();
   return (
     <Button
       aria-label={t("running.openLog", { name: entry.name })}
-      onPress={() => {
-        openInstanceFolder(entry.id, "logs").catch(toast.showError);
-      }}
+      onPress={() => onOpen(entry.id)}
       className={[
         "grid size-6 shrink-0 place-items-center rounded-full text-text-muted",
         "transition-colors duration-(--duration-fast) ease-out-quint",
@@ -88,7 +80,7 @@ export function RunningPopover({
 }: {
   entries: RunningEntry[];
   flow: StopFlow;
-  onNavigate: (instanceId: string) => void;
+  onNavigate: (instanceId: string, tab?: "logs") => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -108,7 +100,7 @@ export function RunningPopover({
             <span className="truncate">{entry.name}</span>
           </Button>
           <StopButton entry={entry} flow={flow} />
-          <LogButton entry={entry} />
+          <LogButton entry={entry} onOpen={(id) => onNavigate(id, "logs")} />
         </li>
       ))}
     </ul>

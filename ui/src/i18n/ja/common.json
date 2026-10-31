@@ -222,6 +222,7 @@
       "tabSettings": "設定",
       "tabContent": "コンテンツ",
       "tabScreenshots": "スクリーンショット",
+      "tabLogs": "ログ",
       "name": "名前",
       "memory": "メモリ",
       "memoryMb": "最大メモリ（MB）",
@@ -279,6 +280,17 @@
     "body": "強制終了すると、最後のセーブ以降の進みが失われるおそれがあります。",
     "wait": "待つ",
     "confirm": "強制終了"
+  },
+  "logs": {
+    "empty": "まだログがありません",
+    "launch": "起動",
+    "search": "ログを検索",
+    "level": "表示するレベル",
+    "levels": { "all": "すべて", "warn": "警告以上", "error": "エラー" },
+    "content": "ゲームのログ",
+    "copy": "表示中の行をコピー",
+    "copied": "ログをコピーしました",
+    "openFolder": "ログのフォルダを開く"
   },
   "screenshots": {
     "empty": "スクリーンショットはまだありません",
