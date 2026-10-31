@@ -413,9 +413,15 @@ where
                 return Ok(());
             };
             let chunk = chunk.map_err(offline)?;
+            let n = chunk.len() as u64;
+            // 宣言より多く送ってくる相手からは、最後まで受けずにここで打ち切る
+            if item.size.is_some_and(|max| size + n > max) {
+                return Err(CoreError::HashMismatch {
+                    path: item.path.display().to_string(),
+                });
+            }
             hasher.update(&chunk);
             file.write_all(&chunk).await.map_err(|s| io_err(part, s))?;
-            let n = chunk.len() as u64;
             size += n;
             *written += n;
             let now = done.fetch_add(n, Ordering::Relaxed) + n;

@@ -35,6 +35,57 @@ pub struct Http {
     retry_base: Duration,
 }
 
+/// 取得してよい URL の方針。ホスト名の完全一致で許可する。
+#[derive(Debug, Clone)]
+pub struct HostPolicy {
+    hosts: Vec<String>,
+    strict: bool,
+}
+
+impl HostPolicy {
+    /// HTTPS、許可したホスト名、既定のポート、認証情報なし、のすべてを求める。
+    pub fn new(hosts: &[&str]) -> Self {
+        Self {
+            hosts: hosts.iter().map(|h| h.to_string()).collect(),
+            strict: true,
+        }
+    }
+
+    /// テストで 127.0.0.1 のモックを使うための方針。HTTP と任意のポートを許す。製品では使わない。
+    #[doc(hidden)]
+    pub fn lenient_for_tests(hosts: &[&str]) -> Self {
+        Self {
+            strict: false,
+            ..Self::new(hosts)
+        }
+    }
+
+    fn allows(&self, url: &reqwest::Url) -> bool {
+        let Some(host) = url.host_str() else {
+            return false;
+        };
+        let host_ok = self.hosts.iter().any(|h| h.eq_ignore_ascii_case(host));
+        if !self.strict {
+            return host_ok && matches!(url.scheme(), "http" | "https");
+        }
+        // IP アドレスのホストは、名前の一覧に載らないので、ここで自然に外れる
+        host_ok
+            && url.scheme() == "https"
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.port().is_none()
+    }
+
+    pub fn check(&self, url: &str) -> Result<(), CoreError> {
+        match reqwest::Url::parse(url) {
+            Ok(parsed) if self.allows(&parsed) => Ok(()),
+            _ => Err(CoreError::InvalidMetadata {
+                message: format!("download host is not allowed: {url}"),
+            }),
+        }
+    }
+}
+
 /// 条件付きの GET の結果。
 #[derive(Debug)]
 pub enum Conditional {
@@ -44,14 +95,35 @@ pub enum Conditional {
 
 impl Http {
     pub fn new() -> Result<Self, CoreError> {
-        let client = reqwest::Client::builder()
+        Self::from_builder(Self::client_builder())
+    }
+
+    /// 許可したホストにしかリダイレクトしない Http。リダイレクトは `max_redirects` 回まで。
+    /// 許可外の飛び先や回数の超過では追わずに止まり、その 3xx の応答が `HttpStatus` の失敗になる。
+    pub fn restricted(policy: &HostPolicy, max_redirects: usize) -> Result<Self, CoreError> {
+        let policy = policy.clone();
+        let redirect = reqwest::redirect::Policy::custom(move |attempt| {
+            // `previous` は、この飛び先に着くまでに通った URL（最初の URL を含む）
+            if attempt.previous().len() > max_redirects || !policy.allows(attempt.url()) {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        });
+        Self::from_builder(Self::client_builder().redirect(redirect))
+    }
+
+    fn client_builder() -> reqwest::ClientBuilder {
+        reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|e| CoreError::Unexpected {
-                message: e.to_string(),
-            })?;
+    }
+
+    fn from_builder(builder: reqwest::ClientBuilder) -> Result<Self, CoreError> {
+        let client = builder.build().map_err(|e| CoreError::Unexpected {
+            message: e.to_string(),
+        })?;
         Ok(Self {
             client,
             retry_base: Duration::from_millis(500),
@@ -225,5 +297,38 @@ pub fn io_err(path: &Path, source: std::io::Error) -> CoreError {
     CoreError::Io {
         path: path.display().to_string(),
         source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HostPolicy;
+
+    #[test]
+    fn host_policy_allows_only_exact_https_hosts() {
+        let policy = HostPolicy::new(&["cdn.modrinth.com", "github.com"]);
+        for url in [
+            "https://cdn.modrinth.com/data/a/b.jar",
+            "https://CDN.MODRINTH.COM/a",
+            "https://github.com/a/b/releases/download/v1/a.jar",
+            "https://cdn.modrinth.com:443/a",
+        ] {
+            assert!(policy.check(url).is_ok(), "{url}");
+        }
+        for url in [
+            "http://cdn.modrinth.com/a",
+            "https://cdn.modrinth.com.evil.invalid/a",
+            "https://evil.invalid/cdn.modrinth.com",
+            "https://user:pw@cdn.modrinth.com/a",
+            "https://cdn.modrinth.com:8443/a",
+            "https://127.0.0.1/a",
+            "https://[::1]/a",
+            "https://10.0.0.1/a",
+            "ftp://cdn.modrinth.com/a",
+            "not a url",
+        ] {
+            let err = policy.check(url).unwrap_err();
+            assert_eq!(err.code(), "meta.invalid", "{url}");
+        }
     }
 }
