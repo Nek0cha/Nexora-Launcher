@@ -665,3 +665,4 @@ impl TaskNotifier for SnapshotRecorder {
 }
 
 pub mod content;
+pub mod mrpack;
