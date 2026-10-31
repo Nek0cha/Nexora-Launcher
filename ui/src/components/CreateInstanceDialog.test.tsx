@@ -81,8 +81,17 @@ function mount() {
   );
 }
 
+// 本物のマウス操作と同じ順（pointerdown、pointerup、click）で押す。detail が 0 の click だけだと react-aria は
+// 仮想クリック（支援技術の操作）とみなし、名前の欄の autoFocus を「予約した時と同じ要素がフォーカス中の間だけ」
+// 次のフレームに回す。その間にダイアログ自身がフォーカスを取ると、名前の欄にはフォーカスが移らない
+// （描画の順序次第で通ったり落ちたりして、macOS の CI で落ちていた）
 async function open() {
-  fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+  const trigger = screen.getByRole("button", { name: "Create instance" });
+  fireEvent.pointerDown(trigger, { pointerType: "mouse", button: 0, pointerId: 1 });
+  fireEvent.mouseDown(trigger, { button: 0, detail: 1 });
+  fireEvent.pointerUp(trigger, { pointerType: "mouse", button: 0, pointerId: 1 });
+  fireEvent.mouseUp(trigger, { button: 0, detail: 1 });
+  fireEvent.click(trigger, { button: 0, detail: 1 });
   return screen.findByRole("dialog");
 }
 
