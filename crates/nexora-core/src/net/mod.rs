@@ -130,6 +130,11 @@ impl Http {
         })
     }
 
+    /// 再試行の待ち時間の基準。
+    pub fn retry_base(&self) -> Duration {
+        self.retry_base
+    }
+
     /// 再試行の待ち時間の基準。テストで短くするために使う。
     pub fn with_retry_base(mut self, base: Duration) -> Self {
         self.retry_base = base;

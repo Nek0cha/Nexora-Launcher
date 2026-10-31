@@ -213,3 +213,43 @@ impl PackHarness {
         v
     }
 }
+
+impl PackHarness {
+    /// `route` で、`delay` だけ待ってから `body` を配る。
+    pub async fn serve_file_slow(&self, route: &str, body: &[u8], delay: std::time::Duration) {
+        Mock::given(method("GET"))
+            .and(path(route.to_string()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body.to_vec())
+                    .set_delay(delay),
+            )
+            .mount(&self.modrinth)
+            .await;
+    }
+
+    /// タスクが終わるまで待つ。
+    pub async fn wait(&self, task_id: &str) -> nexora_core::task::TaskSnapshot {
+        for _ in 0..1500 {
+            let snap = self.tasks.get(task_id).unwrap();
+            if snap.state.is_terminal() {
+                return snap;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("task {task_id} did not finish");
+    }
+
+    /// タスクが `phase` に入るまで待つ。
+    pub async fn wait_for_phase(&self, task_id: &str, phase: nexora_core::task::TaskPhase) {
+        for _ in 0..1500 {
+            let snap = self.tasks.get(task_id).unwrap();
+            if snap.phase == Some(phase) {
+                return;
+            }
+            assert!(!snap.state.is_terminal(), "task ended before {phase:?}");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!("task {task_id} never reached {phase:?}");
+    }
+}

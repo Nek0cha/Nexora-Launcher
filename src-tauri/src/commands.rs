@@ -432,6 +432,21 @@ pub async fn inspect_mrpack(state: State<'_, AppState>, path: String) -> CmdResu
         .map_err(ErrorPayload::from)
 }
 
+/// `.mrpack` から新しいインスタンスを作るタスクを始める。
+#[tauri::command]
+pub async fn import_mrpack(
+    state: State<'_, AppState>,
+    path: String,
+    name: String,
+) -> CmdResult<CreatedInstance> {
+    let services = state.services()?;
+    services
+        .launcher
+        .import_mrpack(std::path::PathBuf::from(path), name)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
 /// Modrinth のプロジェクトのページ。`slug` は小文字の英数字、`-`、`_` だけを受け付ける。
 fn modrinth_project_url(slug: &str) -> Option<String> {
     let valid = !slug.is_empty()

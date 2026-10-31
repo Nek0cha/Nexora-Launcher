@@ -70,6 +70,8 @@ pub const LAUNCH_KIND: &str = "launch";
 pub const DUPLICATE_KIND: &str = "duplicate";
 /// Modrinth からの導入と更新のタスク。
 pub const CONTENT_KIND: &str = "content";
+/// `.mrpack` からインスタンスを作るタスク。
+pub const MRPACK_KIND: &str = "mrpack-import";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -862,7 +864,10 @@ impl Launcher {
             .into_iter()
             .find(|t| {
                 t.instance_id.as_deref() == Some(instance_id)
-                    && (t.kind == INSTALL_KIND || t.kind == LAUNCH_KIND || t.kind == CONTENT_KIND)
+                    && (t.kind == INSTALL_KIND
+                        || t.kind == LAUNCH_KIND
+                        || t.kind == CONTENT_KIND
+                        || t.kind == MRPACK_KIND)
                     && !t.state.is_terminal()
             })
             .map(|t| (t.id, t.kind))
