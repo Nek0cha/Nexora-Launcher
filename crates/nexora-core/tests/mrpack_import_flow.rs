@@ -341,3 +341,80 @@ async fn a_blank_name_falls_back_to_the_pack_name() {
 
     assert_eq!(created.instance.name, "Test pack");
 }
+
+/// 鯖から `route` へのリクエストが届くまで待つ（ダウンロードの途中を捉えるため）。
+async fn wait_for_request(h: &PackHarness, route: &str) {
+    for _ in 0..500 {
+        let seen = h.modrinth.received_requests().await.unwrap_or_default();
+        if seen.iter().any(|r| r.url.path() == route) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("{route} was never requested");
+}
+
+#[tokio::test]
+async fn the_instance_is_not_ready_while_the_pack_is_still_being_applied() {
+    let h = PackHarness::new().await;
+    h.serve_file_slow("/a.jar", b"mod-a", Duration::from_millis(800))
+        .await;
+    let entry = h.file_entry("mods/a.jar", b"mod-a", "/a.jar", None);
+    let path = h.write_pack(
+        "p.mrpack",
+        PackBuilder::new().manifest_json(fabric_index(vec![entry])),
+    );
+
+    let created = h.launcher.import_mrpack(path, "P".into()).await.unwrap();
+    wait_for_request(&h, "/a.jar").await;
+
+    // アプリが途中で落ちても、使える状態に見えないこと
+    let during = instance::get(h.launcher.db(), &created.instance.id).unwrap();
+    assert_eq!(during.state, InstanceState::Installing);
+    assert_eq!(h.wait(&created.task_id).await.state, TaskState::Succeeded);
+    let after = instance::get(h.launcher.db(), &created.instance.id).unwrap();
+    assert_eq!(after.state, InstanceState::Ready);
+}
+
+#[tokio::test]
+async fn launching_is_refused_while_a_pack_is_being_imported() {
+    let h = PackHarness::new().await;
+    h.serve_file_slow("/a.jar", b"mod-a", Duration::from_millis(800))
+        .await;
+    let entry = h.file_entry("mods/a.jar", b"mod-a", "/a.jar", None);
+    let path = h.write_pack(
+        "p.mrpack",
+        PackBuilder::new().manifest_json(fabric_index(vec![entry])),
+    );
+
+    let created = h.launcher.import_mrpack(path, "P".into()).await.unwrap();
+    wait_for_request(&h, "/a.jar").await;
+
+    let err = h
+        .launcher
+        .launch_instance(&created.instance.id, false)
+        .unwrap_err();
+    assert_eq!(err.code(), "instance.busy");
+    assert_eq!(h.wait(&created.task_id).await.state, TaskState::Succeeded);
+}
+
+#[tokio::test]
+async fn a_pack_hosted_outside_the_allowed_sources_is_refused_before_anything_is_created() {
+    let h = PackHarness::new().await;
+    let mut entry = h.file_entry("mods/a.jar", b"mod-a", "/a.jar", None);
+    entry["downloads"] = json!(["http://evil.invalid/a.jar"]);
+    let path = h.write_pack(
+        "p.mrpack",
+        PackBuilder::new().manifest_json(fabric_index(vec![entry])),
+    );
+
+    let err = h.launcher.inspect_mrpack(path.clone()).await.unwrap_err();
+    assert_eq!(err.code(), "mrpack.unsupported");
+    let err = h
+        .launcher
+        .import_mrpack(path, "P".into())
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "mrpack.unsupported");
+    assert_nothing_left(&h);
+}

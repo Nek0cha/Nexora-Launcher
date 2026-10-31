@@ -45,8 +45,34 @@ impl Launcher {
             Ok((manifest, target))
         })
         .await?;
+        // 取ってよい配信元に無いファイルがあれば、Minecraft やローダーを入れる前に断る
+        self.check_download_hosts(&manifest)?;
         let loader_version = self.resolve_pack_loader(&target).await?;
         Ok((manifest, target, loader_version))
+    }
+
+    /// クライアントで使うファイルのどれかが、許可した配信元の URL を 1 つも持たなければ `MrpackUnsupported`。
+    fn check_download_hosts(&self, manifest: &Manifest) -> Result<(), CoreError> {
+        for file in manifest.client_files() {
+            if !file
+                .downloads
+                .iter()
+                .any(|u| self.pack_policy.check(u).is_ok())
+            {
+                let host = file
+                    .downloads
+                    .first()
+                    .and_then(|u| u.split('/').nth(2))
+                    .unwrap_or("?");
+                return Err(CoreError::MrpackUnsupported {
+                    reason: format!(
+                        "{} is hosted on {host}, which is not an allowed source",
+                        file.path
+                    ),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// パックのローダーを、導入処理が扱う版の表記にする。Vanilla は `None`。
@@ -118,6 +144,9 @@ impl Launcher {
         handle: &TaskHandle,
     ) -> Result<(), CoreError> {
         install(&self.env, id, handle).await?;
+        // install は最後に ready にするが、パックの中身はまだ入っていない。途中でアプリが落ちても
+        // 使える状態に見えないよう、中身がそろうまで installing に戻しておく
+        instance::set_state(&self.env.db, id, InstanceState::Installing)?;
         let inst = instance::get(&self.env.db, id)?;
         let game_dir = instance::game_dir(&self.env.paths, &inst);
         let manifest = {
@@ -168,6 +197,7 @@ impl Launcher {
                 "failed to identify the imported content"
             );
         }
+        instance::set_state(&self.env.db, id, InstanceState::Ready)?;
         Ok(())
     }
 
@@ -300,6 +330,8 @@ impl Launcher {
     /// 失敗したインポートのインスタンスを、行もフォルダーも消す。共有のキャッシュは消さない。
     async fn discard_import(&self, id: &str) {
         let (db, paths, owned) = (self.env.db.clone(), self.env.paths.clone(), id.to_string());
+        // 消せなかったときに、使える状態のまま残らないようにしておく
+        let _ = instance::set_state(&db, id, InstanceState::Broken);
         if let Err(err) = blocking(move || instance::delete(&db, &paths, &owned)).await {
             tracing::warn!(
                 instance_id = id,

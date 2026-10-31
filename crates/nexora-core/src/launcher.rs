@@ -753,7 +753,7 @@ impl Launcher {
         }
         if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
             // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
-            if kind == CONTENT_KIND {
+            if kind == CONTENT_KIND || kind == MRPACK_KIND {
                 return Err(CoreError::InstanceBusy {
                     instance_id: instance_id.to_string(),
                 });
