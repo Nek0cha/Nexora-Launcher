@@ -85,7 +85,8 @@
       "launch": "Launch",
       "login": "Sign in",
       "duplicate": "Duplicate",
-      "content": "Mods"
+      "content": "Mods",
+      "mrpack-import": "Import pack"
     },
     "state": {
       "queued": "Queued",
@@ -721,6 +722,14 @@
       "applyChosen": "Apply the chosen value to all",
       "notSet": "Not set",
       "applied": "Added to the shared settings. The instances get it on their next launch."
+    }
+  },
+  "mrpack": {
+    "import": {
+      "open": "Import mrpack",
+      "title": "Import a modpack",
+      "files": "Files",
+      "submit": "Import"
     }
   }
 }

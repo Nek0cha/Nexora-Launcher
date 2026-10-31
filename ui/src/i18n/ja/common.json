@@ -85,7 +85,8 @@
       "launch": "起動",
       "login": "ログイン",
       "duplicate": "複製",
-      "content": "MOD"
+      "content": "MOD",
+      "mrpack-import": "パックの読み込み"
     },
     "state": {
       "queued": "待機中",
@@ -721,6 +722,14 @@
       "applyChosen": "選んだ値を全部に反映する",
       "notSet": "未設定",
       "applied": "共通設定に反映しました。参加中のインスタンスには次の起動時に反映されます。"
+    }
+  },
+  "mrpack": {
+    "import": {
+      "open": "mrpack を読み込む",
+      "title": "モッドパックを読み込む",
+      "files": "ファイル",
+      "submit": "読み込む"
     }
   }
 }
