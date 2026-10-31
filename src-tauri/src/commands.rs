@@ -16,6 +16,7 @@ use nexora_core::content::updates::UpdateCheck;
 use nexora_core::content::{ContentItem, ContentKind};
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::instance::folder::FolderKind;
+use nexora_core::instance::logs::{GameLog, LogContent};
 use nexora_core::instance::screenshots::{ImportReport, Screenshot};
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
@@ -867,6 +868,25 @@ pub async fn import_screenshots(
     let services = state.services()?;
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
     blocking(move || services.launcher.import_screenshots(&instance_id, &paths)).await
+}
+
+#[tauri::command]
+pub async fn list_game_logs(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<Vec<GameLog>> {
+    let services = state.services()?;
+    blocking(move || services.launcher.list_game_logs(&instance_id)).await
+}
+
+#[tauri::command]
+pub async fn read_game_log(
+    state: State<'_, AppState>,
+    instance_id: String,
+    name: String,
+) -> CmdResult<LogContent> {
+    let services = state.services()?;
+    blocking(move || services.launcher.read_game_log(&instance_id, &name)).await
 }
 
 #[tauri::command]
