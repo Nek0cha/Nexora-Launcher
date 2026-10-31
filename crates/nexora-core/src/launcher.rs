@@ -1,6 +1,7 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
 mod content;
+mod mrpack;
 
 pub use content::{InstallPreview, VersionChoice};
 
@@ -49,7 +50,7 @@ use crate::meta::mojang::manifest::{
 };
 use crate::meta::mojang::rules::RuleEnv;
 use crate::meta::write_atomic;
-use crate::net::{Depth, Http};
+use crate::net::{Depth, HostPolicy, Http};
 use crate::paths::AppPaths;
 use crate::settings;
 use crate::skins::defaults::{self, DefaultSkin};
@@ -69,6 +70,8 @@ pub const LAUNCH_KIND: &str = "launch";
 pub const DUPLICATE_KIND: &str = "duplicate";
 /// Modrinth からの導入と更新のタスク。
 pub const CONTENT_KIND: &str = "content";
+/// `.mrpack` からインスタンスを作るタスク。
+pub const MRPACK_KIND: &str = "mrpack-import";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -106,6 +109,8 @@ pub struct Launcher {
     updates: Arc<UpdateCache>,
     /// 導入と更新のタスクの結果（新しい順に一定数だけ）。
     reports: Arc<Mutex<content::ReportStore>>,
+    /// `.mrpack` のファイルを取ってよい配信元。
+    pack_policy: HostPolicy,
 }
 
 fn already_running(instance_id: &str) -> CoreError {
@@ -190,7 +195,16 @@ impl Launcher {
             reattached: Arc::new(AtomicBool::new(false)),
             updates: Arc::new(UpdateCache::default()),
             reports: Arc::default(),
+            pack_policy: crate::mrpack::fetch::production_policy(),
         }
+    }
+
+    /// 結合テスト用。`.mrpack` のファイルを取ってよい配信元を差し替える。
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_pack_policy(mut self, policy: HostPolicy) -> Self {
+        self.pack_policy = policy;
+        self
     }
 
     /// 結合テスト用。更新の確認のキャッシュが使う時計を差し替える。
@@ -739,7 +753,7 @@ impl Launcher {
         }
         if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
             // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
-            if kind == CONTENT_KIND {
+            if kind == CONTENT_KIND || kind == MRPACK_KIND {
                 return Err(CoreError::InstanceBusy {
                     instance_id: instance_id.to_string(),
                 });
@@ -850,7 +864,10 @@ impl Launcher {
             .into_iter()
             .find(|t| {
                 t.instance_id.as_deref() == Some(instance_id)
-                    && (t.kind == INSTALL_KIND || t.kind == LAUNCH_KIND || t.kind == CONTENT_KIND)
+                    && (t.kind == INSTALL_KIND
+                        || t.kind == LAUNCH_KIND
+                        || t.kind == CONTENT_KIND
+                        || t.kind == MRPACK_KIND)
                     && !t.state.is_terminal()
             })
             .map(|t| (t.id, t.kind))

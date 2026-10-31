@@ -15,7 +15,8 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Fabric and Quilt instances can be created, installed and launched
 - Forge (Minecraft 1.8.9–1.12.2, 1.16.5–1.21.x and 26.x) and NeoForge (1.20.1–1.21.x and 26.x) instances can be created, installed and launched by the code. They are implemented and covered by automated tests that use a fake Java; verification on a real machine is still pending
 - An instance's content tab lists its mods, resource packs and shaders, which can be enabled, disabled, removed, filtered, and added by drag and drop; files are identified on Modrinth by their hash
-- Planned: legacy Forge (1.8.9 to 1.12.2), content from Modrinth and CurseForge, and importing instances from other launchers
+- A Modrinth modpack (`.mrpack`) can be imported as a new instance (picked from a dialog or dropped onto the window), and an instance can be exported as a `.mrpack`. Files that Modrinth identifies are written as references; any others are bundled only after the user confirms they may be redistributed
+- Planned: content from CurseForge, and importing instances from other launchers
 
 ### Accounts and privacy
 
@@ -23,6 +24,7 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - There is no backend server. All authentication happens on the player's device.
 - When an instance's content tab is opened, the launcher sends the SHA-1 hashes of the installed mods, resource packs and shaders to api.modrinth.com to identify them. These are read-only lookups and include no account data.
 - When content is searched, installed or updated, the launcher also contacts Modrinth: the search text and filters (Minecraft version, loader, categories, environment) go to api.modrinth.com; version lookups for installs and their dependencies go to api.modrinth.com; update checks send the SHA-1 hashes of the installed mods together with the instance's Minecraft version and loader; and files are downloaded from cdn.modrinth.com. Nothing else is sent, and none of it includes account data.
+- Importing a `.mrpack` downloads its files only from cdn.modrinth.com, github.com, raw.githubusercontent.com, gitlab.com and GitHub's release-asset hosts, over HTTPS with at most three redirects, and rejects any file whose SHA-1, SHA-512 or size differs from the pack's index. Exporting sends the SHA-1 hashes of the enabled mods, resource packs and shaders to api.modrinth.com to look up their download URLs. Nothing else is sent, and none of it includes account data.
 - The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
 - Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
 - Release builds require an account that owns Minecraft: Java Edition.
@@ -31,7 +33,7 @@ Nexora Launcher is not an official Minecraft product and is not approved by or a
 
 ## 概要（日本語）
 
-Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 5：ローダーと MOD の管理。コンテンツタブまで）。
+Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 7：`.mrpack` のインポートとエクスポートまで）。
 
 - インスタンスの一覧、作成、複製、削除ができます。
 - インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
@@ -44,6 +46,8 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
   - コンテンツタブを開くと、入っている MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります（情報を読み取るだけで、アカウントの情報は送りません）。
   - Modrinth で MOD を検索し、依存する MOD とあわせて導入できます。更新の確認と適用もでき、更新の前には置き換える jar を退避します。
   - MOD を検索、導入、更新するときは、Modrinth に次の内容を送ります。検索の文字列と絞り込みの条件（Minecraft のバージョン、ローダー、カテゴリ、環境）、導入と依存の解決のための版の問い合わせ、更新の確認のための MOD のファイルの SHA-1 ハッシュと、インスタンスの Minecraft のバージョンとローダーです。ファイルは cdn.modrinth.com からダウンロードします。これ以外は送りません。アカウントの情報も送りません。
+  - Modrinth のモッドパック（`.mrpack`）を、新しいインスタンスとして読み込めます（ファイル選択か、ウィンドウへのドロップ）。インスタンスを `.mrpack` として書き出すこともできます。Modrinth で特定できたファイルは参照として書き、特定できなかったファイルは、配布してよいか確認したうえで同梱します。
+  - `.mrpack` を読み込むときは、cdn.modrinth.com、github.com、raw.githubusercontent.com、gitlab.com と GitHub のリリースの配信先からだけ、HTTPS でファイルをダウンロードします（リダイレクトは 3 回まで）。SHA-1、SHA-512、大きさのどれかが索引と違うファイルは受け入れません。書き出すときは、有効な MOD、リソースパック、シェーダーの SHA-1 ハッシュを、ダウンロード元の URL を調べるために api.modrinth.com へ送ります。これ以外は送りません。アカウントの情報も送りません。
 
 ## 開発環境
 

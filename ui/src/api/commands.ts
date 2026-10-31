@@ -41,6 +41,9 @@ import type { CurrentSkin } from "../bindings/CurrentSkin";
 import type { SavedSkin } from "../bindings/SavedSkin";
 import type { SavedSkinPatch } from "../bindings/SavedSkinPatch";
 import type { DefaultSkin } from "../bindings/DefaultSkin";
+import type { ExportOptions } from "../bindings/ExportOptions";
+import type { ExportPreview } from "../bindings/ExportPreview";
+import type { MrpackInfo } from "../bindings/MrpackInfo";
 import { call } from "./ipc";
 
 export const appInfo = () => call<AppInfo>("app_info");
@@ -110,6 +113,14 @@ export const changeContentVersion = (instanceId: string, relPath: string, versio
 export const contentTaskReport = (taskId: string) =>
   call<ContentTaskReport | null>("content_task_report", { taskId });
 export const openModrinthProject = (slug: string) => call<null>("open_modrinth_project", { slug });
+
+export const inspectMrpack = (path: string) => call<MrpackInfo>("inspect_mrpack", { path });
+export const importMrpack = (path: string, name: string) =>
+  call<CreatedInstance>("import_mrpack", { path, name });
+export const previewMrpackExport = (instanceId: string) =>
+  call<ExportPreview>("preview_mrpack_export", { instanceId });
+export const exportMrpack = (instanceId: string, dest: string, options: ExportOptions) =>
+  call<null>("export_mrpack", { instanceId, dest, options });
 
 export const listSyncProfiles = () => call<SyncProfile[]>("list_sync_profiles");
 export const createSyncProfileFromInstance = (instanceId: string, name: string) =>

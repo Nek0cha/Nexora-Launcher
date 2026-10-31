@@ -8,6 +8,7 @@ import { appInfo } from "../api/commands";
 import { AppBar } from "../components/appbar/AppBar";
 import { RunningPill } from "../components/appbar/RunningPill";
 import { CommandPalette } from "../components/CommandPalette";
+import { MrpackDropHost } from "../components/mrpack/MrpackDropHost";
 import { Sidebar } from "../components/Sidebar";
 import { ToastRegion } from "../components/toast/ToastRegion";
 import { usePrefetch } from "../features/prefetch/usePrefetch";
@@ -82,6 +83,7 @@ export function App() {
             </main>
           </div>
           <CommandPalette />
+          <MrpackDropHost />
         </div>
         <ToastRegion />
       </MotionConfig>

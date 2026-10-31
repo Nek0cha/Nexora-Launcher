@@ -6,7 +6,7 @@ import { loginPrompt, type LoginPrompt } from "../login/loginState";
 import { isTerminal, type TaskTable } from "../tasks/taskTable";
 import { TASKS_KEY, useTasks } from "../tasks/useTasks";
 import { clearLastExit } from "./useGameSync";
-import { INSTALL_KIND, LAUNCH_KIND } from "./playState";
+import { INSTALL_KIND, LAUNCH_KIND, MRPACK_KIND } from "./playState";
 
 export type Play = {
   press: () => void;
@@ -75,7 +75,7 @@ export function usePlay(instanceId: string): Play {
     if (client.isMutating({ mutationKey: key }) > 0) return;
     const table = client.getQueryData<TaskTable>(TASKS_KEY) ?? {};
     const busy = Object.values(table).some(
-      (t) => t.instanceId === instanceId && (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND) && !isTerminal(t),
+      (t) => t.instanceId === instanceId && (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND || t.kind === MRPACK_KIND) && !isTerminal(t),
     );
     if (busy) return;
     clearLastExit(client, instanceId);

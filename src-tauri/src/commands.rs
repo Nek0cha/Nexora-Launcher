@@ -23,6 +23,7 @@ use nexora_core::launch::process::RunningSession;
 use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
+use nexora_core::mrpack::{ExportOptions, ExportPreview, MrpackInfo};
 use nexora_core::settings::{self, SettingChange, Settings, Theme};
 use nexora_core::skins::defaults::DefaultSkin;
 use nexora_core::skins::library::{self, SavedSkin, SavedSkinPatch};
@@ -418,6 +419,63 @@ pub fn content_task_report(
     task_id: String,
 ) -> CmdResult<Option<ContentTaskReport>> {
     Ok(state.services()?.launcher.content_task_report(&task_id))
+}
+
+/// `.mrpack` を読んで、確認ダイアログに出す要約を返す。何も書き込まない。
+#[tauri::command]
+pub async fn inspect_mrpack(state: State<'_, AppState>, path: String) -> CmdResult<MrpackInfo> {
+    let services = state.services()?;
+    services
+        .launcher
+        .inspect_mrpack(std::path::PathBuf::from(path))
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// `.mrpack` から新しいインスタンスを作るタスクを始める。
+#[tauri::command]
+pub async fn import_mrpack(
+    state: State<'_, AppState>,
+    path: String,
+    name: String,
+) -> CmdResult<CreatedInstance> {
+    let services = state.services()?;
+    services
+        .launcher
+        .import_mrpack(std::path::PathBuf::from(path), name)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// `.mrpack` として書き出す前の内訳。通信できなければ `net.offline`。
+#[tauri::command]
+pub async fn preview_mrpack_export(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> CmdResult<ExportPreview> {
+    let services = state.services()?;
+    services
+        .launcher
+        .preview_mrpack_export(&instance_id)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// インスタンスを `.mrpack` として書き出す。特定できないファイルの確認がなければ
+/// `mrpack.needs_confirmation`。
+#[tauri::command]
+pub async fn export_mrpack(
+    state: State<'_, AppState>,
+    instance_id: String,
+    dest: String,
+    options: ExportOptions,
+) -> CmdResult<()> {
+    let services = state.services()?;
+    services
+        .launcher
+        .export_mrpack(&instance_id, std::path::PathBuf::from(dest), options)
+        .await
+        .map_err(ErrorPayload::from)
 }
 
 /// Modrinth のプロジェクトのページ。`slug` は小文字の英数字、`-`、`_` だけを受け付ける。

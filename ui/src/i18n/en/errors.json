@@ -105,5 +105,12 @@
   },
   "game": {
     "crashed": "The game crashed (exit code {{exitCode}})"
+  },
+  "mrpack": {
+    "invalid": "Could not read this as a modpack. The file may be damaged. ({{reason}})",
+    "unsupported": "This modpack is not supported. ({{reason}})",
+    "unsafe_path": "The modpack contains an unsafe path, so it was stopped. ({{path}})",
+    "limit": "The modpack is too large or unusually compressed, so it was stopped. ({{reason}})",
+    "needs_confirmation": "Some files were not found on Modrinth. Check them before exporting."
   }
 }

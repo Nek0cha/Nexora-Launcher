@@ -91,6 +91,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -173,6 +174,10 @@ pub fn run() {
             commands::list_content_versions,
             commands::change_content_version,
             commands::content_task_report,
+            commands::inspect_mrpack,
+            commands::import_mrpack,
+            commands::preview_mrpack_export,
+            commands::export_mrpack,
             commands::list_sync_profiles,
             commands::create_sync_profile_from_instance,
             commands::rename_sync_profile,

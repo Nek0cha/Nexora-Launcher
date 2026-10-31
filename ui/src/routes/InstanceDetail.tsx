@@ -23,6 +23,7 @@ import { toErrorPayload } from "../api/ipc";
 import type { FolderKind } from "../bindings/FolderKind";
 import type { Instance } from "../bindings/Instance";
 import { FailureNotice } from "../components/FailureNotice";
+import { ExportMrpackDialog } from "../components/mrpack/ExportMrpackDialog";
 import { InstanceAdvancedFields } from "../components/InstanceAdvancedFields";
 import { controlWidth, inputBase, Notice, Row } from "../components/settingsLayout";
 import { SyncCard } from "../components/sync/SyncCard";
@@ -173,6 +174,7 @@ export default function InstanceDetail() {
               </Tooltip>
             </TooltipTrigger>
           ))}
+          <ExportMrpackDialog instanceId={instance.id} instanceName={instance.name} />
           <Link to="/instances" className={quietLink}>
             <IconBack aria-hidden className="size-4" />
             <span>{t("nav.instances")}</span>

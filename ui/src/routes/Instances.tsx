@@ -12,6 +12,7 @@ import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
+import { ImportMrpackButton } from "../components/mrpack/ImportMrpackButton";
 import { PlayButton } from "../components/PlayButton";
 import { useToast } from "../components/toast/useToast";
 import { errorSentence } from "../features/errors/errorText";
@@ -132,6 +133,7 @@ export default function Instances() {
       <>
         <EmptyState icon={IconEmpty} title={t("nav.instances")} body={t("empty.instances")}>
           <CreateInstanceDialog trigger="primary" />
+          <ImportMrpackButton />
         </EmptyState>
         {dialog}
       </>
@@ -141,7 +143,10 @@ export default function Instances() {
     <div className="flex max-w-5xl flex-col gap-6 p-10">
       <header className="flex items-center justify-between gap-4">
         {title}
-        <CreateInstanceDialog trigger="quiet" />
+        <div className="flex items-center gap-1">
+          <ImportMrpackButton />
+          <CreateInstanceDialog trigger="quiet" />
+        </div>
       </header>
       <ul className="flex flex-col divide-y divide-line border-y border-line">
         {data.map((instance) => {

@@ -15,6 +15,7 @@ import {
   listGameLogs,
   listScreenshots,
   openInstanceFolder,
+  previewMrpackExport,
   systemMemoryMb,
   updateInstance,
 } from "../api/commands";
@@ -50,7 +51,10 @@ vi.mock("../api/commands", () => ({
   getInstanceSync: vi.fn(),
   listSyncProfiles: vi.fn(),
   listSyncFields: vi.fn(),
+  previewMrpackExport: vi.fn(),
+  exportMrpack: vi.fn(),
 }));
+vi.mock("../api/dialog", () => ({ pickMrpackSavePath: vi.fn() }));
 
 vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
 vi.mock("../api/assets", () => ({ fileUrl: (path: string) => `asset://${path}` }));
@@ -463,5 +467,20 @@ describe("InstanceDetail", () => {
     await press(await screen.findByRole("button", { name: "Game folder" }));
     const alert = await within(toasts()).findByRole("alert");
     expect(within(alert).getByText("This instance is running or being installed. Try again after it finishes.")).toBeTruthy();
+  });
+});
+
+describe("InstanceDetail: exporting a modpack", () => {
+  it("has an export button in the header that opens the export dialog", async () => {
+    vi.mocked(previewMrpackExport).mockResolvedValue({ referenced: 1, unidentified: [], disabled: 0 });
+    mount([instance()]);
+
+    const button = await screen.findByRole("button", { name: "Export as mrpack" });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(await screen.findByRole("heading", { name: "Export as a modpack" })).toBeTruthy();
+    expect(previewMrpackExport).toHaveBeenCalledWith("i1");
   });
 });

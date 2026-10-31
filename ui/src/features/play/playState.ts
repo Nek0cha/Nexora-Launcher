@@ -8,6 +8,8 @@ import { progressView, sortedTasks, type ProgressView, type TaskTable } from "..
 import type { LastExit } from "./useGameSync";
 
 export const INSTALL_KIND = "install";
+/** `.mrpack` からインスタンスを作るタスク（core の MRPACK_KIND）。中身がそろうまで、インストールの途中として見せる。 */
+export const MRPACK_KIND = "mrpack-import";
 export const LAUNCH_KIND = "launch";
 
 export type Phase = "install" | "launch";
@@ -46,7 +48,7 @@ export type Announcement =
 /** インスタンスの最新のインストールまたは起動のタスク。 */
 export function latestInstanceTask(table: TaskTable, instanceId: string): TaskSnapshot | undefined {
   return sortedTasks(table).find(
-    (t) => t.instanceId === instanceId && (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND),
+    (t) => t.instanceId === instanceId && (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND || t.kind === MRPACK_KIND),
   );
 }
 
@@ -58,7 +60,7 @@ export function crashPayload(exitCode: number): ErrorPayload {
 export function playStateFrom({ instance, task, running, runningLoaded, lastExit }: PlayInputs): PlayState {
   if (running) return { kind: "playing", launchedAt: running.launchedAt };
   if (task) {
-    const phase: Phase = task.kind === INSTALL_KIND ? "install" : "launch";
+    const phase: Phase = task.kind === INSTALL_KIND || task.kind === MRPACK_KIND ? "install" : "launch";
     if (task.state === "queued" || task.state === "running") {
       return { kind: "preparing", phase, progress: progressView(task), taskId: task.id };
     }

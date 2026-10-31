@@ -74,6 +74,19 @@ describe("playStateFrom", () => {
   });
 });
 
+describe("a modpack import", () => {
+  it("shows the instance as preparing (install) while the import task runs", () => {
+    const state = playStateFrom(inputs({ task: task("running", { kind: "mrpack-import" }) }));
+    expect(state.kind).toBe("preparing");
+    expect(state.kind === "preparing" && state.phase).toBe("install");
+  });
+
+  it("is the newest task of the instance for the play button", () => {
+    const table = { a: task("running", { id: "0005", kind: "mrpack-import" }) };
+    expect(latestInstanceTask(table, "i1")?.id).toBe("0005");
+  });
+});
+
 describe("latestInstanceTask", () => {
   it("picks the newest install or launch task of the instance", () => {
     const table = {

@@ -3,11 +3,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteInstance, duplicateInstance, launchInstance, listInstances, openInstanceFolder, listRunning } from "../api/commands";
+import { pickMrpack } from "../api/dialog";
 import { IpcError } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { TaskSnapshot } from "../bindings/TaskSnapshot";
 import { ToastRegion } from "../components/toast/ToastRegion";
 import { clearToasts } from "../components/toast/useToast";
+import { closeMrpackImport, useMrpackImport } from "../features/mrpack/useMrpackImport";
 import { LAST_EXIT_KEY, RUNNING_KEY } from "../features/play/useGameSync";
 import { TASKS_KEY } from "../features/tasks/useTasks";
 import i18n from "../i18n";
@@ -28,6 +30,7 @@ vi.mock("../api/commands", () => ({
   getSkin: vi.fn(),
   beginLogin: vi.fn(),
 }));
+vi.mock("../api/dialog", () => ({ pickMrpack: vi.fn(), pickMrpackSavePath: vi.fn() }));
 vi.mock("../api/events", () => ({
   onLoginProgress: vi.fn().mockResolvedValue(() => {}),
   onAccountsChanged: vi.fn().mockResolvedValue(() => {}),
@@ -55,6 +58,12 @@ function DetailProbe() {
   return <p>{`detail ${location.pathname} tab=${tab}`}</p>;
 }
 
+/** 読み込みの確認が開こうとしているパス */
+function PendingProbe() {
+  const { path } = useMrpackImport();
+  return <p>{`pending ${path ?? "none"}`}</p>;
+}
+
 function mount(list: Instance[], tasks: TaskSnapshot[] = []) {
   vi.mocked(listInstances).mockResolvedValue(list);
   vi.mocked(listRunning).mockResolvedValue([]);
@@ -71,6 +80,7 @@ function mount(list: Instance[], tasks: TaskSnapshot[] = []) {
         </Routes>
       </MemoryRouter>
       <ToastRegion />
+      <PendingProbe />
     </QueryClientProvider>,
   );
 }
@@ -100,7 +110,10 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  act(() => clearToasts());
+  act(() => {
+    clearToasts();
+    closeMrpackImport();
+  });
   cleanup();
   vi.resetAllMocks();
 });
@@ -423,5 +436,34 @@ describe("Instances", () => {
       expect(link.className).toContain("max-w-full");
       expect(link.className).toContain("truncate");
     });
+  });
+});
+
+describe("Instances: importing a modpack", () => {
+  it("opens the import dialog for the file that was picked", async () => {
+    vi.mocked(pickMrpack).mockResolvedValue("C:\\packs\\cool.mrpack");
+    mount([instance("i1", "Survival")]);
+    await row("Survival");
+
+    await press(screen.getByRole("button", { name: "Import mrpack" }));
+
+    await waitFor(() => expect(screen.getByText("pending C:\\packs\\cool.mrpack")).toBeTruthy());
+  });
+
+  it("does nothing when the picker is cancelled", async () => {
+    vi.mocked(pickMrpack).mockResolvedValue(null);
+    mount([instance("i1", "Survival")]);
+    await row("Survival");
+
+    await press(screen.getByRole("button", { name: "Import mrpack" }));
+
+    expect(pickMrpack).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("pending none")).toBeTruthy();
+  });
+
+  it("offers the import next to creating when there are no instances yet", async () => {
+    mount([]);
+
+    expect(await screen.findByRole("button", { name: "Import mrpack" })).toBeTruthy();
   });
 });

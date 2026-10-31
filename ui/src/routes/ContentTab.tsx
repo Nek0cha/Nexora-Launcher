@@ -502,9 +502,13 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   );
 }
 
+/** 翻訳のキーが増えると、型の展開が深くなりすぎるため、キーと値の型は絞らずに渡す */
+type LooseT = (key: never, options?: never) => unknown;
+
 function rejectText(t: ReturnType<typeof useTranslation>["t"], reason: RejectReason, kind: ContentKind): string {
-  if (reason === "wrongExtension") return t("content.reject.wrongExtension", { ext: extensions[kind] });
-  return t(`content.reject.${reason}`);
+  const loose = t as unknown as LooseT;
+  if (reason === "wrongExtension") return String(loose("content.reject.wrongExtension" as never, { ext: extensions[kind] } as never));
+  return String(loose(`content.reject.${reason}` as never));
 }
 
 const SKELETON_ROWS = 8;

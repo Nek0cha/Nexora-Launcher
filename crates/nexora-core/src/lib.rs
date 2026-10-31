@@ -23,6 +23,7 @@ pub mod java;
 pub mod auth;
 pub mod launch;
 pub mod launcher;
+pub mod mrpack;
 
 pub mod skins;
 pub mod sync;

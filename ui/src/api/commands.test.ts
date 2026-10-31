@@ -44,7 +44,9 @@ import {
   setSyncOverride,
   getCurrentSkin, setCape, listSavedSkins, getSavedSkinImage, addSavedSkin, addSavedSkinFromPath,
   updateSavedSkin, deleteSavedSkin, applySavedSkin, importCurrentSkin, listDefaultSkins, applyDefaultSkin,
+  inspectMrpack, importMrpack, previewMrpackExport, exportMrpack,
 } from "./commands";
+import type { ExportOptions } from "../bindings/ExportOptions";
 import type { SearchQuery } from "../bindings/SearchQuery";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
 import type { NewInstance } from "../bindings/NewInstance";
@@ -275,5 +277,19 @@ describe("skin commands", () => {
     expect(invoke).toHaveBeenLastCalledWith("list_default_skins", undefined);
     await applyDefaultSkin("a1", "classic-steve");
     expect(invoke).toHaveBeenLastCalledWith("apply_default_skin", { accountId: "a1", key: "classic-steve" });
+  });
+});
+
+describe("mrpack commands", () => {
+  it("passes the command names and camelCase arguments", async () => {
+    await inspectMrpack("C:\\packs\\a.mrpack");
+    expect(invoke).toHaveBeenLastCalledWith("inspect_mrpack", { path: "C:\\packs\\a.mrpack" });
+    await importMrpack("C:\\packs\\a.mrpack", "My pack");
+    expect(invoke).toHaveBeenLastCalledWith("import_mrpack", { path: "C:\\packs\\a.mrpack", name: "My pack" });
+    await previewMrpackExport("i1");
+    expect(invoke).toHaveBeenLastCalledWith("preview_mrpack_export", { instanceId: "i1" });
+    const options: ExportOptions = { versionId: "1.0.0", includeConfig: true, acceptUnidentified: false };
+    await exportMrpack("i1", "C:\\out.mrpack", options);
+    expect(invoke).toHaveBeenLastCalledWith("export_mrpack", { instanceId: "i1", dest: "C:\\out.mrpack", options });
   });
 });
