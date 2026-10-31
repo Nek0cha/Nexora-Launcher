@@ -32,6 +32,7 @@ vi.mock("../api/commands", () => ({
   getSavedSkinImage: vi.fn(),
   importCurrentSkin: vi.fn(),
   applySavedSkin: vi.fn(),
+  updateSavedSkin: vi.fn(),
   addSavedSkinFromPath: vi.fn(),
   setCape: vi.fn(),
   beginLogin: vi.fn(),
@@ -338,11 +339,32 @@ describe("Skins default skins and the shared busy state", () => {
     expect(btn("Add skin").disabled).toBe(true);
     expect((await switcher()).disabled).toBe(true);
     await act(async () => release());
-    // 適用が済んでも冷却の間は止まったまま
+    // 適用が済んでも冷却の間は、Mojang へ送る操作と切り替えが止まったまま。ライブラリの追加は続けられる
     await waitFor(() => expect(applyDefaultSkin).toHaveBeenCalled());
     expect(btn("Second").disabled).toBe(true);
-    expect(btn("Add skin").disabled).toBe(true);
+    expect(btn("Add skin").disabled).toBe(false);
     expect((await switcher()).disabled).toBe(true);
+  });
+
+  it("keeps library edits open during the cooldown, but not a save that would change the worn skin", async () => {
+    vi.mocked(applyDefaultSkin).mockResolvedValue(undefined as never);
+    mount(twoAccounts());
+    await waitFor(() => expect(checked()).toEqual(["First"]));
+    fireEvent.click(await screen.findByRole("button", { name: "Steve" }));
+    await waitFor(() => expect(applyDefaultSkin).toHaveBeenCalled());
+    await waitFor(() => expect(btn("Second").disabled).toBe(true));
+
+    const menus = screen.getAllByRole("button", { name: "Skin menu" }) as HTMLButtonElement[];
+    expect(menus.every((m) => !m.disabled)).toBe(true);
+    // 着ている First: モデルの切り替えは Mojang へ送るので保存できず、名前だけなら保存できる
+    fireEvent.click(menus[0] as HTMLElement);
+    const dialog = await screen.findByRole("dialog");
+    const save = within(dialog).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Slim" }));
+    expect(save.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Classic" }));
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "Renamed" } });
+    expect(save.disabled).toBe(false);
   });
 
   it("blocks the default skins while a saved skin is being applied", async () => {

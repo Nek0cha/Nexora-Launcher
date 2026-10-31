@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SavedSkin } from "../../bindings/SavedSkin";
 import {
+  useCooling,
   useCurrentSkin,
   useImportCurrentSkin,
   useSavedSkinImage,
@@ -69,6 +70,10 @@ export function SavedSkins({ accountId, canApply, blocked = false, onBusyChange 
   const [editing, setEditing] = useState(false);
 
   const busy = actions.busy || adding || editing || blocked;
+  // ライブラリの追加・編集・削除は手元の記録しか変えないので、冷却の間は続けられる。止めるのは、
+  // 何かを送っている最中（冷却に入る前）だけ。ほかの部品の blocked も、冷却の間は冷却そのものなので数えない
+  const cooling = useCooling();
+  const libraryBusy = (!cooling && blocked) || actions.working || adding || editing;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => onBusyChange?.(false);
@@ -100,7 +105,7 @@ export function SavedSkins({ accountId, canApply, blocked = false, onBusyChange 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
       {/* 追加はライブラリへ足すだけでログインは要らないので、canApply には縛らない */}
-      <AddSkinCard disabled={actions.busy || editing || blocked} actions={actions} onAdding={setAdding} />
+      <AddSkinCard disabled={(!cooling && blocked) || actions.working || editing} actions={actions} onAdding={setAdding} />
       {(saved.data ?? []).map((skin) => (
         <SavedSkinCard
           key={skin.id}
@@ -112,7 +117,7 @@ export function SavedSkins({ accountId, canApply, blocked = false, onBusyChange 
           worn={currentHash !== null && skin.sha256 === currentHash && !current.isPlaceholderData}
           canApply={canApply}
           actions={actions}
-          busy={busy}
+          busy={libraryBusy}
           onWorking={setEditing}
         />
       ))}
