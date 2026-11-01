@@ -56,10 +56,13 @@ const navButton = [
 export function AppBar({
   showWindowControls,
   materialOn = false,
+  leadingInset = false,
   slot,
 }: {
   showWindowControls: boolean;
   materialOn?: boolean;
+  /** 左端に信号のボタン（macOS）が重なるので、その分の余白を空ける */
+  leadingInset?: boolean;
   slot?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -89,7 +92,7 @@ export function AppBar({
       data-testid="app-bar"
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
-      className={`flex h-10 shrink-0 items-center gap-1 pl-6 ${showWindowControls ? "" : "pr-3"} ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
+      className={`flex h-10 shrink-0 items-center gap-1 ${leadingInset ? "pl-[78px]" : "pl-6"} ${showWindowControls ? "" : "pr-3"} ${materialOn ? "bg-transparent" : "bg-surface-1"}`}
     >
       <Brand />
       <Button aria-label={t("appBar.back")} isDisabled={!nav.canGoBack} onPress={nav.back} className={navButton}>

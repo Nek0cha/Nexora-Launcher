@@ -20,7 +20,7 @@ import { useSyncEvents } from "../features/sync/useSyncEvents";
 import { useStartupUpdateCheck } from "../features/update/useStartupUpdateCheck";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
-import { useIsWindows } from "./platform";
+import { useIsMac, useIsWindows } from "./platform";
 import { applyTheme } from "./theme";
 
 const FORCED_COLORS = "(forced-colors: active)";
@@ -49,6 +49,7 @@ export function App() {
   useStartupUpdateCheck(info);
   // app_info が失敗しても、Windows ではウィンドウボタンを出す
   const isWindows = useIsWindows();
+  const isMac = useIsMac();
 
   useEffect(() => {
     if (!settings) return;
@@ -78,8 +79,8 @@ export function App() {
       {/* Motion の動きは、OS の「視差効果を減らす」に従う */}
       <MotionConfig reducedMotion="user">
         <div className="flex h-screen flex-col">
-          {/* Windows では OS のタイトルバーの代わり、macOS と Linux では OS のタイトルバーの下に置く */}
-          <AppBar showWindowControls={isWindows} materialOn={materialOn} slot={<RunningPill />} />
+          {/* Windows と macOS では OS のタイトルバーの代わり（macOS は信号のボタンを重ねる）、Linux では OS のタイトルバーの下に置く */}
+          <AppBar showWindowControls={isWindows} materialOn={materialOn} leadingInset={isMac} slot={<RunningPill />} />
           <div className="flex min-h-0 flex-1">
             <Sidebar materialOn={materialOn} />
             <main className="scroll-thin min-w-0 flex-1 overflow-auto bg-surface-0 [scrollbar-gutter:stable]">
