@@ -140,6 +140,16 @@ describe("ImportLauncherDialog", () => {
     expect(screen.getByText(/no such column: name/)).toBeTruthy();
   });
 
+  it("handles a folder whose name is also an object property", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([row({ id: "constructor", name: "Odd" })]);
+    mount();
+
+    const box = (await check("Odd")) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(await check("Mods")).toBeTruthy();
+  });
+
   it("cannot import until a row is checked", async () => {
     vi.mocked(listImportInstances).mockResolvedValue([row()]);
     mount();

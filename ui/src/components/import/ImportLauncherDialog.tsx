@@ -52,7 +52,7 @@ function ImportForm() {
   const { t } = useTranslation();
   const [root, setRoot] = useState<string | null>(null);
   // 選んだ行と、その行で取り込む種類
-  const [picked, setPicked] = useState<Record<string, ImportKind[]>>({});
+  const [picked, setPicked] = useState<ReadonlyMap<string, ImportKind[]>>(new Map());
   const [duplicates, setDuplicates] = useState<string[]>([]);
   const list = useQuery({
     queryKey: ["import-instances", SOURCE, root],
@@ -63,24 +63,23 @@ function ImportForm() {
   });
   const run = useImportFromLauncher();
 
-  const ids = Object.keys(picked);
+  const ids = [...picked.keys()];
   const count = ids.length;
   const anyway = duplicates.length > 0;
 
-  const change = (next: Record<string, ImportKind[]>) => {
+  const change = (next: ReadonlyMap<string, ImportKind[]>) => {
     setPicked(next);
     setDuplicates([]);
   };
   const toggleRow = (row: SourceInstance, on: boolean) => {
-    if (on) change({ ...picked, [row.id]: [...row.available] });
-    else {
-      const { [row.id]: _removed, ...rest } = picked;
-      change(rest);
-    }
+    const next = new Map(picked);
+    if (on) next.set(row.id, [...row.available]);
+    else next.delete(row.id);
+    change(next);
   };
   const toggleKind = (id: string, kind: ImportKind, on: boolean) => {
-    const kinds = picked[id] ?? [];
-    change({ ...picked, [id]: on ? [...kinds, kind] : kinds.filter((k) => k !== kind) });
+    const kinds = picked.get(id) ?? [];
+    change(new Map(picked).set(id, on ? [...kinds, kind] : kinds.filter((k) => k !== kind)));
   };
 
   const submit = useMutation({
@@ -92,7 +91,7 @@ function ImportForm() {
           return false;
         }
       }
-      const requests = ids.map((id) => ({ id, kinds: picked[id] ?? [] }));
+      const requests = ids.map((id) => ({ id, kinds: picked.get(id) ?? [] }));
       await run.mutateAsync({ requests, allowDuplicates: anyway, root });
       return true;
     },
@@ -105,7 +104,7 @@ function ImportForm() {
     void pickFolder().then((dir) => {
       if (dir !== null) {
         setRoot(dir);
-        setPicked({});
+        change(new Map());
       }
     });
   };
@@ -145,7 +144,7 @@ function ImportForm() {
         {rows.length > 0 && (
           <ul className="scroll-thin flex max-h-96 flex-col gap-2 overflow-y-auto">
             {rows.map((row) => {
-              const selected = row.id in picked;
+              const selected = picked.has(row.id);
               const duplicated = duplicates.includes(row.id);
               return (
                 <li key={row.id} className="flex flex-col gap-2 rounded-md border border-line bg-surface-1 p-3">
@@ -175,7 +174,7 @@ function ImportForm() {
                       {row.available.map((kind) => (
                         <Checkbox
                           key={kind}
-                          isSelected={picked[row.id]?.includes(kind) ?? false}
+                          isSelected={picked.get(row.id)?.includes(kind) ?? false}
                           onChange={(on) => toggleKind(row.id, kind, on)}
                           className={`${checkboxClass} text-sm`}
                         >

@@ -1,5 +1,6 @@
 //! 他のランチャーからの取り込みを Launcher の操作として通す。
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,7 +10,11 @@ use crate::import::duplicates::find_duplicates;
 use crate::import::modrinth_app::ModrinthApp;
 use crate::import::{ImportKind, ImportRequest, ImportSource, ImportSourceKind, SourceInstance};
 use crate::install::kib;
+use crate::meta::loader::LoaderVersionEntry;
 use crate::mrpack::loader_version_for;
+
+/// 同じローダーと Minecraft の版は、一覧を 1 度だけ取りに行く。
+type LoaderCache = HashMap<(&'static str, String), Vec<LoaderVersionEntry>>;
 
 fn unavailable(reason: impl Into<String>) -> CoreError {
     CoreError::ImportUnavailable {
@@ -47,13 +52,24 @@ impl Launcher {
         source: Arc<dyn ImportSource>,
     ) -> Result<Vec<SourceInstance>, CoreError> {
         let mut rows = blocking(move || source.list()).await?;
+        let mut cache = LoaderCache::new();
+        // 通信できなかった組み合わせ。同じ組み合わせで待ち直さない
+        let mut unreachable: HashSet<(&'static str, String)> = HashSet::new();
         for row in rows.iter_mut().filter(|r| r.unsupported.is_none()) {
-            // 通信できないなどは、行を無効にせず、導入のときに失敗させる
-            if let Err(CoreError::ImportUnavailable { reason }) =
-                self.resolve_import_loader(row).await
-            {
-                row.unsupported = Some(reason);
-                row.available.clear();
+            let key = (row.loader.as_str(), row.mc_version.clone());
+            if unreachable.contains(&key) {
+                continue;
+            }
+            match self.resolve_import_loader(row, &mut cache).await {
+                Err(CoreError::ImportUnavailable { reason }) => {
+                    row.unsupported = Some(reason);
+                    row.available.clear();
+                }
+                // 通信できないなどは、行を無効にせず、導入のときに失敗させる
+                Err(_) => {
+                    unreachable.insert(key);
+                }
+                Ok(_) => {}
             }
         }
         Ok(rows)
@@ -116,9 +132,10 @@ impl Launcher {
         {
             return Err(CoreError::ImportDuplicate);
         }
+        let mut cache = LoaderCache::new();
         let mut loader_versions = Vec::with_capacity(picked.len());
         for row in &picked {
-            loader_versions.push(self.resolve_import_loader(row).await?);
+            loader_versions.push(self.resolve_import_loader(row, &mut cache).await?);
         }
 
         // 全部の行を作ってからタスクを始める。途中で作れなければ、作った分を消して断る
@@ -173,6 +190,7 @@ impl Launcher {
     async fn resolve_import_loader(
         &self,
         row: &SourceInstance,
+        cache: &mut LoaderCache,
     ) -> Result<Option<String>, CoreError> {
         if row.loader == LoaderKind::Vanilla {
             return Ok(None);
@@ -180,12 +198,16 @@ impl Launcher {
         let Some(version) = row.loader_version.as_deref() else {
             return Err(unavailable("the loader version is missing"));
         };
-        let entries = self
-            .env
-            .loader
-            .loader_versions(row.loader, &row.mc_version)
-            .await?;
-        loader_version_for(row.loader, &row.mc_version, version, &entries)
+        let key = (row.loader.as_str(), row.mc_version.clone());
+        if !cache.contains_key(&key) {
+            let entries = self
+                .env
+                .loader
+                .loader_versions(row.loader, &row.mc_version)
+                .await?;
+            cache.insert(key.clone(), entries);
+        }
+        loader_version_for(row.loader, &row.mc_version, version, &cache[&key])
             .map(Some)
             .ok_or_else(|| {
                 unavailable(format!(

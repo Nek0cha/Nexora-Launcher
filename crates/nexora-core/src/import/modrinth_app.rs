@@ -3,6 +3,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -26,6 +28,8 @@ const INCOMPLETE_STAGES: [&str; 4] = [
 /// Modrinth App のデータフォルダ（`app.db` があるところ）。
 pub struct ModrinthApp {
     root: PathBuf,
+    /// `app.db` から読んだ `profiles` フォルダ。フォルダを引くたびにコピーし直さないよう、最初の一度だけ読む。
+    profiles: OnceLock<PathBuf>,
 }
 
 fn unavailable(reason: impl Into<String>) -> CoreError {
@@ -39,12 +43,16 @@ struct TempCopy(PathBuf);
 
 impl TempCopy {
     fn new() -> std::io::Result<Self> {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir =
-            std::env::temp_dir().join(format!("nexora-import-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "nexora-import-{}-{nanos}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&dir)?;
         Ok(Self(dir))
     }
@@ -68,7 +76,10 @@ struct Row {
 
 impl ModrinthApp {
     pub fn at(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            profiles: OnceLock::new(),
+        }
     }
 
     /// 既定の場所に `app.db` があれば、そのフォルダ。
@@ -106,9 +117,10 @@ impl ModrinthApp {
             .map(|r| r.is_some())
         };
         let sql = if has("instances")? && has("instance_content_sets")? {
-            "SELECT i.path, i.name, i.install_stage, c.game_version, c.loader, c.loader_version
+            "SELECT i.path, COALESCE(i.name, i.path), COALESCE(i.install_stage, ''),
+                    COALESCE(c.game_version, ''), COALESCE(c.loader, ''), c.loader_version
              FROM instances i
-             JOIN instance_content_sets c ON c.id = i.applied_content_set_id AND c.instance_id = i.id
+             LEFT JOIN instance_content_sets c ON c.id = i.applied_content_set_id AND c.instance_id = i.id
              ORDER BY i.name"
         } else if has("profiles")? {
             "SELECT path, name, install_stage, game_version, mod_loader, mod_loader_version
@@ -138,13 +150,17 @@ impl ModrinthApp {
             })
             .ok()
             .flatten();
-        match custom.filter(|c| !c.trim().is_empty()) {
+        let dir = match custom.filter(|c| !c.trim().is_empty()) {
             Some(dir) => PathBuf::from(dir).join(PROFILES_DIR),
             None => self.root.join(PROFILES_DIR),
-        }
+        };
+        self.profiles.get_or_init(|| dir).clone()
     }
 
     fn profiles_dir_of_db(&self) -> Result<PathBuf, CoreError> {
+        if let Some(dir) = self.profiles.get() {
+            return Ok(dir.clone());
+        }
         let (_dir, conn) = self.open_copy()?;
         Ok(self.profiles_dir(&conn))
     }
@@ -367,6 +383,46 @@ mod tests {
             .list()
             .unwrap_err();
         assert_eq!(err.code(), "import.unavailable");
+    }
+
+    #[test]
+    fn rows_with_missing_columns_are_listed_but_cannot_be_imported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rows = "
+            INSERT INTO instances VALUES ('a', 'NoSet', NULL, 'installed', 'No set');
+            INSERT INTO instances VALUES ('b', 'NoName', 'c-b', NULL, NULL);
+            INSERT INTO instance_content_sets VALUES ('c-b', 'b', '1.21', 'fabric', '1.0');";
+        db(tmp.path(), NEW_SCHEMA, rows);
+        let list = ModrinthApp::at(tmp.path().to_path_buf()).list().unwrap();
+        assert_eq!(list.len(), 2);
+        let no_set = list.iter().find(|i| i.id == "NoSet").unwrap();
+        assert!(no_set.unsupported.is_some());
+        let no_name = list.iter().find(|i| i.id == "NoName").unwrap();
+        assert_eq!(no_name.name, "NoName");
+        assert_eq!(no_name.unsupported, None);
+    }
+
+    #[test]
+    fn temporary_copies_never_share_a_folder() {
+        let copies: Vec<TempCopy> = (0..50).map(|_| TempCopy::new().unwrap()).collect();
+        let unique: std::collections::HashSet<_> = copies.iter().map(|c| c.0.clone()).collect();
+        assert_eq!(unique.len(), copies.len());
+    }
+
+    #[test]
+    fn the_database_is_read_once_for_all_folder_lookups() {
+        let tmp = tempfile::tempdir().unwrap();
+        db(
+            tmp.path(),
+            NEW_SCHEMA,
+            &new_row("a", "S", "S", "installed", "1.21", "vanilla"),
+        );
+        file(&tmp.path().join("profiles/S/mods/a.jar"));
+        file(&tmp.path().join("profiles/S/saves/w/level.dat"));
+        let app = ModrinthApp::at(tmp.path().to_path_buf());
+        assert!(app.folder("S", ImportKind::Mods).unwrap().is_some());
+        fs::remove_file(tmp.path().join("app.db")).unwrap();
+        assert!(app.folder("S", ImportKind::Saves).unwrap().is_some());
     }
 
     #[test]
