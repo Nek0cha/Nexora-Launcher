@@ -175,12 +175,15 @@ function UpgradeForm({
             {preview.error && (
               <div role="alert" className="flex flex-col gap-2">
                 <FailureNotice error={toErrorPayload(preview.error)} />
-                <Checkbox isSelected={skipCheck} onChange={setSkipCheck} className={checkboxClass}>
-                  <span aria-hidden className={checkboxMark}>
-                    <IconCheck className="size-3 opacity-0 group-data-selected:opacity-100" />
-                  </span>
-                  {t("upgrade.skip")}
-                </Checkbox>
+                {/* 使えないバージョンと分かった場合は、確認を省いても上げられない */}
+                {toErrorPayload(preview.error).code !== "upgrade.unavailable" && (
+                  <Checkbox isSelected={skipCheck} onChange={setSkipCheck} className={checkboxClass}>
+                    <span aria-hidden className={checkboxMark}>
+                      <IconCheck className="size-3 opacity-0 group-data-selected:opacity-100" />
+                    </span>
+                    {t("upgrade.skip")}
+                  </Checkbox>
+                )}
               </div>
             )}
             {preview.data && (

@@ -12,6 +12,8 @@ export const INSTALL_KIND = "install";
 export const MRPACK_KIND = "mrpack-import";
 /** 他のランチャーからインスタンスを作るタスク（core の IMPORT_KIND）。MRPACK_KIND と同じく、インストールの途中として見せる。 */
 export const IMPORT_KIND = "launcher-import";
+/** バージョンを上げるタスク（core の UPGRADE_KIND）。導入をやり直すので、インストールの途中として見せる。 */
+export const UPGRADE_KIND = "instance-upgrade";
 export const LAUNCH_KIND = "launch";
 
 export type Phase = "install" | "launch";
@@ -52,7 +54,7 @@ export function latestInstanceTask(table: TaskTable, instanceId: string): TaskSn
   return sortedTasks(table).find(
     (t) =>
       t.instanceId === instanceId &&
-      (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND || t.kind === MRPACK_KIND || t.kind === IMPORT_KIND),
+      (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND || t.kind === MRPACK_KIND || t.kind === IMPORT_KIND || t.kind === UPGRADE_KIND),
   );
 }
 
@@ -64,7 +66,9 @@ export function crashPayload(exitCode: number): ErrorPayload {
 export function playStateFrom({ instance, task, running, runningLoaded, lastExit }: PlayInputs): PlayState {
   if (running) return { kind: "playing", launchedAt: running.launchedAt };
   if (task) {
-    const phase: Phase = task.kind === INSTALL_KIND || task.kind === MRPACK_KIND || task.kind === IMPORT_KIND ? "install" : "launch";
+    const phase: Phase = task.kind === INSTALL_KIND || task.kind === MRPACK_KIND || task.kind === IMPORT_KIND || task.kind === UPGRADE_KIND
+        ? "install"
+        : "launch";
     if (task.state === "queued" || task.state === "running") {
       return { kind: "preparing", phase, progress: progressView(task), taskId: task.id };
     }

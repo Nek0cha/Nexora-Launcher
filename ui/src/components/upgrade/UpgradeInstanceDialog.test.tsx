@@ -146,6 +146,18 @@ describe("UpgradeInstanceDialog", () => {
     expect(upgradeInstance).toHaveBeenCalledWith("i1", "1.21.5");
   });
 
+  it("does not offer to skip the check when the version cannot be used", async () => {
+    vi.mocked(previewUpgrade).mockRejectedValue(
+      new IpcError({ code: "upgrade.unavailable", params: { reason: "no build" }, detail: null }),
+    );
+    mount({ loader: "fabric" });
+    await open();
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Upgrade without checking" })).toBeNull();
+    expect((submit() as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("cannot upgrade when there is no newer version", async () => {
     mount({ mcVersion: "1.21.5" });
     await open();

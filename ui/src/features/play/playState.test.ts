@@ -87,6 +87,24 @@ describe("a modpack import", () => {
   });
 });
 
+describe("a version upgrade", () => {
+  it("shows the instance as preparing (install) and as its newest task", () => {
+    const state = playStateFrom(inputs({ task: task("running", { kind: "instance-upgrade" }) }));
+    expect(state.kind).toBe("preparing");
+    expect(state.kind === "preparing" && state.phase).toBe("install");
+    const table = { a: task("running", { id: "0007", kind: "instance-upgrade" }) };
+    expect(latestInstanceTask(table, "i1")?.id).toBe("0007");
+  });
+
+  it("shows a failed upgrade as a failure of the play button", () => {
+    const error = { code: "upgrade.unavailable", params: {}, detail: null };
+    const state = playStateFrom(
+      inputs({ task: task("failed", { kind: "instance-upgrade", error }), runningLoaded: true }),
+    );
+    expect(state).toEqual({ kind: "failed", error });
+  });
+});
+
 describe("an import from another launcher", () => {
   it("shows the instance as preparing (install) and as its newest task", () => {
     const state = playStateFrom(inputs({ task: task("running", { kind: "launcher-import" }) }));

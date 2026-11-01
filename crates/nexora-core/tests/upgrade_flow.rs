@@ -323,3 +323,40 @@ async fn upgrade_invalidates_the_update_cache() {
         .unwrap();
     assert_eq!(h.hits("/version_files/update").await, 2);
 }
+
+/// `link` から `target` へのリンク（Windows ではジャンクション。権限がいらない）。
+fn link_dir(target: &std::path::Path, link: &std::path::Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    {
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link.to_string_lossy().replace('/', "\\"))
+            .arg(target.to_string_lossy().replace('/', "\\"))
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "{status:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_backup_that_skipped_links_does_not_replace_the_older_backup() {
+    let (_fake, h) = harness().await;
+    ready(&h);
+    // ワールドの 1 つが、saves の外へのリンク
+    let outside = h._temp.path().join("shared-world");
+    put(&outside.join("level.dat"), b"shared");
+    std::fs::create_dir_all(h.game_dir().join("saves")).unwrap();
+    link_dir(&outside, &h.game_dir().join("saves/linked"));
+    put(&h.game_dir().join("saves/plain/level.dat"), b"plain");
+    let root = h.paths.backups_dir().join(&h.id);
+    put(&root.join("upgrade-1/saves/old.dat"), b"old");
+
+    let task = h.launcher.upgrade_instance(&h.id, NEW.into()).unwrap();
+    assert_eq!(h.wait(&task).await.state, TaskState::Succeeded);
+
+    // 取りこぼしのある新しい退避のために、前の完全な退避を消さない
+    assert!(root.join("upgrade-1/saves/old.dat").exists());
+    assert_eq!(upgrade_backups(&h).len(), 2);
+}

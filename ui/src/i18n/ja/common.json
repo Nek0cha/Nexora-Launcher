@@ -87,7 +87,8 @@
       "duplicate": "複製",
       "content": "MOD",
       "mrpack-import": "パックの読み込み",
-      "launcher-import": "インスタンスの読み込み"
+      "launcher-import": "インスタンスの読み込み",
+      "instance-upgrade": "バージョンを上げる"
     },
     "state": {
       "queued": "待機中",

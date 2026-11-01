@@ -87,7 +87,8 @@
       "duplicate": "Duplicate",
       "content": "Mods",
       "mrpack-import": "Import pack",
-      "launcher-import": "Import instance"
+      "launcher-import": "Import instance",
+      "instance-upgrade": "Upgrade version"
     },
     "state": {
       "queued": "Queued",

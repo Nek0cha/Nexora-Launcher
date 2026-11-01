@@ -56,7 +56,16 @@ fn classify(rows: &[Row], check: &UpdateCheck) -> (Vec<String>, Vec<String>, Vec
     (compatible, incompatible, unknown)
 }
 
-/// `saves/` を `backups/<instance_id>/upgrade-<時刻>/saves` にコピーして、その `upgrade-<時刻>` を返す。
+/// 作った退避。
+#[derive(Debug, PartialEq, Eq)]
+struct Backup {
+    /// `backups/<instance_id>/upgrade-<時刻>`。
+    dir: PathBuf,
+    /// たどらずに飛ばしたリンク（ジャンクションを含む）の数。0 でなければ、退避はワールドの一部しか含まない。
+    skipped_links: u64,
+}
+
+/// `saves/` を `backups/<instance_id>/upgrade-<時刻>/saves` にコピーする。
 /// `saves/` が無ければ何もせず `None`。失敗かキャンセルなら、途中の退避を消す。
 fn backup_saves(
     paths: &AppPaths,
@@ -64,7 +73,7 @@ fn backup_saves(
     now_ms: i64,
     token: &CancellationToken,
     progress: &mut dyn FnMut(u64, u64),
-) -> Result<Option<PathBuf>, CoreError> {
+) -> Result<Option<Backup>, CoreError> {
     let saves = instance::game_dir(paths, inst).join("saves");
     if !saves.is_dir() {
         return Ok(None);
@@ -76,7 +85,10 @@ fn backup_saves(
         source,
     })?;
     match copy_tree(&saves, &root, &dir.join("saves"), token, progress) {
-        Ok(_) => Ok(Some(dir)),
+        Ok(report) => Ok(Some(Backup {
+            dir,
+            skipped_links: report.skipped_links,
+        })),
         Err(err) => {
             let _ = std::fs::remove_dir_all(&dir);
             Err(err)
@@ -164,7 +176,12 @@ impl Launcher {
         match install(&self.env, id, handle).await {
             Ok(()) => {
                 self.updates.invalidate(id);
-                if let Some(keep) = backup {
+                // リンクを飛ばした退避は不完全なので、前の退避を消さない
+                if let Some(Backup {
+                    dir: keep,
+                    skipped_links: 0,
+                }) = backup
+                {
                     let (paths, owned) = (self.env.paths.clone(), id.to_string());
                     // 古い退避が消せなくても、上げるのは成功のまま
                     let _ = blocking(move || {
