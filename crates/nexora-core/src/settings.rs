@@ -5,12 +5,17 @@ use ts_rs::TS;
 
 use crate::db::Db;
 use crate::error::CoreError;
+use crate::instance::{MEMORY_MAX_MB, MEMORY_MIN_MB};
 
 const KEY_THEME: &str = "theme";
 const KEY_LANGUAGE: &str = "language";
 const KEY_DOWNLOADS: &str = "max_concurrent_downloads";
 const KEY_LAST_ADDED: &str = "last_added_instance";
+const KEY_DEFAULT_MEMORY: &str = "default_memory_mb";
+/// 「全体設定に従う」インスタンスの -Xmx（MB）の初期値。
+pub const DEFAULT_MEMORY_MB: u32 = 2048;
 const DOWNLOADS_RANGE: std::ops::RangeInclusive<u8> = 1..=16;
+const MEMORY_RANGE: std::ops::RangeInclusive<u32> = MEMORY_MIN_MB..=MEMORY_MAX_MB;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +41,8 @@ pub struct Settings {
     pub theme: Theme,
     pub language: Option<Language>,
     pub max_concurrent_downloads: u8,
+    /// メモリが「全体設定に従う」インスタンスの -Xmx（MB）。範囲は手動の設定と同じ。
+    pub default_memory_mb: u32,
     /// 最後に MOD を追加したインスタンスの ID。読み取り専用で、`record_last_added_instance` だけが書く。
     pub last_added_instance: Option<String>,
 }
@@ -46,6 +53,7 @@ impl Default for Settings {
             theme: Theme::System,
             language: None,
             max_concurrent_downloads: 8,
+            default_memory_mb: DEFAULT_MEMORY_MB,
             last_added_instance: None,
         }
     }
@@ -58,6 +66,7 @@ pub enum SettingChange {
     Theme(Theme),
     Language(Language),
     MaxConcurrentDownloads(u8),
+    DefaultMemoryMb(u32),
 }
 
 pub fn load(db: &Db) -> Result<Settings, CoreError> {
@@ -82,6 +91,10 @@ pub fn load(db: &Db) -> Result<Settings, CoreError> {
             },
             KEY_DOWNLOADS => match serde_json::from_str::<u8>(&raw) {
                 Ok(n) if DOWNLOADS_RANGE.contains(&n) => settings.max_concurrent_downloads = n,
+                _ => tracing::warn!(key, "ignoring invalid stored setting"),
+            },
+            KEY_DEFAULT_MEMORY => match serde_json::from_str::<u32>(&raw) {
+                Ok(mb) if MEMORY_RANGE.contains(&mb) => settings.default_memory_mb = mb,
                 _ => tracing::warn!(key, "ignoring invalid stored setting"),
             },
             KEY_LAST_ADDED => match serde_json::from_str::<String>(&raw) {
@@ -125,6 +138,14 @@ pub fn apply(db: &Db, change: SettingChange, now_ms: i64) -> Result<Settings, Co
             }
             (KEY_DOWNLOADS, serde_json::to_string(&n))
         }
+        SettingChange::DefaultMemoryMb(mb) => {
+            if !MEMORY_RANGE.contains(&mb) {
+                return Err(CoreError::InvalidSetting {
+                    key: "defaultMemoryMb".into(),
+                });
+            }
+            (KEY_DEFAULT_MEMORY, serde_json::to_string(&mb))
+        }
     };
     let value = value.map_err(|e| CoreError::Unexpected {
         message: e.to_string(),
@@ -152,6 +173,7 @@ mod tests {
         assert_eq!(Settings::default().theme, Theme::System);
         assert_eq!(Settings::default().language, None);
         assert_eq!(Settings::default().max_concurrent_downloads, 8);
+        assert_eq!(Settings::default().default_memory_mb, 2048);
     }
 
     #[test]
@@ -159,7 +181,9 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         apply(&db, SettingChange::Theme(Theme::Dark), 1).unwrap();
         apply(&db, SettingChange::Language(Language::En), 2).unwrap();
-        let after = apply(&db, SettingChange::MaxConcurrentDownloads(4), 3).unwrap();
+        apply(&db, SettingChange::DefaultMemoryMb(8192), 3).unwrap();
+        let after = apply(&db, SettingChange::MaxConcurrentDownloads(4), 4).unwrap();
+        assert_eq!(after.default_memory_mb, 8192);
         assert_eq!(after.theme, Theme::Dark);
         assert_eq!(after.language, Some(Language::En));
         assert_eq!(after.max_concurrent_downloads, 4);
@@ -192,13 +216,23 @@ mod tests {
     }
 
     #[test]
+    fn rejects_out_of_range_default_memory() {
+        let db = Db::open_in_memory().unwrap();
+        for bad in [511u32, 65537] {
+            let err = apply(&db, SettingChange::DefaultMemoryMb(bad), 1).unwrap_err();
+            assert_eq!(err.code(), "settings.invalid_value");
+        }
+    }
+
+    #[test]
     fn invalid_stored_values_fall_back_to_defaults() {
         let db = Db::open_in_memory().unwrap();
         db.with_conn(|conn| {
             conn.execute_batch(
                 "INSERT INTO app_settings VALUES ('theme', '\"purple\"', 1);
                  INSERT INTO app_settings VALUES ('max_concurrent_downloads', '999', 1);
-                 INSERT INTO app_settings VALUES ('language', 'not json', 1);",
+                 INSERT INTO app_settings VALUES ('language', 'not json', 1);
+                 INSERT INTO app_settings VALUES ('default_memory_mb', '99999', 1);",
             )?;
             Ok(())
         })
@@ -214,5 +248,8 @@ mod tests {
         let change: SettingChange =
             serde_json::from_str(r#"{"key":"theme","value":"light"}"#).unwrap();
         assert_eq!(change, SettingChange::Theme(Theme::Light));
+        let change: SettingChange =
+            serde_json::from_str(r#"{"key":"defaultMemoryMb","value":6144}"#).unwrap();
+        assert_eq!(change, SettingChange::DefaultMemoryMb(6144));
     }
 }

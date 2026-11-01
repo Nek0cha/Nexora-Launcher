@@ -236,6 +236,7 @@
       "javaPath": "Java path",
       "javaPathHint": "Path to java.exe or javaw.exe",
       "modeAuto": "Auto",
+      "modeFollowGlobal": "Use global setting",
       "modeManual": "Manual",
       "jvmArgs": "JVM arguments",
       "jvmArgsHelp": "Separate arguments with spaces. Wrap a value that contains spaces in double quotes (\"). A double quote itself can't be passed. Nexora's own arguments come after yours, so they can override the same option.",

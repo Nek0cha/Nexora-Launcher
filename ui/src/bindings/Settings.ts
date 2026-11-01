@@ -4,6 +4,10 @@ import type { Theme } from "./Theme";
 
 export type Settings = { theme: Theme, language: Language | null, maxConcurrentDownloads: number, 
 /**
+ * メモリが「全体設定に従う」インスタンスの -Xmx（MB）。範囲は手動の設定と同じ。
+ */
+defaultMemoryMb: number, 
+/**
  * 最後に MOD を追加したインスタンスの ID。読み取り専用で、`record_last_added_instance` だけが書く。
  */
 lastAddedInstance: string | null, };

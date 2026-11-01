@@ -38,7 +38,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   vi.mocked(listInstances).mockResolvedValue([]);
-  vi.mocked(getSettings).mockResolvedValue({ theme: "system", language: null, maxConcurrentDownloads: 8, lastAddedInstance: null });
+  vi.mocked(getSettings).mockResolvedValue({ theme: "system", language: null, maxConcurrentDownloads: 8, defaultMemoryMb: 2048, lastAddedInstance: null });
   vi.mocked(listVersions).mockResolvedValue([{ id: "1.21", releaseTime: "2024-06-13T00:00:00Z" }]);
   vi.mocked(listContentCategories).mockResolvedValue(["optimization"]);
 });

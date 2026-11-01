@@ -236,6 +236,7 @@
       "javaPath": "Java のパス",
       "javaPathHint": "java.exe または javaw.exe のパス",
       "modeAuto": "自動",
+      "modeFollowGlobal": "全体設定に従う",
       "modeManual": "手動",
       "jvmArgs": "JVM 引数",
       "jvmArgsHelp": "空白で区切ります。空白を含む値は二重引用符（\"）で囲みます。二重引用符そのものは渡せません。Nexora の引数が後ろに付くため、同じオプションを指定しても上書きされることがあります。",

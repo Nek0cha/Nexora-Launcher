@@ -85,7 +85,7 @@ beforeEach(() => {
   vi.mocked(searchModrinth).mockResolvedValue(page([hit()]));
   vi.mocked(listInstances).mockResolvedValue([fabric120, quilt120, forge120, fabric121, vanilla]);
   vi.mocked(getSettings).mockImplementation(async () => ({
-    theme: "system", language: null, maxConcurrentDownloads: 8, lastAddedInstance: lastAdded,
+    theme: "system", language: null, maxConcurrentDownloads: 8, defaultMemoryMb: 2048, lastAddedInstance: lastAdded,
   }));
   vi.mocked(listContentCategories).mockResolvedValue(["optimization", "library"]);
   vi.mocked(listVersions).mockResolvedValue([
