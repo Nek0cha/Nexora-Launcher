@@ -9,6 +9,7 @@ import IconDelete from "~icons/ph/trash";
 import IconClose from "~icons/ph/x";
 import { fileUrl } from "../api/assets";
 import { onFilesDropped } from "../api/dragDrop";
+import { withoutMrpack } from "../features/mrpack/mrpackPath";
 import { toErrorPayload } from "../api/ipc";
 import type { Instance } from "../bindings/Instance";
 import type { Screenshot } from "../bindings/Screenshot";
@@ -82,8 +83,9 @@ export function ScreenshotsTab({ instance }: { instance: Instance }) {
         if (!latest.current.blocked) setDragging(true);
       },
       leave: () => setDragging(false),
-      drop: (paths) => {
+      drop: (dropped) => {
         setDragging(false);
+        const paths = withoutMrpack(dropped);
         const { blocked: busy, add: adding, toast: toaster, t: tr } = latest.current;
         if (busy || paths.length === 0) return;
         adding.mutate(

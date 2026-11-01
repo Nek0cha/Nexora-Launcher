@@ -9,6 +9,7 @@ import IconInfo from "~icons/ph/info";
 import IconPlus from "~icons/ph/plus";
 import IconOffline from "~icons/ph/wifi-slash";
 import { onFilesDropped } from "../api/dragDrop";
+import { withoutMrpack } from "../features/mrpack/mrpackPath";
 import { toErrorPayload } from "../api/ipc";
 import type { ContentItem } from "../bindings/ContentItem";
 import type { ContentKind } from "../bindings/ContentKind";
@@ -375,8 +376,9 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
         if (!blocked()) setDragging(true);
       },
       leave: () => setDragging(false),
-      drop: (paths) => {
+      drop: (dropped) => {
         setDragging(false);
+        const paths = withoutMrpack(dropped);
         if (blocked() || paths.length === 0) return;
         addFiles(latest.current.kind, paths, false);
       },
