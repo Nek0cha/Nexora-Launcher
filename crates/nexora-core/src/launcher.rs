@@ -843,6 +843,12 @@ impl Launcher {
         journal::recover(&self.env.db, &self.env.paths)
     }
 
+    /// 取り込みの途中でアプリが落ちて残った、中身の足りないインスタンスを消す。
+    /// 動いているタスクがない起動時に、コマンドを受け付ける前に呼ぶ。消した数を返す。
+    pub fn discard_interrupted_imports(&self) -> Result<usize, CoreError> {
+        instance::discard_interrupted_imports(&self.env.db, &self.env.paths)
+    }
+
     /// ランチャーの起動時に一度だけ呼ぶ（tokio の実行環境の中で）。二度目以降は何もしない。
     pub fn reattach(&self) -> Result<(), CoreError> {
         if self.reattached.swap(true, Ordering::SeqCst) {

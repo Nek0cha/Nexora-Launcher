@@ -109,6 +109,10 @@ pub fn run() {
                     if let Err(err) = services.launcher.recover_operations() {
                         tracing::warn!(code = err.code(), "failed to recover content operations");
                     }
+                    // 取り込みの途中で落ちて、中身の足りないまま残ったインスタンスを消す
+                    if let Err(err) = services.launcher.discard_interrupted_imports() {
+                        tracing::warn!(code = err.code(), "failed to remove interrupted imports");
+                    }
                     // コマンドを受け付ける前に、実行中のゲームを一度だけ引き継ぐ。
                     // tokio の実行環境の中で動かすため block_on で待つ。
                     let launcher = services.launcher.clone();

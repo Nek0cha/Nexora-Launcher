@@ -369,6 +369,55 @@ pub fn set_state(db: &Db, id: &str, state: InstanceState) -> Result<(), CoreErro
     )
 }
 
+/// `source` の値。取り込みで中身を入れている間だけ `importing` にする。
+const SOURCE_IMPORTING: &str = "importing";
+const SOURCE_IMPORTED: &str = "imported";
+
+/// 取り込みで作った行に、中身を入れ終えるまでの印を付ける。
+/// アプリが途中で落ちたとき、起動時の後始末（`discard_interrupted_imports`）が見つけられる。
+pub fn mark_importing(db: &Db, id: &str) -> Result<(), CoreError> {
+    update(
+        db,
+        id,
+        "UPDATE instances SET source = ?1 WHERE id = ?2",
+        &SOURCE_IMPORTING,
+    )
+}
+
+/// 中身を入れ終えたので、取り込み中の印を外す。
+pub fn finish_importing(db: &Db, id: &str) -> Result<(), CoreError> {
+    update(
+        db,
+        id,
+        "UPDATE instances SET source = ?1 WHERE id = ?2",
+        &SOURCE_IMPORTED,
+    )
+}
+
+/// 取り込みの途中で止まったままの行を、フォルダーごと消す。消した数を返す。
+/// 動いているタスクがない起動時に呼ぶ。1 件の失敗は警告に残して続ける。
+pub fn discard_interrupted_imports(db: &Db, paths: &AppPaths) -> Result<usize, CoreError> {
+    let ids: Vec<String> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare("SELECT id FROM instances WHERE source = ?1")?;
+        let rows = stmt
+            .query_map([SOURCE_IMPORTING], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    })?;
+    let mut removed = 0;
+    for id in &ids {
+        match delete(db, paths, id) {
+            Ok(()) => removed += 1,
+            Err(err) => tracing::warn!(
+                instance_id = id.as_str(),
+                code = err.code(),
+                "failed to remove an interrupted import"
+            ),
+        }
+    }
+    Ok(removed)
+}
+
 pub fn record_launch(db: &Db, id: &str, now_ms: i64) -> Result<(), CoreError> {
     update(
         db,
@@ -628,6 +677,27 @@ mod tests {
         let after = get(&db, &inst.id).unwrap();
         assert_eq!(after.state, InstanceState::Ready);
         assert_eq!(after.play_time_ms, 2000);
+    }
+
+    #[test]
+    fn interrupted_imports_are_removed_with_their_folder_and_nothing_else() {
+        let (_t, paths, db) = setup();
+        let half = create(&db, &paths, &NewInstance::vanilla("half", "1.21.5"), 1).unwrap();
+        let done = create(&db, &paths, &NewInstance::vanilla("done", "1.21.5"), 2).unwrap();
+        let plain = create(&db, &paths, &NewInstance::vanilla("plain", "1.21.5"), 3).unwrap();
+        mark_importing(&db, &half.id).unwrap();
+        mark_importing(&db, &done.id).unwrap();
+        finish_importing(&db, &done.id).unwrap();
+        let half_dir = game_dir(&paths, &half);
+
+        // 通常のインストール途中（plain）は再開できるので残す。取り込みを終えた行も残す
+        assert_eq!(discard_interrupted_imports(&db, &paths).unwrap(), 1);
+        assert_eq!(get(&db, &half.id).unwrap_err().code(), "instance.not_found");
+        assert!(!half_dir.exists());
+        assert!(get(&db, &done.id).is_ok());
+        assert!(get(&db, &plain.id).is_ok());
+        // 二度目は何も消さない
+        assert_eq!(discard_interrupted_imports(&db, &paths).unwrap(), 0);
     }
 
     #[test]
