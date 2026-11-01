@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::copy::is_link;
-use super::{ImportKind, ImportSource, SourceInstance};
+use super::{ImportKind, ImportSource, SourceInstance, Unsupported, UnsupportedCode};
 use crate::error::CoreError;
 use crate::meta::loader::LoaderKind;
 use crate::mrpack::safe_path::check_rel_path;
@@ -65,11 +65,10 @@ struct Meta {
     loader_name: String,
 }
 
-fn read_meta(path: &Path) -> Result<Meta, String> {
-    let text =
-        fs::read_to_string(path).map_err(|e| format!("{META_FILE} could not be read: {e}"))?;
-    let json: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("{META_FILE} is not valid JSON: {e}"))?;
+fn read_meta(path: &Path) -> Result<Meta, Unsupported> {
+    let unreadable = || Unsupported::with(UnsupportedCode::UnreadableMetadata, META_FILE);
+    let text = fs::read_to_string(path).map_err(|_| unreadable())?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|_| unreadable())?;
     let text_of = |v: Option<&serde_json::Value>| {
         v.and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())
@@ -142,7 +141,7 @@ impl ImportSource for CurseForgeApp {
                 Err(reason) => (None, Some(reason)),
             };
             if check_rel_path(&id).is_err() {
-                unsupported = Some(format!("{id} is not a safe folder name"));
+                unsupported = Some(Unsupported::with(UnsupportedCode::UnsafeName, &id));
             }
             let mut loader = None;
             if let Some(meta) = &meta
@@ -150,9 +149,12 @@ impl ImportSource for CurseForgeApp {
             {
                 loader = parse_loader(&meta.loader_name);
                 if loader.is_none() {
-                    unsupported = Some(format!("the loader {} is not supported", meta.loader_name));
+                    unsupported = Some(Unsupported::with(
+                        UnsupportedCode::UnknownLoader,
+                        &meta.loader_name,
+                    ));
                 } else if meta.game_version.is_empty() {
-                    unsupported = Some("the Minecraft version is missing".to_string());
+                    unsupported = Some(Unsupported::new(UnsupportedCode::MissingVersion));
                 }
             }
             let available = if unsupported.is_none() {

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button, Checkbox, Dialog, Heading, Modal, ModalOverlay, Radio, RadioGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconCheck from "~icons/ph/check";
+import IconFolder from "~icons/ph/folder-open";
 import IconWarning from "~icons/ph/warning";
 import { findImportDuplicates, listImportInstances } from "../../api/commands";
 import { pickFolder } from "../../api/dialog";
@@ -22,8 +23,11 @@ import { checkboxClass, checkboxMark, onPanel, ring, secondaryButton, submitButt
 
 const SOURCES: ImportSourceKind[] = ["modrinth_app", "prism_launcher", "official_launcher", "curse_forge"];
 
+// 5 つのタブが 1 行に収まるよう、作成のダイアログより広くする
+const launcherModalClass = modalClass.replace("max-w-lg", "max-w-2xl");
+
 const sourceClass = [
-  "inline-flex h-8 cursor-default items-center rounded-md px-3 text-sm text-text-muted",
+  "inline-flex h-8 shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm text-text-muted",
   "transition-colors duration-(--duration-fast) ease-out-quint",
   "data-hovered:bg-surface-2 data-hovered:text-text data-selected:bg-surface-3 data-selected:text-text-strong",
   ring,
@@ -41,7 +45,7 @@ export function ImportLauncherDialog() {
       isDismissable
       className={overlayClass}
     >
-      <Modal className={modalClass}>
+      <Modal className={launcherModalClass}>
         <Dialog className="outline-hidden">{open && <ImportForm />}</Dialog>
       </Modal>
     </ModalOverlay>
@@ -139,19 +143,25 @@ function ImportForm() {
         {t("launcherImport.title")}
       </Heading>
       <div className="flex flex-col gap-3 px-5 pt-4 pb-5">
-        <RadioGroup
-          aria-label={t("launcherImport.sourceLabel")}
-          orientation="horizontal"
-          value={source}
-          onChange={(value) => chooseSource(value as ImportSourceKind)}
-          className="flex flex-wrap gap-1"
-        >
-          {SOURCES.map((id) => (
-            <Radio key={id} value={id} className={sourceClass}>
-              {t(`launcherImport.source.${id}`)}
-            </Radio>
-          ))}
-        </RadioGroup>
+        <div className="scroll-thin flex items-center gap-1 overflow-x-auto">
+          <RadioGroup
+            aria-label={t("launcherImport.sourceLabel")}
+            orientation="horizontal"
+            value={source}
+            onChange={(value) => chooseSource(value as ImportSourceKind)}
+            className="flex gap-1"
+          >
+            {SOURCES.map((id) => (
+              <Radio key={id} value={id} className={sourceClass}>
+                {t(`launcherImport.source.${id}`)}
+              </Radio>
+            ))}
+          </RadioGroup>
+          <Button type="button" onPress={choose} className={sourceClass}>
+            <IconFolder aria-hidden className="size-4" />
+            {t("launcherImport.chooseFolder")}
+          </Button>
+        </div>
         {list.isPending && (
           <div aria-busy="true" className="flex flex-col gap-3">
             {[0, 1, 2].map((i) => (
@@ -160,13 +170,8 @@ function ImportForm() {
           </div>
         )}
         {listError && (
-          <div role="alert" className="flex flex-col items-start gap-3">
+          <div role="alert">
             <FailureNotice error={listError} />
-            {listError.code === "import.unavailable" && (
-              <Button type="button" onPress={choose} className={secondaryButton}>
-                {t("launcherImport.chooseFolder")}
-              </Button>
-            )}
           </div>
         )}
         {list.data && rows.length === 0 && <p className="text-text-muted">{t("launcherImport.empty")}</p>}
@@ -197,7 +202,13 @@ function ImportForm() {
                       </span>
                     )}
                   </div>
-                  {row.unsupported !== null && <p className="pl-6 text-sm text-text-muted">{row.unsupported}</p>}
+                  {row.unsupported !== null && (
+                    <p className="pl-6 text-sm text-text-muted">
+                      {t(`launcherImport.unsupported.${row.unsupported.code}`, {
+                        detail: row.unsupported.detail ?? "",
+                      })}
+                    </p>
+                  )}
                   {selected && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 pl-6">
                       {row.available.map((kind) => (

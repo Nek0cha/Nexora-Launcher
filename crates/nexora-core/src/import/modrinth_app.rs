@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::copy::is_link;
-use super::{ImportKind, ImportSource, SourceInstance};
+use super::{ImportKind, ImportSource, SourceInstance, Unsupported, UnsupportedCode};
 use crate::error::CoreError;
 use crate::meta::loader::LoaderKind;
 use crate::mrpack::safe_path::check_rel_path;
@@ -202,13 +202,16 @@ impl ImportSource for ModrinthApp {
             .map(|row| {
                 let loader = parse_loader(&row.loader);
                 let unsupported = if check_rel_path(&row.path).is_err() {
-                    Some(format!("{} is not a safe folder name", row.path))
+                    Some(Unsupported::with(UnsupportedCode::UnsafeName, &row.path))
                 } else if loader.is_none() {
-                    Some(format!("the loader {} is not supported", row.loader))
+                    Some(Unsupported::with(
+                        UnsupportedCode::UnknownLoader,
+                        &row.loader,
+                    ))
                 } else if row.mc_version.trim().is_empty() {
-                    Some("the Minecraft version is missing".to_string())
+                    Some(Unsupported::new(UnsupportedCode::MissingVersion))
                 } else if INCOMPLETE_STAGES.contains(&row.stage.as_str()) {
-                    Some("the installation in Modrinth App is not finished".to_string())
+                    Some(Unsupported::new(UnsupportedCode::InstallUnfinished))
                 } else {
                     None
                 };
@@ -365,6 +368,43 @@ mod tests {
         assert_eq!(list.len(), 3);
         assert!(list.iter().all(|i| i.unsupported.is_some()), "{list:?}");
         assert!(list.iter().all(|i| i.available.is_empty()));
+    }
+
+    #[test]
+    fn the_reasons_are_codes_with_the_value_to_show() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rows = [
+            new_row("a", "Odd", "Odd", "installed", "1.21", "liteloader"),
+            new_row("b", "Half", "Half", "not_installed", "1.21", "fabric"),
+            new_row("c", "../escape", "Escape", "installed", "1.21", "fabric"),
+            new_row("d", "NoVersion", "NoVersion", "installed", "", "fabric"),
+        ]
+        .concat();
+        db(tmp.path(), NEW_SCHEMA, &rows);
+        let list = ModrinthApp::at(tmp.path().to_path_buf()).list().unwrap();
+        let reason = |id: &str| {
+            let u = list
+                .iter()
+                .find(|i| i.id == id)
+                .unwrap()
+                .unsupported
+                .clone()
+                .unwrap();
+            (u.code, u.detail)
+        };
+        assert_eq!(
+            reason("Odd"),
+            (
+                UnsupportedCode::UnknownLoader,
+                Some("liteloader".to_string())
+            )
+        );
+        assert_eq!(reason("Half"), (UnsupportedCode::InstallUnfinished, None));
+        assert_eq!(
+            reason("../escape"),
+            (UnsupportedCode::UnsafeName, Some("../escape".to_string()))
+        );
+        assert_eq!(reason("NoVersion"), (UnsupportedCode::MissingVersion, None));
     }
 
     #[test]

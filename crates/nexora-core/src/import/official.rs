@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use super::copy::is_link;
-use super::{ImportKind, ImportSource, SourceInstance};
+use super::{ImportKind, ImportSource, SourceInstance, Unsupported, UnsupportedCode};
 use crate::error::CoreError;
 use crate::meta::loader::LoaderKind;
 use crate::mrpack::safe_path::check_rel_path;
@@ -88,7 +88,7 @@ impl OfficialLauncher {
     /// プロファイルのゲームフォルダ。
     /// `gameDir` はユーザーが選んだ絶対パスで、読むだけなので起動元のフォルダの中に収まる必要はない。
     /// ただし相対パス（基準が確かめられない）、`..` を含むもの、リンクは断る。
-    fn game_dir(&self, profile: &Value) -> Result<PathBuf, String> {
+    fn game_dir(&self, profile: &Value) -> Result<PathBuf, Unsupported> {
         let Some(dir) = profile
             .get("gameDir")
             .and_then(Value::as_str)
@@ -98,12 +98,10 @@ impl OfficialLauncher {
             return Ok(self.root.clone());
         };
         let path = PathBuf::from(dir);
-        if !path.is_absolute() {
-            Err(format!("the game folder {dir} is not an absolute path"))
-        } else if path.components().any(|c| c == Component::ParentDir) {
-            Err(format!("the game folder {dir} contains \"..\""))
+        if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
+            Err(Unsupported::with(UnsupportedCode::UnsafeFolder, dir))
         } else if is_link(&path) {
-            Err(format!("the game folder {dir} is a link"))
+            Err(Unsupported::with(UnsupportedCode::LinkedFolder, dir))
         } else {
             Ok(path)
         }
@@ -147,17 +145,17 @@ impl OfficialLauncher {
         })
     }
 
-    fn resolve(&self, profile: &Value) -> Result<Resolved, String> {
+    fn resolve(&self, profile: &Value) -> Result<Resolved, Unsupported> {
         let id = profile
             .get("lastVersionId")
             .and_then(Value::as_str)
             .map(str::trim)
             .unwrap_or("");
         if id.is_empty() {
-            return Err("the profile has no version".into());
+            return Err(Unsupported::new(UnsupportedCode::MissingVersion));
         }
         if id.starts_with("latest-") {
-            return Err("the profile follows the latest version, which is not fixed".into());
+            return Err(Unsupported::new(UnsupportedCode::LatestVersion));
         }
         match self.resolve_from_json(id) {
             Some(resolved) => Ok(resolved),
@@ -183,18 +181,16 @@ fn is_release(version: &str) -> bool {
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn release(version: &str, id: &str) -> Result<String, String> {
+fn release(version: &str, id: &str) -> Result<String, Unsupported> {
     if is_release(version) {
         Ok(version.to_string())
     } else {
-        Err(format!(
-            "the version {id} is not for a release of Minecraft"
-        ))
+        Err(Unsupported::with(UnsupportedCode::UnsupportedVersion, id))
     }
 }
 
 /// 版の ID の名前の形から、Minecraft の版とローダーを読む。
-fn parse_version_id(id: &str) -> Result<Resolved, String> {
+fn parse_version_id(id: &str) -> Result<Resolved, Unsupported> {
     let resolved = |mc: String, loader, version: &str| Resolved {
         mc_version: mc,
         loader,
@@ -208,7 +204,7 @@ fn parse_version_id(id: &str) -> Result<Resolved, String> {
             let (loader_version, mc) = rest
                 .split_once('-')
                 .filter(|(l, m)| !l.is_empty() && !m.is_empty())
-                .ok_or_else(|| format!("the version {id} has no Minecraft version"))?;
+                .ok_or_else(|| Unsupported::new(UnsupportedCode::MissingVersion))?;
             return Ok(resolved(release(mc, id)?, loader, loader_version));
         }
     }
@@ -218,7 +214,10 @@ fn parse_version_id(id: &str) -> Result<Resolved, String> {
         let major: u32 = nums.next().and_then(|n| n.parse().ok()).unwrap_or(0);
         let minor: u32 = nums.next().and_then(|n| n.parse().ok()).unwrap_or(u32::MAX);
         if !(20..26).contains(&major) || minor == u32::MAX || nums.next().is_none() {
-            return Err(format!("the NeoForge version {version} is not recognized"));
+            return Err(Unsupported::with(
+                UnsupportedCode::UnsupportedVersion,
+                version,
+            ));
         }
         let mc = if minor == 0 {
             format!("1.{major}")
@@ -232,7 +231,7 @@ fn parse_version_id(id: &str) -> Result<Resolved, String> {
         let rest = rest.strip_prefix('-').unwrap_or(rest);
         let build = rest.strip_prefix(&format!("{mc}-")).unwrap_or(rest);
         if build.is_empty() {
-            return Err(format!("the version {id} has no Forge version"));
+            return Err(Unsupported::with(UnsupportedCode::MissingLoaderVersion, id));
         }
         return Ok(resolved(mc, LoaderKind::Forge, build));
     }
@@ -243,7 +242,7 @@ fn parse_version_id(id: &str) -> Result<Resolved, String> {
             loader_version: None,
         });
     }
-    Err(format!("the version {id} is not supported"))
+    Err(Unsupported::with(UnsupportedCode::UnsupportedVersion, id))
 }
 
 /// 部分（フォルダまたはファイル）に、取り込めるものが実際にあるか。フォルダなら中に何か入っていること。
@@ -270,9 +269,9 @@ impl ImportSource for OfficialLauncher {
                     .unwrap_or(key)
                     .to_string();
                 let checked = if check_rel_path(key).is_err() {
-                    Err(format!("{key} is not a safe profile key"))
+                    Err(Unsupported::with(UnsupportedCode::UnsafeName, key))
                 } else if !profile.is_object() {
-                    Err("the profile is not an object".to_string())
+                    Err(Unsupported::with(UnsupportedCode::UnreadableMetadata, key))
                 } else {
                     self.game_dir(profile)
                         .and_then(|dir| self.resolve(profile).map(|r| (dir, r)))
@@ -433,6 +432,33 @@ mod tests {
         for i in [&v, &q, &f, &old, &n, &n0, &n4] {
             assert_eq!(i.unsupported, None, "{i:?}");
         }
+    }
+
+    #[test]
+    fn the_reason_is_a_code_with_the_value_to_show() {
+        let code_and_detail = |id: &str| {
+            let u = resolved(id).unsupported.unwrap();
+            (u.code, u.detail)
+        };
+        assert_eq!(
+            code_and_detail("latest-release"),
+            (UnsupportedCode::LatestVersion, None)
+        );
+        assert_eq!(code_and_detail(""), (UnsupportedCode::MissingVersion, None));
+        assert_eq!(
+            code_and_detail("24w14a"),
+            (
+                UnsupportedCode::UnsupportedVersion,
+                Some("24w14a".to_string())
+            )
+        );
+        assert_eq!(
+            code_and_detail("1.20.1-forge"),
+            (
+                UnsupportedCode::MissingLoaderVersion,
+                Some("1.20.1-forge".to_string())
+            )
+        );
     }
 
     #[test]

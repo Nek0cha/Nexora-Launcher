@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::copy::is_link;
-use super::{ImportKind, ImportSource, SourceInstance};
+use super::{ImportKind, ImportSource, SourceInstance, Unsupported, UnsupportedCode};
 use crate::error::CoreError;
 use crate::meta::loader::LoaderKind;
 use crate::mrpack::safe_path::check_rel_path;
@@ -169,22 +169,30 @@ fn loader_of(uid: &str) -> Option<LoaderKind> {
     }
 }
 
-/// 取り込めないときは、その理由（英語）を返す。
-fn read_pack(instance: &Path) -> Result<Pack, String> {
+/// 取り込めないときは、その理由を返す。
+fn read_pack(instance: &Path) -> Result<Pack, Unsupported> {
     let path = instance.join(PACK_FILE);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(format!("{PACK_FILE} was not found"));
+            return Err(Unsupported::with(
+                UnsupportedCode::MissingMetadata,
+                PACK_FILE,
+            ));
         }
-        Err(e) => return Err(format!("{PACK_FILE} could not be read: {e}")),
+        Err(_) => {
+            return Err(Unsupported::with(
+                UnsupportedCode::UnreadableMetadata,
+                PACK_FILE,
+            ));
+        }
     };
-    let json: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| format!("{PACK_FILE} is not valid JSON"))?;
+    let json: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| Unsupported::with(UnsupportedCode::UnreadableMetadata, PACK_FILE))?;
     let components = json
         .get("components")
         .and_then(|c| c.as_array())
-        .ok_or_else(|| format!("{PACK_FILE} has no components"))?;
+        .ok_or_else(|| Unsupported::with(UnsupportedCode::UnreadableMetadata, PACK_FILE))?;
     let mut mc_version = String::new();
     let mut loaders = Vec::new();
     for component in components {
@@ -197,16 +205,19 @@ fn read_pack(instance: &Path) -> Result<Pack, String> {
         if uid == "net.minecraft" {
             mc_version = version.to_string();
         } else if uid == "com.mumfrey.liteloader" {
-            return Err("the loader LiteLoader is not supported".to_string());
+            return Err(Unsupported::with(
+                UnsupportedCode::UnknownLoader,
+                "LiteLoader",
+            ));
         } else if let Some(loader) = loader_of(uid) {
             loaders.push((loader, version.to_string()));
         }
     }
     if mc_version.is_empty() {
-        return Err("the Minecraft version is missing".to_string());
+        return Err(Unsupported::new(UnsupportedCode::MissingVersion));
     }
     if loaders.len() > 1 {
-        return Err("more than one loader is installed".to_string());
+        return Err(Unsupported::new(UnsupportedCode::MultipleLoaders));
     }
     let (loader, loader_version) = loaders
         .pop()
@@ -267,11 +278,14 @@ impl ImportSource for PrismLauncher {
                 .to_string();
 
             let pack = if is_link(&path) {
-                Err("the instance folder is a link".to_string())
+                Err(Unsupported::with(UnsupportedCode::LinkedFolder, &id))
             } else if entry.file_name().to_str().is_none() || check_rel_path(&id).is_err() {
-                Err(format!("{id} is not a safe folder name"))
+                Err(Unsupported::with(UnsupportedCode::UnsafeName, &id))
             } else if settings.is_err() {
-                Err(format!("{INSTANCE_FILE} could not be read"))
+                Err(Unsupported::with(
+                    UnsupportedCode::UnreadableMetadata,
+                    INSTANCE_FILE,
+                ))
             } else {
                 read_pack(&path)
             };

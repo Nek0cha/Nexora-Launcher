@@ -11,7 +11,10 @@ use crate::import::duplicates::find_duplicates;
 use crate::import::modrinth_app::ModrinthApp;
 use crate::import::official::OfficialLauncher;
 use crate::import::prism::PrismLauncher;
-use crate::import::{ImportKind, ImportRequest, ImportSource, ImportSourceKind, SourceInstance};
+use crate::import::{
+    ImportKind, ImportRequest, ImportSource, ImportSourceKind, SourceInstance, Unsupported,
+    UnsupportedCode,
+};
 use crate::install::kib;
 use crate::meta::loader::LoaderVersionEntry;
 use crate::mrpack::loader_version_for;
@@ -81,16 +84,16 @@ impl Launcher {
             if unreachable.contains(&key) {
                 continue;
             }
-            match self.resolve_import_loader(row, &mut cache).await {
-                Err(CoreError::ImportUnavailable { reason }) => {
-                    row.unsupported = Some(reason);
+            match self.check_import_loader(row, &mut cache).await {
+                Ok(Err(problem)) => {
+                    row.unsupported = Some(problem);
                     row.available.clear();
                 }
                 // 通信できないなどは、行を無効にせず、導入のときに失敗させる
                 Err(_) => {
                     unreachable.insert(key);
                 }
-                Ok(_) => {}
+                Ok(Ok(_)) => {}
             }
         }
         Ok(rows)
@@ -213,11 +216,22 @@ impl Launcher {
         row: &SourceInstance,
         cache: &mut LoaderCache,
     ) -> Result<Option<String>, CoreError> {
+        self.check_import_loader(row, cache)
+            .await?
+            .map_err(|problem| unavailable(problem.to_string()))
+    }
+
+    /// 外側の `Err` は版の一覧を取れなかった（通信など）。内側の `Err` は、その行を取り込めない理由。
+    async fn check_import_loader(
+        &self,
+        row: &SourceInstance,
+        cache: &mut LoaderCache,
+    ) -> Result<Result<Option<String>, Unsupported>, CoreError> {
         if row.loader == LoaderKind::Vanilla {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         let Some(version) = row.loader_version.as_deref() else {
-            return Err(unavailable("the loader version is missing"));
+            return Ok(Err(Unsupported::new(UnsupportedCode::MissingLoaderVersion)));
         };
         let key = (row.loader.as_str(), row.mc_version.clone());
         if !cache.contains_key(&key) {
@@ -228,15 +242,20 @@ impl Launcher {
                 .await?;
             cache.insert(key.clone(), entries);
         }
-        loader_version_for(row.loader, &row.mc_version, version, &cache[&key])
-            .map(Some)
-            .ok_or_else(|| {
-                unavailable(format!(
-                    "{} {version} for Minecraft {} is not available",
-                    row.loader.as_str(),
-                    row.mc_version
-                ))
-            })
+        Ok(
+            loader_version_for(row.loader, &row.mc_version, version, &cache[&key])
+                .map(Some)
+                .ok_or_else(|| {
+                    Unsupported::with(
+                        UnsupportedCode::LoaderUnavailable,
+                        format!(
+                            "{} {version} (Minecraft {})",
+                            row.loader.as_str(),
+                            row.mc_version
+                        ),
+                    )
+                }),
+        )
     }
 
     async fn run_launcher_import(
