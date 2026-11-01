@@ -369,6 +369,25 @@ pub fn set_state(db: &Db, id: &str, state: InstanceState) -> Result<(), CoreErro
     )
 }
 
+/// Minecraft のバージョンとローダーの版を書き換える。バージョンの引き上げと、その巻き戻しに使う。
+pub fn set_version(
+    db: &Db,
+    id: &str,
+    mc_version: &str,
+    loader_version: Option<&str>,
+) -> Result<(), CoreError> {
+    let changed = db.with_conn(|conn| {
+        Ok(conn.execute(
+            "UPDATE instances SET mc_version = ?1, loader_version = ?2 WHERE id = ?3",
+            params![mc_version, loader_version, id],
+        )?)
+    })?;
+    if changed == 0 {
+        return Err(not_found(id));
+    }
+    Ok(())
+}
+
 /// `source` の値。取り込みで中身を入れている間だけ `importing` にする。
 const SOURCE_IMPORTING: &str = "importing";
 const SOURCE_IMPORTED: &str = "imported";
@@ -698,6 +717,27 @@ mod tests {
         assert!(get(&db, &plain.id).is_ok());
         // 二度目は何も消さない
         assert_eq!(discard_interrupted_imports(&db, &paths).unwrap(), 0);
+    }
+
+    #[test]
+    fn set_version_updates_both_fields_and_reports_missing_rows() {
+        let (_t, paths, db) = setup();
+        let new = NewInstance {
+            loader: LoaderKind::Fabric,
+            loader_version: Some("0.15.0".into()),
+            ..NewInstance::vanilla("x", "1.20.1")
+        };
+        let inst = create(&db, &paths, &new, 1).unwrap();
+        set_version(&db, &inst.id, "1.21.1", Some("0.16.5")).unwrap();
+        let after = get(&db, &inst.id).unwrap();
+        assert_eq!(after.mc_version, "1.21.1");
+        assert_eq!(after.loader_version.as_deref(), Some("0.16.5"));
+        set_version(&db, &inst.id, "1.21.1", None).unwrap();
+        assert_eq!(get(&db, &inst.id).unwrap().loader_version, None);
+        assert_eq!(
+            set_version(&db, "nope", "1.21.1", None).unwrap_err().code(),
+            "instance.not_found"
+        );
     }
 
     #[test]
