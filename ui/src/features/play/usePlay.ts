@@ -6,7 +6,7 @@ import { loginPrompt, type LoginPrompt } from "../login/loginState";
 import { isTerminal, type TaskTable } from "../tasks/taskTable";
 import { TASKS_KEY, useTasks } from "../tasks/useTasks";
 import { clearLastExit } from "./useGameSync";
-import { IMPORT_KIND, INSTALL_KIND, LAUNCH_KIND, MRPACK_KIND } from "./playState";
+import { IMPORT_KIND, INSTALL_KIND, LAUNCH_KIND, MRPACK_KIND, UPGRADE_KIND } from "./playState";
 
 export type Play = {
   press: () => void;
@@ -77,7 +77,11 @@ export function usePlay(instanceId: string): Play {
     const busy = Object.values(table).some(
       (t) =>
         t.instanceId === instanceId &&
-        (t.kind === INSTALL_KIND || t.kind === LAUNCH_KIND || t.kind === MRPACK_KIND || t.kind === IMPORT_KIND) &&
+        (t.kind === INSTALL_KIND ||
+          t.kind === LAUNCH_KIND ||
+          t.kind === MRPACK_KIND ||
+          t.kind === IMPORT_KIND ||
+          t.kind === UPGRADE_KIND) &&
         !isTerminal(t),
     );
     if (busy) return;

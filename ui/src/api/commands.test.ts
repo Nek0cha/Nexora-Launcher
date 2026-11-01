@@ -46,6 +46,7 @@ import {
   updateSavedSkin, deleteSavedSkin, applySavedSkin, importCurrentSkin, listDefaultSkins, applyDefaultSkin,
   inspectMrpack, importMrpack, previewMrpackExport, exportMrpack,
   listImportInstances, findImportDuplicates, importFromLauncher,
+  previewUpgrade, upgradeInstance,
 } from "./commands";
 import type { ExportOptions } from "../bindings/ExportOptions";
 import type { SearchQuery } from "../bindings/SearchQuery";
@@ -292,6 +293,17 @@ describe("mrpack commands", () => {
     const options: ExportOptions = { versionId: "1.0.0", includeConfig: true, acceptUnidentified: false };
     await exportMrpack("i1", "C:\\out.mrpack", options);
     expect(invoke).toHaveBeenLastCalledWith("export_mrpack", { instanceId: "i1", dest: "C:\\out.mrpack", options });
+  });
+});
+
+describe("upgrade commands", () => {
+  afterEach(() => vi.mocked(invoke).mockClear());
+
+  it("passes the instance and the target version", async () => {
+    await previewUpgrade("i1", "1.21.1");
+    expect(invoke).toHaveBeenLastCalledWith("preview_upgrade", { instanceId: "i1", targetMcVersion: "1.21.1" });
+    await upgradeInstance("i1", "1.21.1");
+    expect(invoke).toHaveBeenLastCalledWith("upgrade_instance", { instanceId: "i1", targetMcVersion: "1.21.1" });
   });
 });
 

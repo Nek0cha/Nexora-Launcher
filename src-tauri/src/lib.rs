@@ -183,6 +183,8 @@ pub fn run() {
             commands::import_from_launcher,
             commands::inspect_mrpack,
             commands::import_mrpack,
+            commands::preview_upgrade,
+            commands::upgrade_instance,
             commands::preview_mrpack_export,
             commands::export_mrpack,
             commands::list_sync_profiles,

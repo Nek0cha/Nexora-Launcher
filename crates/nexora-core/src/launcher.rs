@@ -3,8 +3,10 @@
 mod content;
 mod import;
 mod mrpack;
+mod upgrade;
 
 pub use content::{InstallPreview, VersionChoice};
+pub use upgrade::UpgradePreview;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,6 +77,8 @@ pub const CONTENT_KIND: &str = "content";
 pub const MRPACK_KIND: &str = "mrpack-import";
 /// 他のランチャーからインスタンスを作るタスク。
 pub const IMPORT_KIND: &str = "launcher-import";
+/// インスタンスのバージョンを上げるタスク。
+pub const UPGRADE_KIND: &str = "instance-upgrade";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -756,7 +760,11 @@ impl Launcher {
         }
         if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
             // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
-            if kind == CONTENT_KIND || kind == MRPACK_KIND || kind == IMPORT_KIND {
+            if kind == CONTENT_KIND
+                || kind == MRPACK_KIND
+                || kind == IMPORT_KIND
+                || kind == UPGRADE_KIND
+            {
                 return Err(CoreError::InstanceBusy {
                     instance_id: instance_id.to_string(),
                 });
@@ -877,7 +885,8 @@ impl Launcher {
                         || t.kind == LAUNCH_KIND
                         || t.kind == CONTENT_KIND
                         || t.kind == MRPACK_KIND
-                        || t.kind == IMPORT_KIND)
+                        || t.kind == IMPORT_KIND
+                        || t.kind == UPGRADE_KIND)
                     && !t.state.is_terminal()
             })
             .map(|t| (t.id, t.kind))

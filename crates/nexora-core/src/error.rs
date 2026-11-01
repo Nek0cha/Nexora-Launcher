@@ -131,6 +131,9 @@ pub enum CoreError {
     /// 他のランチャーのデータが見つからない、または読めない。
     #[error("the launcher data is unavailable: {reason}")]
     ImportUnavailable { reason: String },
+    /// 選んだバージョンには上げられない（古い、同じ、一覧に無い、ローダーが対応しないなど）。
+    #[error("the instance cannot be upgraded to that version: {reason}")]
+    UpgradeUnavailable { reason: String },
     /// 取り込もうとしたインスタンスが、すでにあるものと重複している。
     #[error("the instances to import are already present")]
     ImportDuplicate,
@@ -285,6 +288,7 @@ impl CoreError {
             CoreError::MrpackLimit { .. } => "mrpack.limit",
             CoreError::MrpackNeedsConfirmation => "mrpack.needs_confirmation",
             CoreError::ImportUnavailable { .. } => "import.unavailable",
+            CoreError::UpgradeUnavailable { .. } => "upgrade.unavailable",
             CoreError::ImportDuplicate => "import.duplicate",
             CoreError::ScreenshotNotFound => "screenshot.not_found",
             CoreError::LogNotFound => "log.not_found",
@@ -386,7 +390,8 @@ impl CoreError {
             | CoreError::MrpackInvalid { reason }
             | CoreError::MrpackUnsupported { reason }
             | CoreError::MrpackLimit { reason }
-            | CoreError::ImportUnavailable { reason } => {
+            | CoreError::ImportUnavailable { reason }
+            | CoreError::UpgradeUnavailable { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
             }
             CoreError::MrpackUnsafePath { path } => {

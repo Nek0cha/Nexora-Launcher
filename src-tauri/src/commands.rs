@@ -21,7 +21,7 @@ use nexora_core::instance::logs::{GameLog, LogContent};
 use nexora_core::instance::screenshots::{ImportReport, Screenshot};
 use nexora_core::instance::{Instance, InstanceSettings, NewInstance};
 use nexora_core::launch::process::RunningSession;
-use nexora_core::launcher::{CreatedInstance, InstallPreview, VersionChoice};
+use nexora_core::launcher::{CreatedInstance, InstallPreview, UpgradePreview, VersionChoice};
 use nexora_core::meta::loader::{LoaderKind, LoaderVersionEntry};
 use nexora_core::meta::mojang::manifest::VersionEntry;
 use nexora_core::mrpack::{ExportOptions, ExportPreview, MrpackInfo};
@@ -445,6 +445,36 @@ pub async fn import_mrpack(
         .launcher
         .import_mrpack(std::path::PathBuf::from(path), name)
         .await
+        .map_err(ErrorPayload::from)
+}
+
+/// バージョンを上げる前の確認。インスタンスは変更しない。
+#[tauri::command]
+pub async fn preview_upgrade(
+    state: State<'_, AppState>,
+    instance_id: String,
+    target_mc_version: String,
+) -> CmdResult<UpgradePreview> {
+    let services = state.services()?;
+    services
+        .launcher
+        .preview_upgrade(&instance_id, &target_mc_version)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// インスタンスのバージョンを上げるタスクを始め、そのタスクの ID を返す。
+/// `import_mrpack` と同じ理由で `async` にする。
+#[tauri::command]
+pub async fn upgrade_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    target_mc_version: String,
+) -> CmdResult<String> {
+    let services = state.services()?;
+    services
+        .launcher
+        .upgrade_instance(&instance_id, target_mc_version)
         .map_err(ErrorPayload::from)
 }
 

@@ -6,6 +6,7 @@ import { toErrorPayload } from "../../api/ipc";
 import type { RunningSession } from "../../bindings/RunningSession";
 import { INSTANCES_KEY } from "../instances/useInstances";
 import { isTerminal } from "../tasks/taskTable";
+import { useUpgradeTaskWatch } from "../upgrade/useUpgradeTaskWatch";
 import { useTasks } from "../tasks/useTasks";
 import { clearStop } from "./useStopFlow";
 
@@ -53,6 +54,7 @@ export function clearLastExit(client: QueryClient, instanceId: string): void {
 
 /** アプリで 1 回だけ呼ぶ。ゲームのイベントと、インストールと起動のタスクの終了で、一覧を取り直す。 */
 export function useGameSync(): void {
+  useUpgradeTaskWatch();
   const client = useQueryClient();
   const tasks = useTasks();
   // 終了したインストールと起動のタスクの組。変わったらインスタンスの state を取り直す

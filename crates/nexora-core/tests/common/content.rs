@@ -23,7 +23,10 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::{FixedProbe, RecordingGame, SnapshotRecorder, auth_urls, http};
+use super::{
+    FABRIC_VERSION, FakeLoaderMeta, FakeMojang, FixedProbe, RecordingGame, SnapshotRecorder,
+    auth_urls, http, serve,
+};
 
 pub struct Harness {
     pub _temp: tempfile::TempDir,
@@ -44,15 +47,56 @@ impl Harness {
 
     /// `api` を指定すると、Modrinth の API だけ別の場所（落ちたサーバーなど）にする。
     pub async fn with_api(api: Option<String>) -> Self {
+        Self::build(api, None, "1.99-test").await
+    }
+
+    /// Mojang とローダーの偽物につなぐ。インスタンスは Fabric の `mc_version`（偽物が配る新しい版より古い 1.8.9 など）。
+    /// 偽物は 1.99-test だけを導入できる。Fabric は 1.99-test に対応し、Quilt は対応しない。
+    pub async fn with_mojang(fake: &FakeMojang, mc_version: &str) -> Self {
+        let loaders = FakeLoaderMeta::start(fake).await;
+        let list = format!(r#"[{{"loader":{{"version":"{FABRIC_VERSION}","stable":true}}}}]"#);
+        serve(
+            &fake.server,
+            "/fabric/v2/versions/loader/1.99-test",
+            list.as_bytes(),
+        )
+        .await;
+        serve(
+            &fake.server,
+            "/fabric/v2/versions/game",
+            br#"[{"version":"1.99-test"}]"#,
+        )
+        .await;
+        serve(
+            &fake.server,
+            "/quilt/v3/versions/game",
+            br#"[{"version":"1.8.9"}]"#,
+        )
+        .await;
+        Self::build(None, Some((fake, &loaders)), mc_version).await
+    }
+
+    async fn build(
+        api: Option<String>,
+        mojang: Option<(&FakeMojang, &FakeLoaderMeta)>,
+        mc_version: &str,
+    ) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::from_root(temp.path());
         paths.ensure_dirs().unwrap();
         let server = MockServer::start().await;
-        let urls = Urls {
+        let mut urls = Urls {
             modrinth_api: api.unwrap_or_else(|| server.uri()),
             modrinth_cdn: server.uri(),
             ..Urls::default()
         };
+        if let Some((fake, loaders)) = mojang {
+            urls.manifest = fake.manifest_url();
+            urls.runtime_index = fake.runtime_index_url();
+            urls.resources = fake.resources_url();
+            urls.fabric_meta = loaders.fabric_url();
+            urls.quilt_meta = loaders.quilt_url();
+        }
         let (tasks, _) = SnapshotRecorder::manager();
         let db = Db::open_in_memory().unwrap();
         let auth_server = MockServer::start().await;
@@ -83,7 +127,7 @@ impl Harness {
         let new = NewInstance {
             loader: LoaderKind::Fabric,
             loader_version: Some("0.15.0".into()),
-            ..NewInstance::vanilla("x", "1.99-test")
+            ..NewInstance::vanilla("x", mc_version)
         };
         let inst = instance::create(&db, &paths, &new, 0).unwrap();
         let h = Harness {

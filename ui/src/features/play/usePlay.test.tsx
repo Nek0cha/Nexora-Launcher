@@ -53,6 +53,7 @@ describe("usePlay", () => {
     ["launch", "cancelling"],
     ["mrpack-import", "running"],
     ["launcher-import", "running"],
+    ["instance-upgrade", "running"],
   ] as const)("does not launch while a %s task is %s", async (kind, state) => {
     const { palette } = setup([task(kind, state)]);
     await act(async () => palette.result.current.press());

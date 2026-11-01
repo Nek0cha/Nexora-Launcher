@@ -87,7 +87,8 @@
       "duplicate": "Duplicate",
       "content": "Mods",
       "mrpack-import": "Import pack",
-      "launcher-import": "Import instance"
+      "launcher-import": "Import instance",
+      "instance-upgrade": "Upgrade version"
     },
     "state": {
       "queued": "Queued",
@@ -744,6 +745,19 @@
       "loading": "Checking contents",
       "done": "Exported"
     }
+  },
+  "upgrade": {
+    "open": "Upgrade version",
+    "title": "Upgrade version",
+    "target": "Target",
+    "loading": "Loading versions",
+    "checking": "Checking mods",
+    "none": "No newer version",
+    "compatible": "Compatible",
+    "incompatible": "No compatible version",
+    "unknown": "Can't check",
+    "skip": "Upgrade without checking",
+    "submit": "Upgrade"
   },
   "launcherImport": {
     "open": "Import from another launcher",
