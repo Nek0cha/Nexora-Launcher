@@ -43,22 +43,23 @@ export function isAccepted(expression, accepted = ACCEPTED) {
 }
 
 /**
- * 同じ本文のライセンスをまとめて、読みやすい 1 つの文章にする。
- * packages: { name, version, license, repository?, text }[]
+ * 画面に出すための形にする。パッケージを名前順に並べ、同じ本文は 1 つにまとめて番号で指す
+ * （本文全体を 1 つの文章にして画面に出すと、数万行になって固まるため）。
+ * packages: { name, version, license, text }[]
+ * 戻り値: { entries: { name, version, license, text: number }[], texts: string[] }
  */
-export function renderNotices(packages) {
-  const groups = new Map();
-  for (const pkg of [...packages].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))) {
-    const key = pkg.text.trim();
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(pkg);
-  }
-  const parts = [
-    "Nexora Launcher is licensed under the Apache License 2.0. It bundles the following third-party software.",
-  ];
-  for (const [text, members] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
-    const names = members.map((m) => `${m.name} ${m.version} (${m.license})`).join("\n");
-    parts.push(`${"=".repeat(72)}\n${names}\n${"-".repeat(72)}\n${text}`);
-  }
-  return parts.join("\n\n") + "\n";
+export function buildNotices(packages) {
+  const texts = [];
+  const index = new Map();
+  const entries = [...packages]
+    .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
+    .map(({ name, version, license, text }) => {
+      const key = text.trim();
+      if (!index.has(key)) {
+        index.set(key, texts.length);
+        texts.push(key);
+      }
+      return { name, version, license, text: index.get(key) };
+    });
+  return { entries, texts };
 }

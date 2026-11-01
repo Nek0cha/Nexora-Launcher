@@ -1,4 +1,4 @@
-// 配布物に含まれる第三者のライセンスを集めて、ui/src/assets/third-party-licenses.txt に書く。
+// 配布物に含まれる第三者のライセンスを集めて、ui/src/assets/third-party-licenses.json に書く。
 //   node scripts/gen-licenses.mjs
 // Rust は cargo metadata、フロントエンドは pnpm licenses から、依存の名前、バージョン、ライセンス、本文を集める。
 // 許可していないライセンスの依存があれば、何も書かずに失敗する（許可の一覧は licenses-lib.mjs）。
@@ -6,10 +6,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAccepted, renderNotices } from "./licenses-lib.mjs";
+import { buildNotices, isAccepted } from "./licenses-lib.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = join(root, "ui", "src", "assets", "third-party-licenses.txt");
+const OUT = join(root, "ui", "src", "assets", "third-party-licenses.json");
 // 開発用の依存でも、ビルドの結果に取り込まれるもの（アイコンの図形）
 const BUNDLED_DEV_NPM = ["@iconify-json/ph"];
 const LICENSE_FILE = /^(licen[sc]e|copying|notice|unlicense)([-._].*)?$/i;
@@ -87,5 +87,5 @@ if (rejected.length > 0) {
   for (const p of rejected) console.error(`  ${p.name} ${p.version}: ${p.license}`);
   process.exit(1);
 }
-writeFileSync(OUT, renderNotices(packages));
+writeFileSync(OUT, JSON.stringify(buildNotices(packages)) + "\n");
 console.log(`Wrote ${packages.length} packages to ${OUT}`);
