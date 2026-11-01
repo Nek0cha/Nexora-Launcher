@@ -47,3 +47,11 @@
 - Windows と macOS はコード署名をしていないため、初回の起動で警告が出る（README に開き方を書いている）。
 - Linux で自動更新できるのは AppImage だけである。
 - 署名なしの macOS アプリが updater で置き換えられること、deb での挙動は、実機で確かめた結果をここに書き足す。
+
+## アイコンを作り直すとき
+
+元の絵は `src-tauri/app-icon.svg`（アプリ内のロゴ `ui/public/favicon.svg` を、角丸の暗い背景に載せたもの）である。変えたら、次で全サイズを作り直す。
+
+```sh
+pnpm tauri icon src-tauri/app-icon.svg
+```

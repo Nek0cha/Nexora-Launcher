@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src-tauri/app-icon.png" width="112" alt="Nexora Launcher のロゴ">
+<img src="src-tauri/icons/icon.png" width="112" alt="Nexora Launcher のロゴ">
 
 # Nexora Launcher
 
