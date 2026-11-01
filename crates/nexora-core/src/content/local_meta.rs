@@ -64,6 +64,34 @@ fn read_icon(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
     (bytes.len() <= MAX_ICON_BYTES && bytes.starts_with(&PNG_SIGNATURE)).then_some(bytes)
 }
 
+/// アイコンの指定を読む。文字列ならそのパス、`{"16": "...", "128": "..."}` のようなサイズ別の辞書なら
+/// 大きいものから順に試して、最初に読めたものを使う。
+fn read_icon_spec(zip: &mut ZipArchive<File>, spec: &serde_json::Value) -> Option<Vec<u8>> {
+    match spec {
+        serde_json::Value::String(path) => read_icon(zip, path),
+        serde_json::Value::Object(map) => {
+            let mut sized: Vec<(u32, &str)> = map
+                .iter()
+                .filter_map(|(size, path)| Some((size.parse().ok()?, path.as_str()?)))
+                .collect();
+            sized.sort_by_key(|&(size, _)| std::cmp::Reverse(size));
+            sized.into_iter().find_map(|(_, path)| read_icon(zip, path))
+        }
+        _ => None,
+    }
+}
+
+/// アイコンが宣言されていない（または読めない）jar で、画像が置かれていることの多い場所を探す。
+fn fallback_icon(zip: &mut ZipArchive<File>, mod_id: Option<&str>) -> Option<Vec<u8>> {
+    let mut candidates = Vec::new();
+    if let Some(id) = mod_id.map(str::trim).filter(|id| !id.is_empty()) {
+        candidates.push(format!("assets/{id}/icon.png"));
+        candidates.push(format!("assets/{id}/logo.png"));
+    }
+    candidates.extend(["icon.png", "logo.png", "pack.png"].map(String::from));
+    candidates.iter().find_map(|path| read_icon(zip, path))
+}
+
 fn non_empty(s: Option<&str>) -> Option<String> {
     s.map(str::trim).filter(|s| !s.is_empty()).map(String::from)
 }
@@ -77,12 +105,15 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
     if let Some(bytes) = read_entry(zip, "fabric.mod.json")
         && let Ok(v) = serde_json::from_slice::<serde_json::Value>(strip_bom(&bytes))
     {
-        let icon = v.get("icon").and_then(|i| i.as_str()).map(String::from);
+        let icon = v
+            .get("icon")
+            .and_then(|spec| read_icon_spec(zip, spec))
+            .or_else(|| fallback_icon(zip, v.get("id").and_then(|x| x.as_str())));
         return LocalMeta {
             name: non_empty(v.get("name").and_then(|x| x.as_str())),
             version: clean_version(v.get("version").and_then(|x| x.as_str())),
             description: non_empty(v.get("description").and_then(|x| x.as_str())),
-            icon_png: icon.and_then(|p| read_icon(zip, &p)),
+            icon_png: icon,
         };
     }
     if let Some(bytes) = read_entry(zip, "quilt.mod.json")
@@ -91,7 +122,15 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
         let loader = v.get("quilt_loader");
         let meta = loader.and_then(|l| l.get("metadata"));
         let field = |key: &str| meta.and_then(|m| m.get(key)).and_then(|x| x.as_str());
-        let icon = field("icon").map(String::from);
+        let icon = meta
+            .and_then(|m| m.get("icon"))
+            .and_then(|spec| read_icon_spec(zip, spec))
+            .or_else(|| {
+                fallback_icon(
+                    zip,
+                    loader.and_then(|l| l.get("id")).and_then(|x| x.as_str()),
+                )
+            });
         return LocalMeta {
             name: non_empty(field("name")),
             version: clean_version(
@@ -100,7 +139,7 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
                     .and_then(|x| x.as_str()),
             ),
             description: non_empty(field("description")),
-            icon_png: icon.and_then(|p| read_icon(zip, &p)),
+            icon_png: icon,
         };
     }
     for entry in ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"] {
@@ -122,13 +161,39 @@ fn read_mod(zip: &mut ZipArchive<File>) -> LocalMeta {
             continue;
         };
         let field = |key: &str| first.get(key).and_then(|x| x.as_str());
-        let icon = field("logoFile").map(String::from);
+        let icon = field("logoFile")
+            .and_then(|path| read_icon(zip, path))
+            .or_else(|| fallback_icon(zip, field("modId")));
         return LocalMeta {
             name: non_empty(field("displayName")),
             version: clean_version(field("version")),
             description: non_empty(field("description")),
-            icon_png: icon.and_then(|p| read_icon(zip, &p)),
+            icon_png: icon,
         };
+    }
+    // 1.12 以前の Forge。配列か、`modList` を持つ辞書
+    if let Some(bytes) = read_entry(zip, "mcmod.info")
+        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(strip_bom(&bytes))
+    {
+        let first = match &v {
+            serde_json::Value::Array(list) => list.first(),
+            other => other
+                .get("modList")
+                .and_then(|list| list.as_array())
+                .and_then(|list| list.first()),
+        };
+        if let Some(first) = first {
+            let field = |key: &str| first.get(key).and_then(|x| x.as_str());
+            let icon = field("logoFile")
+                .and_then(|path| read_icon(zip, path))
+                .or_else(|| fallback_icon(zip, field("modid")));
+            return LocalMeta {
+                name: non_empty(field("name")),
+                version: clean_version(field("version")),
+                description: non_empty(field("description")),
+                icon_png: icon,
+            };
+        }
     }
     LocalMeta::default()
 }
@@ -192,6 +257,129 @@ mod tests {
         assert_eq!(m.name.as_deref(), Some("Sodium"));
         assert_eq!(m.version.as_deref(), Some("0.6.0"));
         assert_eq!(m.description.as_deref(), Some("Fast"));
+        assert_eq!(m.icon_png, Some(icon));
+    }
+
+    #[test]
+    fn fabric_icon_given_per_size_uses_the_largest_one_that_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.jar");
+        let (small, large) = (png(1), png(2));
+        make_zip(
+            &p,
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"m","name":"N","icon":{"16":"i16.png","128":"i128.png","x":"bad.png"}}"#,
+                ),
+                ("i16.png", &small),
+                ("i128.png", &large),
+            ],
+        );
+        assert_eq!(read_local_meta(ContentKind::Mod, &p).icon_png, Some(large));
+
+        // 大きい方が読めなければ、次に大きいものを使う
+        make_zip(
+            &p,
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"m","name":"N","icon":{"16":"i16.png","128":"missing.png"}}"#,
+                ),
+                ("i16.png", &small),
+            ],
+        );
+        assert_eq!(read_local_meta(ContentKind::Mod, &p).icon_png, Some(small));
+    }
+
+    #[test]
+    fn quilt_icon_given_per_size_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.jar");
+        let icon = png(3);
+        make_zip(
+            &p,
+            &[
+                (
+                    "quilt.mod.json",
+                    br#"{"quilt_loader":{"id":"q","version":"1.0","metadata":{"name":"Q","icon":{"64":"q.png"}}}}"#,
+                ),
+                ("q.png", &icon),
+            ],
+        );
+        assert_eq!(read_local_meta(ContentKind::Mod, &p).icon_png, Some(icon));
+    }
+
+    #[test]
+    fn a_mod_without_a_declared_icon_falls_back_to_the_usual_places() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.jar");
+        let (under_assets, root) = (png(4), png(5));
+        let json = br#"{"id":"mymod","name":"N"}"#;
+
+        make_zip(
+            &p,
+            &[
+                ("fabric.mod.json", json),
+                ("assets/mymod/icon.png", &under_assets),
+                ("icon.png", &root),
+            ],
+        );
+        assert_eq!(
+            read_local_meta(ContentKind::Mod, &p).icon_png,
+            Some(under_assets)
+        );
+
+        make_zip(&p, &[("fabric.mod.json", json), ("logo.png", &root)]);
+        assert_eq!(
+            read_local_meta(ContentKind::Mod, &p).icon_png,
+            Some(root.clone())
+        );
+
+        // 宣言したアイコンが読めれば、そちらを使う
+        let declared = png(6);
+        make_zip(
+            &p,
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"mymod","name":"N","icon":"d.png"}"#,
+                ),
+                ("d.png", &declared),
+                ("icon.png", &root),
+            ],
+        );
+        assert_eq!(
+            read_local_meta(ContentKind::Mod, &p).icon_png,
+            Some(declared)
+        );
+
+        // PNG でないものは使わない
+        make_zip(&p, &[("fabric.mod.json", json), ("icon.png", b"not a png")]);
+        assert_eq!(read_local_meta(ContentKind::Mod, &p).icon_png, None);
+    }
+
+    #[test]
+    fn reads_legacy_forge_mcmod_info_as_a_list_or_as_a_mod_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.jar");
+        let icon = png(7);
+        let list = br#"[{"modid":"old","name":"Old Mod","version":"1.2","description":"Very old","logoFile":"logo.png"}]"#;
+        make_zip(&p, &[("mcmod.info", list), ("logo.png", &icon)]);
+        let m = read_local_meta(ContentKind::Mod, &p);
+        assert_eq!(m.name.as_deref(), Some("Old Mod"));
+        assert_eq!(m.version.as_deref(), Some("1.2"));
+        assert_eq!(m.description.as_deref(), Some("Very old"));
+        assert_eq!(m.icon_png, Some(icon.clone()));
+
+        let wrapped = br#"{"modListVersion":2,"modList":[{"modid":"old","name":"Wrapped","version":"${version}"}]}"#;
+        make_zip(
+            &p,
+            &[("mcmod.info", wrapped), ("assets/old/logo.png", &icon)],
+        );
+        let m = read_local_meta(ContentKind::Mod, &p);
+        assert_eq!(m.name.as_deref(), Some("Wrapped"));
+        assert_eq!(m.version, None);
         assert_eq!(m.icon_png, Some(icon));
     }
 
