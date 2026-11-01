@@ -399,6 +399,7 @@
     "excluded": "Not covered by this filter: {{count}}",
     "excludedShow": "Show",
     "excludedHide": "Hide",
+    "addFiles": "Add files",
     "excludedList": "Content not covered by this filter",
     "noMatch": "Nothing matches this filter.",
     "empty": {
