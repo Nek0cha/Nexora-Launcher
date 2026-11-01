@@ -37,7 +37,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.mocked(searchModrinth).mockResolvedValue({ hits: [], offset: 0, total: 0 });
   vi.mocked(getSettings).mockResolvedValue({
-    theme: "system", language: null, maxConcurrentDownloads: 8, lastAddedInstance: null,
+    theme: "system", language: null, maxConcurrentDownloads: 8, defaultMemoryMb: 2048, lastAddedInstance: null,
   });
   vi.mocked(listContentCategories).mockResolvedValue([]);
   vi.mocked(listContent).mockResolvedValue([]);

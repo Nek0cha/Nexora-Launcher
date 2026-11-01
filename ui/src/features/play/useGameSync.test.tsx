@@ -6,8 +6,10 @@ import { onGameExited, onGameStarted } from "../../api/events";
 import type { GameExitedEvent } from "../../bindings/GameExitedEvent";
 import type { RunningSession } from "../../bindings/RunningSession";
 import type { TaskSnapshot } from "../../bindings/TaskSnapshot";
+import { CRASH_KEY } from "../crash/useCrashQueue";
 import { INSTANCES_KEY } from "../instances/useInstances";
 import { TASKS_KEY } from "../tasks/useTasks";
+import { STOP_KEY } from "./useStopFlow";
 import { LAST_EXIT_KEY, RUNNING_KEY, clearLastExit, useGameSync, type LastExit } from "./useGameSync";
 
 vi.mock("../../api/events", () => ({ onGameStarted: vi.fn(), onGameExited: vi.fn() }));
@@ -66,8 +68,8 @@ describe("useGameSync", () => {
     const { client, invalidate, invalidatedKeys } = setup();
     await flush();
     invalidate.mockClear();
-    act(() => exited({ instanceId: "i1", exitCode: 1 }));
-    act(() => exited({ instanceId: "i2", exitCode: null }));
+    act(() => exited({ instanceId: "i1", exitCode: 1, launchedAt: 0 }));
+    act(() => exited({ instanceId: "i2", exitCode: null, launchedAt: 0 }));
     expect(client.getQueryData(LAST_EXIT_KEY)).toEqual({
       i1: { instanceId: "i1", exitCode: 1, at: 1234 },
       i2: { instanceId: "i2", exitCode: null, at: 1234 },
@@ -76,12 +78,35 @@ describe("useGameSync", () => {
     expect(invalidatedKeys()).toContain(JSON.stringify(INSTANCES_KEY));
   });
 
+  it("queues a crash dialog for a non-zero exit that the launcher did not ask for", async () => {
+    const { client } = setup();
+    await flush();
+    act(() => exited({ instanceId: "i1", exitCode: 1, launchedAt: 42 }));
+    expect(client.getQueryData(CRASH_KEY)).toEqual([{ instanceId: "i1", launchedAt: 42 }]);
+  });
+
+  it("does not queue a crash dialog for exit code 0 or an unknown exit code", async () => {
+    const { client } = setup();
+    await flush();
+    act(() => exited({ instanceId: "i1", exitCode: 0, launchedAt: 1 }));
+    act(() => exited({ instanceId: "i2", exitCode: null, launchedAt: 2 }));
+    expect(client.getQueryData(CRASH_KEY) ?? []).toEqual([]);
+  });
+
+  it("does not queue a crash dialog when the launcher asked the game to stop", async () => {
+    const { client } = setup();
+    await flush();
+    client.setQueryData(STOP_KEY, { states: { i1: "forceReady" }, confirm: [] });
+    act(() => exited({ instanceId: "i1", exitCode: 1, launchedAt: 1 }));
+    expect(client.getQueryData(CRASH_KEY) ?? []).toEqual([]);
+  });
+
   it("keeps the last exit while nothing observes it", async () => {
     vi.useFakeTimers();
     try {
       const { client } = setup();
       await flush();
-      act(() => exited({ instanceId: "i1", exitCode: 1 }));
+      act(() => exited({ instanceId: "i1", exitCode: 1, launchedAt: 0 }));
       // 既定の gcTime（5 分）を大きく超えても、ホームに戻ったときに通知を出せるよう残す
       await act(async () => {
         vi.advanceTimersByTime(60 * 60 * 1000);

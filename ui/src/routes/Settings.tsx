@@ -4,6 +4,7 @@ import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
 import { FailureNotice } from "../components/FailureNotice";
 import { toErrorPayload } from "../api/ipc";
+import { MEMORY_MAX_MB, MEMORY_MIN_MB } from "../features/instances/settingsForm";
 import { useSettings, useSettingsWriteError, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, type Lang } from "../i18n";
 import type { Theme } from "../bindings/Theme";
@@ -68,6 +69,16 @@ export default function Settings() {
             { id: "en", label: t("language.en") },
           ]}
           onChange={(value) => update.mutate({ key: "language", value })}
+        />
+      </Section>
+      <Section title={t("memory.section")}>
+        <NumberField
+          label={t("memory.label")}
+          value={data.defaultMemoryMb}
+          min={MEMORY_MIN_MB}
+          max={MEMORY_MAX_MB}
+          inputWidth="w-16"
+          onChange={(value) => update.mutate({ key: "defaultMemoryMb", value })}
         />
       </Section>
       <Section title={t("downloads.section")}>

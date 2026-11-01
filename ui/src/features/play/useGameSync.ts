@@ -8,7 +8,8 @@ import { INSTANCES_KEY } from "../instances/useInstances";
 import { isTerminal } from "../tasks/taskTable";
 import { useUpgradeTaskWatch } from "../upgrade/useUpgradeTaskWatch";
 import { useTasks } from "../tasks/useTasks";
-import { clearStop } from "./useStopFlow";
+import { pushCrash } from "../crash/useCrashQueue";
+import { clearStop, isStopRequested } from "./useStopFlow";
 
 export const RUNNING_KEY = ["running"] as const;
 export const LAST_EXIT_KEY = ["lastExit"] as const;
@@ -84,6 +85,11 @@ export function useGameSync(): void {
         ...prev,
         [event.instanceId]: { instanceId: event.instanceId, exitCode: event.exitCode, at: Date.now() },
       }));
+      // 異常終了（終了コードが 0 でも不明でもなく、ランチャーが止めたのでもない）は診断のダイアログに回す。
+      // 停止の待ちの状態は次の clearStop で消えるので、その前に読む
+      if (event.exitCode !== null && event.exitCode !== 0 && !isStopRequested(client, event.instanceId)) {
+        pushCrash(client, { instanceId: event.instanceId, launchedAt: event.launchedAt });
+      }
       // 停止の待ちを終え、確認のダイアログが開いていれば閉じる
       clearStop(client, event.instanceId);
       refresh();

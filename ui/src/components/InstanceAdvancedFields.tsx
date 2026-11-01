@@ -33,6 +33,11 @@ export function InstanceAdvancedFields({
     { id: "auto", label: t("instances.detail.modeAuto") },
     { id: "manual", label: t("instances.detail.modeManual") },
   ] as const;
+  // メモリの「自動」は、全体設定の既定値を使う意味なので、Java の「自動」とは別の文言にする
+  const memoryModes = [
+    { id: "auto", label: t("instances.detail.modeFollowGlobal") },
+    { id: "manual", label: t("instances.detail.modeManual") },
+  ] as const;
 
   return (
     <>
@@ -40,7 +45,7 @@ export function InstanceAdvancedFields({
         <Select<MemoryMode>
           label={t("instances.detail.memory")}
           value={form.memoryMode}
-          options={[...modes]}
+          options={[...memoryModes]}
           onChange={(memoryMode) => onChange({ memoryMode })}
           triggerClassName={controlWidth}
         />

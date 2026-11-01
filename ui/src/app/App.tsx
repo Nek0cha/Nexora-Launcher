@@ -8,6 +8,7 @@ import { appInfo } from "../api/commands";
 import { AppBar } from "../components/appbar/AppBar";
 import { RunningPill } from "../components/appbar/RunningPill";
 import { CommandPalette } from "../components/CommandPalette";
+import { CrashDialog } from "../components/CrashDialog";
 import { ImportLauncherHost } from "../components/import/ImportLauncherHost";
 import { MrpackDropHost } from "../components/mrpack/MrpackDropHost";
 import { Sidebar } from "../components/Sidebar";
@@ -86,6 +87,7 @@ export function App() {
           <CommandPalette />
           <MrpackDropHost />
           <ImportLauncherHost />
+          <CrashDialog />
         </div>
         <ToastRegion />
       </MotionConfig>

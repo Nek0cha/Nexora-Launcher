@@ -12,6 +12,10 @@
     "ja": "日本語",
     "en": "English"
   },
+  "memory": {
+    "section": "Memory",
+    "label": "Default memory (MB)"
+  },
   "downloads": {
     "section": "Downloads",
     "label": "Concurrent downloads"

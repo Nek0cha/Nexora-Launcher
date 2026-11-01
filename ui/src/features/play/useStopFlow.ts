@@ -68,6 +68,11 @@ export function clearStop(client: QueryClient, instanceId: string): void {
   setState(client, instanceId, "idle");
 }
 
+/** 停止を頼んで終了を待っているか（待ちの表示を消す前に読む） */
+export function isStopRequested(client: QueryClient, instanceId: string): boolean {
+  return client.getQueryData<StopTable>(STOP_KEY)?.states[instanceId] !== undefined;
+}
+
 function isRunning(client: QueryClient, instanceId: string): boolean {
   const sessions = client.getQueryData<RunningSession[]>(RUNNING_KEY);
   // 一覧がまだ無いときは、動いているものとして扱う（確認を出し損ねない）

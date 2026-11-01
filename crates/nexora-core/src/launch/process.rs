@@ -30,7 +30,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub trait GameNotifier: Send + Sync {
     fn started(&self, session: &RunningSession);
     fn log(&self, instance_id: &str, record: &LogRecord);
-    fn exited(&self, instance_id: &str, exit_code: Option<i32>);
+    /// `launched_at` は、終わった起動の時刻（ゲームのログの名前と同じ）。
+    fn exited(&self, instance_id: &str, exit_code: Option<i32>, launched_at: i64);
     /// 起動前の共通設定の適用が終わった（参加中のインスタンスだけ）。
     fn sync_apply_finished(&self, event: &SyncApplyFinishedEvent);
 }
@@ -50,6 +51,9 @@ pub struct RunningSession {
 pub struct GameExitedEvent {
     pub instance_id: String,
     pub exit_code: Option<i32>,
+    /// 終わった起動の時刻（UNIX ミリ秒）。診断がその起動のログを探すために使う
+    #[ts(type = "number")]
+    pub launched_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -321,7 +325,7 @@ impl GameProcesses {
             let writer = this.write_logs(&instance_id, &log_path, rx);
             let (status, ()) = tokio::join!(child.wait(), writer);
             let code = status.ok().and_then(|s| s.code());
-            this.finish(&instance_id, pid, now_ms() - launched_at, code);
+            this.finish(&instance_id, pid, launched_at, now_ms() - launched_at, code);
         });
         Ok(session)
     }
@@ -354,7 +358,14 @@ impl GameProcesses {
     }
 
     /// プレイ時間を足し、記録と argfile を消して終了を知らせる。pid が違う行（新しい起動）は消さない。
-    fn finish(&self, instance_id: &str, pid: u32, play_ms: i64, exit_code: Option<i32>) {
+    fn finish(
+        &self,
+        instance_id: &str,
+        pid: u32,
+        launched_at: i64,
+        play_ms: i64,
+        exit_code: Option<i32>,
+    ) {
         let argfile = self.paths.argfile(instance_id);
         match std::fs::remove_file(&argfile) {
             Ok(()) => {}
@@ -385,7 +396,7 @@ impl GameProcesses {
                 "failed to clear running session"
             );
         }
-        self.notifier.exited(instance_id, exit_code);
+        self.notifier.exited(instance_id, exit_code, launched_at);
     }
 
     fn latest_log_mtime(&self, instance_id: &str) -> Option<i64> {
@@ -414,6 +425,7 @@ impl GameProcesses {
                             this.finish(
                                 &row.instance_id,
                                 row.pid,
+                                row.launched_at,
                                 now_ms() - row.launched_at,
                                 None,
                             );
@@ -424,7 +436,7 @@ impl GameProcesses {
             } else {
                 let play =
                     closed_play_time(row.launched_at, self.latest_log_mtime(&row.instance_id));
-                self.finish(&row.instance_id, row.pid, play, None);
+                self.finish(&row.instance_id, row.pid, row.launched_at, play, None);
             }
         }
         Ok(())
@@ -476,7 +488,7 @@ mod tests {
     impl GameNotifier for NoopNotifier {
         fn started(&self, _: &RunningSession) {}
         fn log(&self, _: &str, _: &LogRecord) {}
-        fn exited(&self, _: &str, _: Option<i32>) {}
+        fn exited(&self, _: &str, _: Option<i32>, _: i64) {}
         fn sync_apply_finished(&self, _: &SyncApplyFinishedEvent) {}
     }
 
@@ -523,6 +535,7 @@ fov:0.9
         GameProcesses::new(db.clone(), paths, Arc::new(NoopNotifier)).finish(
             &inst.id,
             7,
+            0,
             0,
             Some(0),
         );

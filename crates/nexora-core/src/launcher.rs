@@ -1,6 +1,7 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
 mod content;
+mod crash;
 mod import;
 mod mrpack;
 mod upgrade;
@@ -79,8 +80,6 @@ pub const MRPACK_KIND: &str = "mrpack-import";
 pub const IMPORT_KIND: &str = "launcher-import";
 /// インスタンスのバージョンを上げるタスク。
 pub const UPGRADE_KIND: &str = "instance-upgrade";
-/// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
-const AUTO_MEMORY_MB: u32 = 2048;
 
 /// 同期の処理を `spawn_blocking` で動かす。
 async fn blocking<T: Send + 'static>(
@@ -136,12 +135,12 @@ fn clamp_u32(n: u64) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// インスタンスの設定による -Xmx の値（MB）。
-fn memory_mb(inst: &Instance) -> u32 {
-    match (inst.memory_mode, inst.memory_mb) {
+/// インスタンスの設定による -Xmx の値（MB）。自動（全体設定に従う）のときは全体設定の既定値を使う。
+fn memory_mb(mode: MemoryMode, manual_mb: Option<u32>, default_mb: u32) -> u32 {
+    match (mode, manual_mb) {
         (MemoryMode::Manual, Some(mb)) => mb,
         // 手動で値がないのは保存時の検証で起きないが、起きても自動と同じ値で起動する
-        (MemoryMode::Manual, None) | (MemoryMode::Auto, _) => AUTO_MEMORY_MB,
+        (MemoryMode::Manual, None) | (MemoryMode::Auto, _) => default_mb,
     }
 }
 
@@ -1082,6 +1081,7 @@ impl Launcher {
         }
 
         let game_dir = instance::game_dir(&env.paths, &inst);
+        let default_memory_mb = settings::load(&env.db)?.default_memory_mb;
         let args = build_args(&ArgInputs {
             version: &version,
             session: &session,
@@ -1092,7 +1092,7 @@ impl Launcher {
             library_dir: &env.paths.libraries_dir(),
             classpath: &game.classpath,
             logging_argument: game.logging.as_ref().map(|l| l.argument.as_str()),
-            memory_mb: memory_mb(&inst),
+            memory_mb: memory_mb(inst.memory_mode, inst.memory_mb, default_memory_mb),
             extra_jvm_args: &extra_jvm_args,
             launcher_version: env!("CARGO_PKG_VERSION"),
         });
@@ -1138,5 +1138,26 @@ impl Launcher {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn manual_memory_ignores_the_default() {
+        assert_eq!(memory_mb(MemoryMode::Manual, Some(4096), 8192), 4096);
+    }
+
+    #[test]
+    fn auto_memory_uses_the_default() {
+        assert_eq!(memory_mb(MemoryMode::Auto, None, 8192), 8192);
+        assert_eq!(memory_mb(MemoryMode::Auto, Some(1024), 8192), 8192);
+    }
+
+    #[test]
+    fn manual_without_a_value_uses_the_default() {
+        assert_eq!(memory_mb(MemoryMode::Manual, None, 8192), 8192);
     }
 }

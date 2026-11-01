@@ -264,6 +264,13 @@ describe("InstanceDetail", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("memory_follows_the_global_setting_while_java_stays_auto", async () => {
+    mount([instance()]);
+    await screen.findByRole("button", { name: /Memory/ });
+    expect(screen.getByRole("button", { name: /Memory/ }).textContent).toContain("Use global setting");
+    expect(screen.getByRole("button", { name: /Java/ }).textContent).toContain("Auto");
+  });
+
   it("slider_and_number_input_stay_in_sync", async () => {
     mount([instance({ memoryMode: "manual", memoryMb: 4096 })]);
     const slider = (await screen.findByRole("slider", { name: "Memory amount" })) as HTMLInputElement;

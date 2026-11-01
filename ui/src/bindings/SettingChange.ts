@@ -2,4 +2,4 @@
 import type { Language } from "./Language";
 import type { Theme } from "./Theme";
 
-export type SettingChange = { "key": "theme", "value": Theme } | { "key": "language", "value": Language } | { "key": "maxConcurrentDownloads", "value": number };
+export type SettingChange = { "key": "theme", "value": Theme } | { "key": "language", "value": Language } | { "key": "maxConcurrentDownloads", "value": number } | { "key": "defaultMemoryMb", "value": number };

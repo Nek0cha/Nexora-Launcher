@@ -18,6 +18,7 @@ const base: Settings = {
   theme: "dark",
   language: "en",
   maxConcurrentDownloads: 8,
+  defaultMemoryMb: 2048,
   lastAddedInstance: null,
 };
 

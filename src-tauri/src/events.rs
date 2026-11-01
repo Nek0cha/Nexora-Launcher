@@ -118,13 +118,14 @@ impl GameNotifier for TauriGameNotifier {
         );
     }
 
-    fn exited(&self, instance_id: &str, exit_code: Option<i32>) {
+    fn exited(&self, instance_id: &str, exit_code: Option<i32>, launched_at: i64) {
         tracing::info!(instance_id, ?exit_code, "game exited");
         self.emit(
             GAME_EXITED,
             GameExitedEvent {
                 instance_id: instance_id.to_string(),
                 exit_code,
+                launched_at,
             },
         );
     }
