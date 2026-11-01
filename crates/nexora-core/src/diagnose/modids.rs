@@ -9,7 +9,9 @@ use zip::ZipArchive;
 use crate::content::local_meta::{read_entry, strip_bom};
 
 fn str_of(v: Option<&Value>) -> Option<&str> {
-    v.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+    v.and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
 }
 
 /// `provides` は文字列か、`{"id": ...}` の配列。
@@ -141,7 +143,8 @@ mod tests {
 
     #[test]
     fn reads_every_mod_id_of_a_forge_mods_toml() {
-        let toml = b"modLoader=\"javafml\"\n[[mods]]\nmodId=\"create\"\n[[mods]]\nmodId=\"flywheel\"\n";
+        let toml =
+            b"modLoader=\"javafml\"\n[[mods]]\nmodId=\"create\"\n[[mods]]\nmodId=\"flywheel\"\n";
         let (_d, jar) = make_jar(&[("META-INF/mods.toml", toml)]);
         assert_eq!(read_mod_ids(&jar), ["create", "flywheel"]);
     }
@@ -175,6 +178,9 @@ mod tests {
         let (_d, jar) = make_jar(&[("net/example/Foo.class", b"x")]);
         assert!(jar_defines_class(&jar, "net.example.Foo"));
         assert!(!jar_defines_class(&jar, "net.example.Bar"));
-        assert!(!jar_defines_class(&jar.with_extension("none"), "net.example.Foo"));
+        assert!(!jar_defines_class(
+            &jar.with_extension("none"),
+            "net.example.Foo"
+        ));
     }
 }
