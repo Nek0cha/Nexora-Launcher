@@ -66,7 +66,9 @@ pub fn read_mod_ids(jar: &Path) -> Vec<String> {
         };
         let mods = table.get("mods").and_then(|m| m.as_array());
         for m in mods.into_iter().flatten() {
-            if let Some(id) = str_of(m.get("modId")) {
+            if let Some(id) = m.get("modId").and_then(|x| x.as_str()).map(str::trim)
+                && !id.is_empty()
+            {
                 ids.push(id.to_string());
             }
         }
