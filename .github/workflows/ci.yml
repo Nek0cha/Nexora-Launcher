@@ -43,6 +43,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Release scripts
+        if: runner.os == 'Linux'
+        run: |
+          node --test scripts/*.test.mjs
+          node scripts/check-version.mjs
+
       - name: Rust format
         run: cargo fmt --all --check
 
