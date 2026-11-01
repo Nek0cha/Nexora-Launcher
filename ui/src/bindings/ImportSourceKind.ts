@@ -3,4 +3,4 @@
 /**
  * 読み込み元のランチャー。
  */
-export type ImportSourceKind = "modrinth_app";
+export type ImportSourceKind = "modrinth_app" | "prism_launcher" | "official_launcher" | "curse_forge";

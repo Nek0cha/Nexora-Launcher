@@ -747,7 +747,14 @@
   },
   "launcherImport": {
     "open": "Import from another launcher",
-    "title": "Import from Modrinth App",
+    "title": "Import instances",
+    "sourceLabel": "Launcher",
+    "source": {
+      "modrinth_app": "Modrinth App",
+      "prism_launcher": "Prism Launcher",
+      "official_launcher": "Minecraft Launcher",
+      "curse_forge": "CurseForge"
+    },
     "submit": "Import",
     "submitCount": "Import {{count}}",
     "continue": "Import anyway",

@@ -6,8 +6,11 @@ use std::sync::Arc;
 
 use super::*;
 use crate::import::copy::copy_tree;
+use crate::import::curseforge::CurseForgeApp;
 use crate::import::duplicates::find_duplicates;
 use crate::import::modrinth_app::ModrinthApp;
+use crate::import::official::OfficialLauncher;
+use crate::import::prism::PrismLauncher;
 use crate::import::{ImportKind, ImportRequest, ImportSource, ImportSourceKind, SourceInstance};
 use crate::install::kib;
 use crate::meta::loader::LoaderVersionEntry;
@@ -27,13 +30,31 @@ fn open_source(
     kind: ImportSourceKind,
     root: Option<PathBuf>,
 ) -> Result<Arc<dyn ImportSource>, CoreError> {
+    let found = |root: Option<PathBuf>, locate: fn() -> Option<PathBuf>, name: &str| {
+        root.or_else(locate)
+            .ok_or_else(|| unavailable(format!("{name} was not found")))
+    };
     match kind {
-        ImportSourceKind::ModrinthApp => {
-            let root = root
-                .or_else(ModrinthApp::locate)
-                .ok_or_else(|| unavailable("Modrinth App was not found"))?;
-            Ok(Arc::new(ModrinthApp::at(root)))
-        }
+        ImportSourceKind::ModrinthApp => Ok(Arc::new(ModrinthApp::at(found(
+            root,
+            ModrinthApp::locate,
+            "Modrinth App",
+        )?))),
+        ImportSourceKind::PrismLauncher => Ok(Arc::new(PrismLauncher::at(found(
+            root,
+            PrismLauncher::locate,
+            "Prism Launcher",
+        )?))),
+        ImportSourceKind::OfficialLauncher => Ok(Arc::new(OfficialLauncher::at(found(
+            root,
+            OfficialLauncher::locate,
+            "the official launcher",
+        )?))),
+        ImportSourceKind::CurseForge => Ok(Arc::new(CurseForgeApp::at(found(
+            root,
+            CurseForgeApp::locate,
+            "the CurseForge app",
+        )?))),
     }
 }
 

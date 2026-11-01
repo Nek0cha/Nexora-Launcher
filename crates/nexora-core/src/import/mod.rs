@@ -1,8 +1,11 @@
 //! 他のランチャーのインスタンスを、選んだ中身だけコピーして取り込む。
 
 pub mod copy;
+pub mod curseforge;
 pub mod duplicates;
 pub mod modrinth_app;
+pub mod official;
+pub mod prism;
 
 use std::path::PathBuf;
 
@@ -66,6 +69,9 @@ pub struct SourceInstance {
 #[ts(export)]
 pub enum ImportSourceKind {
     ModrinthApp,
+    PrismLauncher,
+    OfficialLauncher,
+    CurseForge,
 }
 
 /// 取り込むインスタンスと、その中で取り込む種類。
@@ -100,6 +106,28 @@ mod tests {
             ["config", "options.txt", "servers.dat"]
         );
         assert_eq!(ImportKind::ALL.len(), 4);
+    }
+
+    #[test]
+    fn source_kinds_use_snake_case_names() {
+        let names: Vec<String> = [
+            ImportSourceKind::ModrinthApp,
+            ImportSourceKind::PrismLauncher,
+            ImportSourceKind::OfficialLauncher,
+            ImportSourceKind::CurseForge,
+        ]
+        .iter()
+        .map(|k| serde_json::to_string(k).unwrap())
+        .collect();
+        assert_eq!(
+            names,
+            [
+                "\"modrinth_app\"",
+                "\"prism_launcher\"",
+                "\"official_launcher\"",
+                "\"curse_forge\""
+            ]
+        );
     }
 
     #[test]

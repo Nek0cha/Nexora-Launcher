@@ -747,7 +747,14 @@
   },
   "launcherImport": {
     "open": "他のランチャーから読み込む",
-    "title": "Modrinth App から読み込む",
+    "title": "インスタンスを読み込む",
+    "sourceLabel": "ランチャー",
+    "source": {
+      "modrinth_app": "Modrinth App",
+      "prism_launcher": "Prism Launcher",
+      "official_launcher": "Minecraft ランチャー",
+      "curse_forge": "CurseForge"
+    },
     "submit": "読み込む",
     "submitCount": "{{count}} 件を読み込む",
     "continue": "それでも続ける",

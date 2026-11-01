@@ -130,6 +130,41 @@ describe("ImportLauncherDialog", () => {
     expect(listImportInstances).toHaveBeenLastCalledWith("modrinth_app", "D:\\Apps\\ModrinthApp");
   });
 
+  it("lists the instances of the launcher chosen at the top and imports from it", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([row()]);
+    vi.mocked(findImportDuplicates).mockResolvedValue([]);
+    vi.mocked(importFromLauncher).mockResolvedValue([{ instance: {} as never, taskId: "t1" }]);
+    mount();
+
+    await check("Alpha");
+    fireEvent.click(screen.getByRole("radio", { name: "Prism Launcher" }));
+    await waitFor(() => expect(listImportInstances).toHaveBeenLastCalledWith("prism_launcher", null));
+    fireEvent.click(await check("Alpha"));
+    fireEvent.click(screen.getByRole("button", { name: "Import 1" }));
+
+    await waitFor(() =>
+      expect(importFromLauncher).toHaveBeenCalledWith(
+        "prism_launcher",
+        null,
+        [{ id: "a", kinds: ["mods", "saves"] }],
+        false,
+      ),
+    );
+    expect(findImportDuplicates).toHaveBeenCalledWith("prism_launcher", null, ["a"]);
+  });
+
+  it("clears the selection when another launcher is chosen", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([row()]);
+    mount();
+
+    fireEvent.click(await check("Alpha"));
+    expect(await check("Mods")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "CurseForge" }));
+
+    await waitFor(() => expect(listImportInstances).toHaveBeenLastCalledWith("curse_forge", null));
+    expect(screen.queryByRole("checkbox", { name: "Mods" })).toBeNull();
+  });
+
   it("shows why the launcher data could not be read, next to the folder button", async () => {
     vi.mocked(listImportInstances).mockRejectedValue(
       new IpcError({ code: "import.unavailable", params: { reason: "no such column: name" }, detail: null }),
