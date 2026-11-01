@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Checkbox, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { toErrorPayload } from "../api/ipc";
 import type { CrashCandidate } from "../bindings/CrashCandidate";
 import type { ErrorPayload } from "../bindings/ErrorPayload";
 import { initialChecked } from "../features/crash/crashSelection";
+import { invalidateChanged } from "../features/content/useContent";
 import { type CrashEntry, useCrashQueue } from "../features/crash/useCrashQueue";
 import { useInstances } from "../features/instances/useInstances";
 import { FailureNotice } from "./FailureNotice";
@@ -31,6 +32,7 @@ function Reasons({ candidate }: { candidate: CrashCandidate }) {
 function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const client = useQueryClient();
   const { data: instances } = useInstances();
   const diagnosis = useQuery({
     queryKey: ["crashDiagnosis", entry.instanceId, entry.launchedAt],
@@ -63,6 +65,8 @@ function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
       }
       return { done, failed };
     },
+    // 一部だけ変わっていることもあるので、成否にかかわらず一覧と更新の確認を取り直す
+    onSettled: () => invalidateChanged(client, entry.instanceId),
     onSuccess: ({ done, failed }) => {
       setRemoved((prev) => new Set([...prev, ...done]));
       setFailures(failed);

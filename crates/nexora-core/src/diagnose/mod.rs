@@ -107,15 +107,15 @@ pub fn build_candidates(
 ) -> Vec<CrashCandidate> {
     let mut pending: Vec<Option<Pending>> = mods.iter().map(|_| None).collect();
     for clue in clues {
-        let Some(i) = mods.iter().position(|m| m.mod_ids.contains(&clue.mod_id)) else {
-            continue;
-        };
-        let p = slot(&mut pending, i);
-        if !p.reasons.contains(&clue.reason) {
-            p.reasons.push(clue.reason);
-        }
-        if p.best.as_ref().is_none_or(|b| clue.reason < b.reason) {
-            p.best = Some(clue);
+        // 同じ ID の jar が複数あるとき（重複）は、どれが原因か分からないので全部を候補にする
+        for i in (0..mods.len()).filter(|&i| mods[i].mod_ids.contains(&clue.mod_id)) {
+            let p = slot(&mut pending, i);
+            if !p.reasons.contains(&clue.reason) {
+                p.reasons.push(clue.reason);
+            }
+            if p.best.as_ref().is_none_or(|b| clue.reason < b.reason) {
+                p.best = Some(clue.clone());
+            }
         }
     }
     for class in stack {
@@ -381,6 +381,18 @@ mod tests {
         );
         let names: Vec<_> = got.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["dep.jar", "mixin.jar", "stack.jar"]);
+    }
+
+    #[test]
+    fn every_jar_with_the_clued_mod_id_is_a_candidate() {
+        let mods = [entry("foo-1.jar", &["foo"]), entry("foo-2.jar", &["foo"])];
+        let got = build_candidates(
+            vec![clue("foo", CrashReason::ModLoadingError, None)],
+            &[],
+            &mods,
+        );
+        let names: Vec<_> = got.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["foo-1.jar", "foo-2.jar"]);
     }
 
     #[test]

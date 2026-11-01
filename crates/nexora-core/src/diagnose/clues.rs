@@ -40,7 +40,7 @@ static LOAD_FAILED: LazyLock<Regex> =
 static MIXIN_APPLY: LazyLock<Regex> = LazyLock::new(|| re(r"Mixin apply for mod (\S+) failed"));
 static PAREN_ID: LazyLock<Regex> = LazyLock::new(|| re(r"\(([^)]+)\)"));
 static STACK_FRAME: LazyLock<Regex> =
-    LazyLock::new(|| re(r"^\s*at (?:[\w.$-]+//?)?([\w.$]+)\.[\w$<>]+\("));
+    LazyLock::new(|| re(r"^\s*at (?:[^\s/(]+//?){0,2}([\w.$]+)\.[\w$<>]+\("));
 
 fn evidence(line: &str) -> String {
     line.trim().chars().take(MAX_EVIDENCE_CHARS).collect()
@@ -256,6 +256,15 @@ mod tests {
     fn very_long_lines_are_not_read() {
         let long = format!("Mixin apply for mod foo failed {}", "x".repeat(20_000));
         assert!(extract_clues(&long).is_empty());
+    }
+
+    #[test]
+    fn stack_classes_reads_modern_forge_frames_with_layer_and_module_prefixes() {
+        let text = "\tat TRANSFORMER/create@0.5.1.f/com.simibubi.create.Foo.bar(Foo.java:10)\n\
+                    \tat TRANSFORMER/minecraft@1.20.1/net.minecraft.client.Minecraft.run(Minecraft.java:1)\n\
+                    \tat SECURE-BOOTSTRAP/fml@47/net.minecraftforge.fml.Y.z(Y.java:2)\n\
+                    \tat LAYER PLUGIN/some.layer@1/org.example.Baz.q(Baz.java:5)\n";
+        assert_eq!(stack_classes(text), ["com.simibubi.create.Foo"]);
     }
 
     #[test]

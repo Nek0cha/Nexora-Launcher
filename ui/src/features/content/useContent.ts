@@ -17,7 +17,7 @@ export const updatesKey = (instanceId: string) => ["content-updates", instanceId
  * 中身を変えたあとに、一覧と更新の確認を取り直す。更新の確認が古いままだと、
  * 消した行や名前の変わった行を「すべて更新」に送ってしまう。
  */
-function invalidateChanged(client: QueryClient, instanceId: string) {
+export function invalidateChanged(client: QueryClient, instanceId: string) {
   void client.invalidateQueries({ queryKey: contentKey(instanceId) });
   void client.invalidateQueries({ queryKey: updatesKey(instanceId) });
 }

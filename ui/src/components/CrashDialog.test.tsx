@@ -93,6 +93,20 @@ describe("CrashDialog", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
+  it("refreshes the mod list and the update check of the instance after disabling", async () => {
+    vi.mocked(setContentEnabled).mockResolvedValue(null);
+    const client = mount({ logName: "42.log", candidates: [candidate("mods/a.jar")] });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await screen.findByRole("checkbox", { name: /a\.jar/ });
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(setContentEnabled).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      const keys = invalidate.mock.calls.map(([filter]) => JSON.stringify(filter?.queryKey));
+      expect(keys).toContain(JSON.stringify(["content", "i1"]));
+      expect(keys).toContain(JSON.stringify(["content-updates", "i1"]));
+    });
+  });
+
   it("keeps a failed mod in the list while the rest are disabled", async () => {
     vi.mocked(setContentEnabled).mockImplementation(async (_i, _k, relPath) => {
       if (relPath === "mods/a.jar") throw new IpcError({ code: "content.exists", params: {}, detail: null });

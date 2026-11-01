@@ -1,12 +1,22 @@
 //! jar の中のメタデータから MOD ID を読む。診断で、ログに出た ID と入っている jar を結びつけるために使う。
 
 use std::fs::File;
+use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 
 use serde_json::Value;
 use zip::ZipArchive;
 
-use crate::content::local_meta::{read_entry, strip_bom};
+use crate::content::local_meta::strip_bom;
+
+/// zip の 1 エントリから読む上限（zip 爆弾への備え）。
+const MAX_ENTRY_BYTES: u64 = 4 * 1024 * 1024;
+/// 同梱された jar 1 つの上限。
+const MAX_BUNDLED_JAR_BYTES: u64 = 16 * 1024 * 1024;
+/// 同梱された jar を読む数の上限。
+const MAX_BUNDLED_JARS: usize = 64;
+/// 同梱された jar が置かれる場所（Fabric / Quilt と、Forge / NeoForge の jar-in-jar）。
+const BUNDLED_DIRS: [&str; 2] = ["META-INF/jars/", "META-INF/jarjar/"];
 
 fn str_of(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str)
@@ -27,28 +37,33 @@ fn push_provides(ids: &mut Vec<String>, provides: Option<&Value>) {
     }
 }
 
-fn read_json(zip: &mut ZipArchive<File>, name: &str) -> Option<Value> {
-    let bytes = read_entry(zip, name)?;
+/// エントリを `limit` バイトまで読む。上限を超えるものは読まない。
+fn read_capped<R: Read + Seek>(zip: &mut ZipArchive<R>, name: &str, limit: u64) -> Option<Vec<u8>> {
+    let entry = zip.by_name(name).ok()?;
+    if entry.size() > limit {
+        return None;
+    }
+    let mut buf = Vec::new();
+    entry.take(limit + 1).read_to_end(&mut buf).ok()?;
+    (buf.len() as u64 <= limit).then_some(buf)
+}
+
+fn read_json<R: Read + Seek>(zip: &mut ZipArchive<R>, name: &str) -> Option<Value> {
+    let bytes = read_capped(zip, name, MAX_ENTRY_BYTES)?;
     serde_json::from_slice(strip_bom(&bytes)).ok()
 }
 
-/// jar に入っている MOD ID。読めない、壊れている、メタデータが無い場合は空。
-pub fn read_mod_ids(jar: &Path) -> Vec<String> {
-    let Ok(file) = File::open(jar) else {
-        return Vec::new();
-    };
-    let Ok(mut zip) = ZipArchive::new(file) else {
-        return Vec::new();
-    };
+/// 1 つの zip 自身のメタデータにある MOD ID（同梱された jar は含めない）。
+fn own_ids<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Vec<String> {
     let mut ids = Vec::new();
-    if let Some(v) = read_json(&mut zip, "fabric.mod.json") {
+    if let Some(v) = read_json(zip, "fabric.mod.json") {
         if let Some(id) = str_of(v.get("id")) {
             ids.push(id.to_string());
         }
         push_provides(&mut ids, v.get("provides"));
         return ids;
     }
-    if let Some(v) = read_json(&mut zip, "quilt.mod.json") {
+    if let Some(v) = read_json(zip, "quilt.mod.json") {
         let loader = v.get("quilt_loader");
         if let Some(id) = str_of(loader.and_then(|l| l.get("id"))) {
             ids.push(id.to_string());
@@ -57,7 +72,7 @@ pub fn read_mod_ids(jar: &Path) -> Vec<String> {
         return ids;
     }
     for entry in ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"] {
-        let Some(bytes) = read_entry(&mut zip, entry) else {
+        let Some(bytes) = read_capped(zip, entry, MAX_ENTRY_BYTES) else {
             continue;
         };
         let Ok(text) = std::str::from_utf8(strip_bom(&bytes)) else {
@@ -78,7 +93,7 @@ pub fn read_mod_ids(jar: &Path) -> Vec<String> {
             return ids;
         }
     }
-    if let Some(v) = read_json(&mut zip, "mcmod.info") {
+    if let Some(v) = read_json(zip, "mcmod.info") {
         // 配列か、`modList` を持つ辞書
         let list = match &v {
             Value::Array(list) => Some(list),
@@ -87,6 +102,41 @@ pub fn read_mod_ids(jar: &Path) -> Vec<String> {
         for m in list.into_iter().flatten() {
             if let Some(id) = str_of(m.get("modid")) {
                 ids.push(id.to_string());
+            }
+        }
+    }
+    ids
+}
+
+/// jar に入っている MOD ID。同梱された jar（jar-in-jar）の MOD も、外側の jar のものとして 1 段だけ含める。
+/// 読めない、壊れている、メタデータが無い場合は空。
+pub fn read_mod_ids(jar: &Path) -> Vec<String> {
+    let Ok(file) = File::open(jar) else {
+        return Vec::new();
+    };
+    let Ok(mut zip) = ZipArchive::new(file) else {
+        return Vec::new();
+    };
+    let mut ids = own_ids(&mut zip);
+    let bundled: Vec<String> = (0..zip.len())
+        .filter_map(|i| {
+            zip.by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|n| n.into_owned()))
+        })
+        .filter(|name| name.ends_with(".jar") && BUNDLED_DIRS.iter().any(|d| name.starts_with(d)))
+        .take(MAX_BUNDLED_JARS)
+        .collect();
+    for name in bundled {
+        let Some(bytes) = read_capped(&mut zip, &name, MAX_BUNDLED_JAR_BYTES) else {
+            continue;
+        };
+        let Ok(mut inner) = ZipArchive::new(Cursor::new(bytes)) else {
+            continue;
+        };
+        for id in own_ids(&mut inner) {
+            if !ids.contains(&id) {
+                ids.push(id);
             }
         }
     }
@@ -160,6 +210,37 @@ mod tests {
     fn reads_legacy_mcmod_info_array() {
         let (_d, jar) = make_jar(&[("mcmod.info", br#"[{"modid":"oldmod"},{"modid":"second"}]"#)]);
         assert_eq!(read_mod_ids(&jar), ["oldmod", "second"]);
+    }
+
+    #[test]
+    fn mods_bundled_inside_the_jar_are_read_one_level_deep() {
+        let inner_fabric = {
+            let (_d, p) = make_jar(&[("fabric.mod.json", br#"{"id":"porting_lib"}"#)]);
+            std::fs::read(p).unwrap()
+        };
+        let inner_forge = {
+            let (_d, p) = make_jar(&[("META-INF/mods.toml", b"[[mods]]\nmodId=\"flywheel\"\n")]);
+            std::fs::read(p).unwrap()
+        };
+        let (_d, jar) = make_jar(&[
+            (
+                "fabric.mod.json",
+                br#"{"id":"create","jars":[{"file":"META-INF/jars/porting_lib.jar"}]}"#,
+            ),
+            ("META-INF/jars/porting_lib.jar", &inner_fabric),
+            ("META-INF/jarjar/flywheel.jar", &inner_forge),
+            ("META-INF/jars/not-a-jar.txt", b"x"),
+        ]);
+        assert_eq!(read_mod_ids(&jar), ["create", "porting_lib", "flywheel"]);
+    }
+
+    #[test]
+    fn a_bundled_jar_that_is_itself_broken_is_ignored() {
+        let (_d, jar) = make_jar(&[
+            ("fabric.mod.json", br#"{"id":"outer"}"#),
+            ("META-INF/jars/bad.jar", b"not a zip"),
+        ]);
+        assert_eq!(read_mod_ids(&jar), ["outer"]);
     }
 
     #[test]
