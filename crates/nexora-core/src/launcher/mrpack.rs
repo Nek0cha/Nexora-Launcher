@@ -8,7 +8,7 @@ use crate::install::kib;
 use crate::mrpack::archive;
 use crate::mrpack::export::{ExportEntry, loader_dependency_key, plan_entries, write_pack};
 use crate::mrpack::fetch::{MAX_REDIRECTS, download_pack_files, staged_path};
-use crate::mrpack::manifest::{Manifest, PackFile, PackTarget};
+use crate::mrpack::manifest::{Manifest, PackFile, PackTarget, clean_pack_name};
 use crate::mrpack::safe_path::{PathGuard, ensure_contained};
 use crate::mrpack::{
     ExportOptions, ExportPreview, Limits, MrpackInfo, loader_version_for, pack_version_for,
@@ -110,9 +110,9 @@ impl Launcher {
         for file in manifest.client_files() {
             guard.admit(&file.path)?;
         }
-        let name = match name.trim() {
-            "" => manifest.name.clone(),
-            trimmed => trimmed.to_string(),
+        let name = match clean_pack_name(&name) {
+            cleaned if cleaned.is_empty() => manifest.name.clone(),
+            cleaned => cleaned,
         };
         let new = NewInstance {
             name,

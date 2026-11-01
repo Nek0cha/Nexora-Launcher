@@ -3,6 +3,7 @@ import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconPlus from "~icons/ph/plus";
 import { onFilesDropped } from "../../api/dragDrop";
+import { withoutMrpack } from "../../features/mrpack/mrpackPath";
 import type { SkinVariant } from "../../bindings/SkinVariant";
 import type { useSkinActions } from "../../features/skins/useSkins";
 import { useToast } from "../toast/useToast";
@@ -150,9 +151,10 @@ export function AddSkinCard({ disabled, actions, onAdding }: {
         if (!latest.current.blocked) setDragging(true);
       },
       leave: () => setDragging(false),
-      drop: (paths) => {
+      drop: (dropped) => {
         setDragging(false);
-        if (latest.current.blocked) return;
+        const paths = withoutMrpack(dropped);
+        if (latest.current.blocked || paths.length === 0) return;
         // 拡張子では選り分けない（可否は本体が決める）
         void runAll(paths.map((path) => () => latest.current.actions.addFromPath.mutateAsync({ path })));
       },

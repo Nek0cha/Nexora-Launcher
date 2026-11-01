@@ -131,6 +131,16 @@ impl RawFile {
     }
 }
 
+/// インスタンス名として使える長さ（UI の入力欄と同じ）。
+pub const MAX_NAME_CHARS: usize = 64;
+
+/// パックの名前から制御文字を除き、前後の空白を落として `MAX_NAME_CHARS` 文字までに切る。
+pub fn clean_pack_name(name: &str) -> String {
+    let cleaned: String = name.chars().filter(|c| !c.is_control()).collect();
+    let cut: String = cleaned.trim().chars().take(MAX_NAME_CHARS).collect();
+    cut.trim_end().to_string()
+}
+
 /// 索引を読み、受け入れ条件（`formatVersion` 1、`game` が minecraft、依存のキー）を確かめる。
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, CoreError> {
     let value: serde_json::Value =
@@ -149,7 +159,7 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, CoreError> {
         serde_json::from_value(value).map_err(|e| invalid(format!("malformed index: {e}")))?;
     let manifest = Manifest {
         version_id: raw.version_id,
-        name: raw.name,
+        name: clean_pack_name(&raw.name),
         files: raw
             .files
             .into_iter()
@@ -244,6 +254,18 @@ mod tests {
 
     fn parse(v: &Value) -> Result<Manifest, crate::error::CoreError> {
         parse_manifest(&serde_json::to_vec(v).unwrap())
+    }
+
+    #[test]
+    fn pack_names_lose_control_characters_and_are_cut_to_the_limit() {
+        assert_eq!(clean_pack_name("  A\u{0}B\r\nC  "), "ABC");
+        let long = "あ".repeat(MAX_NAME_CHARS + 10);
+        assert_eq!(clean_pack_name(&long).chars().count(), MAX_NAME_CHARS);
+        let mut v = index(json!({ "minecraft": "1.21.1" }), vec![]);
+        v["name"] = json!(format!("x\u{7}{}", "y".repeat(100)));
+        let m = parse(&v).unwrap();
+        assert_eq!(m.name.chars().count(), MAX_NAME_CHARS);
+        assert!(!m.name.contains('\u{7}'));
     }
 
     #[test]

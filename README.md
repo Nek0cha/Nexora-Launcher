@@ -24,7 +24,7 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - There is no backend server. All authentication happens on the player's device.
 - When an instance's content tab is opened, the launcher sends the SHA-1 hashes of the installed mods, resource packs and shaders to api.modrinth.com to identify them. These are read-only lookups and include no account data.
 - When content is searched, installed or updated, the launcher also contacts Modrinth: the search text and filters (Minecraft version, loader, categories, environment) go to api.modrinth.com; version lookups for installs and their dependencies go to api.modrinth.com; update checks send the SHA-1 hashes of the installed mods together with the instance's Minecraft version and loader; and files are downloaded from cdn.modrinth.com. Nothing else is sent, and none of it includes account data.
-- Importing a `.mrpack` downloads its files only from cdn.modrinth.com, github.com, raw.githubusercontent.com, gitlab.com and GitHub's release-asset hosts, over HTTPS with at most three redirects, and rejects any file whose SHA-1, SHA-512 or size differs from the pack's index. Exporting sends the SHA-1 hashes of the enabled mods, resource packs and shaders to api.modrinth.com to look up their download URLs. Nothing else is sent, and none of it includes account data.
+- Importing a `.mrpack` also sends the SHA-1 hashes of the imported mods, resource packs and shaders to api.modrinth.com to identify them. It downloads its files only from cdn.modrinth.com, github.com, raw.githubusercontent.com, gitlab.com and GitHub's release-asset hosts, over HTTPS with at most three redirects, and rejects any file whose SHA-1, SHA-512 or size differs from the pack's index. Exporting sends the SHA-1 hashes of the enabled mods, resource packs and shaders to api.modrinth.com to look up their download URLs. Nothing else is sent, and none of it includes account data.
 - The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
 - Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
 - Release builds require an account that owns Minecraft: Java Edition.
@@ -47,7 +47,7 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
   - Modrinth で MOD を検索し、依存する MOD とあわせて導入できます。更新の確認と適用もでき、更新の前には置き換える jar を退避します。
   - MOD を検索、導入、更新するときは、Modrinth に次の内容を送ります。検索の文字列と絞り込みの条件（Minecraft のバージョン、ローダー、カテゴリ、環境）、導入と依存の解決のための版の問い合わせ、更新の確認のための MOD のファイルの SHA-1 ハッシュと、インスタンスの Minecraft のバージョンとローダーです。ファイルは cdn.modrinth.com からダウンロードします。これ以外は送りません。アカウントの情報も送りません。
   - Modrinth のモッドパック（`.mrpack`）を、新しいインスタンスとして読み込めます（ファイル選択か、ウィンドウへのドロップ）。インスタンスを `.mrpack` として書き出すこともできます。Modrinth で特定できたファイルは参照として書き、特定できなかったファイルは、配布してよいか確認したうえで同梱します。
-  - `.mrpack` を読み込むときは、cdn.modrinth.com、github.com、raw.githubusercontent.com、gitlab.com と GitHub のリリースの配信先からだけ、HTTPS でファイルをダウンロードします（リダイレクトは 3 回まで）。SHA-1、SHA-512、大きさのどれかが索引と違うファイルは受け入れません。書き出すときは、有効な MOD、リソースパック、シェーダーの SHA-1 ハッシュを、ダウンロード元の URL を調べるために api.modrinth.com へ送ります。これ以外は送りません。アカウントの情報も送りません。
+  - `.mrpack` を読み込むときは、入った MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります。ファイルは cdn.modrinth.com、github.com、raw.githubusercontent.com、gitlab.com と GitHub のリリースの配信先からだけ、HTTPS でファイルをダウンロードします（リダイレクトは 3 回まで）。SHA-1、SHA-512、大きさのどれかが索引と違うファイルは受け入れません。書き出すときは、有効な MOD、リソースパック、シェーダーの SHA-1 ハッシュを、ダウンロード元の URL を調べるために api.modrinth.com へ送ります。これ以外は送りません。アカウントの情報も送りません。
 
 ## 開発環境
 
