@@ -23,7 +23,7 @@ import { checkboxClass, checkboxMark, onPanel, ring, secondaryButton, submitButt
 
 const SOURCES: ImportSourceKind[] = ["modrinth_app", "prism_launcher", "official_launcher", "curse_forge"];
 
-// 5 つのタブが 1 行に収まるよう、作成のダイアログより広くする
+// ランチャーのタブが、ふつうの窓ではスクロールも折り返しもなく並ぶ幅にする
 const launcherModalClass = modalClass.replace("max-w-lg", "max-w-2xl");
 
 const sourceClass = [
@@ -143,13 +143,13 @@ function ImportForm() {
         {t("launcherImport.title")}
       </Heading>
       <div className="flex flex-col gap-3 px-5 pt-4 pb-5">
-        <div className="scroll-thin flex items-center gap-1 overflow-x-auto">
+        <div className="flex items-start justify-between gap-2">
           <RadioGroup
             aria-label={t("launcherImport.sourceLabel")}
             orientation="horizontal"
             value={source}
             onChange={(value) => chooseSource(value as ImportSourceKind)}
-            className="flex gap-1"
+            className="flex flex-wrap gap-1"
           >
             {SOURCES.map((id) => (
               <Radio key={id} value={id} className={sourceClass}>
@@ -157,7 +157,7 @@ function ImportForm() {
               </Radio>
             ))}
           </RadioGroup>
-          <Button type="button" onPress={choose} className={sourceClass}>
+          <Button type="button" onPress={choose} className={`${sourceClass} bg-surface-1`}>
             <IconFolder aria-hidden className="size-4" />
             {t("launcherImport.chooseFolder")}
           </Button>

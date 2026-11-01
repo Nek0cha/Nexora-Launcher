@@ -118,12 +118,14 @@ describe("ImportLauncherDialog", () => {
     }
   });
 
-  it("keeps the launcher tabs on one line, with the folder tab at the end", async () => {
+  it("fits the launcher tabs without a horizontal scrollbar, with the folder tab after them", async () => {
     vi.mocked(listImportInstances).mockResolvedValue([row()]);
     mount();
 
     await check("Alpha");
-    expect(screen.getByRole("radiogroup").className).not.toContain("flex-wrap");
+    expect(document.querySelector(".overflow-x-auto")).toBeNull();
+    // 名前の途中で折り返さない
+    expect(screen.getByRole("radio", { name: "Minecraft" }).className).toContain("whitespace-nowrap");
     const folder = screen.getByRole("button", { name: "Choose folder" });
     expect(screen.getByRole("radio", { name: "CurseForge" }).compareDocumentPosition(folder)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
