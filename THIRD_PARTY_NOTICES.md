@@ -8,4 +8,4 @@ The licenses of the third-party software bundled in a release are listed in the 
 node scripts/gen-licenses.mjs
 ```
 
-The generated text is committed as `ui/src/assets/third-party-licenses.txt`. The release workflow regenerates it before building. The script fails when a dependency uses a license that is not on its allow list (`scripts/licenses-lib.mjs`).
+The generated text is committed as `ui/src/assets/third-party-licenses.json`. The release workflow regenerates it before building. The script fails when a dependency uses a license that is not on its allow list (`scripts/licenses-lib.mjs`).

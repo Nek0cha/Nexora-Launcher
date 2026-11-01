@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isAccepted, renderNotices } from "./licenses-lib.mjs";
+import { buildNotices, isAccepted } from "./licenses-lib.mjs";
 
 test("a single accepted license passes", () => {
   assert.equal(isAccepted("MIT"), true);
@@ -25,13 +25,19 @@ test("unknown and empty expressions fail", () => {
   assert.equal(isAccepted(""), false);
 });
 
-test("packages with the same text share one block", () => {
-  const out = renderNotices([
+test("packages are sorted by name and share one text when the text is the same", () => {
+  const { entries, texts } = buildNotices([
     { name: "b", version: "1.0.0", license: "MIT", text: "same text" },
-    { name: "a", version: "2.0.0", license: "MIT", text: "same text" },
+    { name: "a", version: "2.0.0", license: "MIT", text: "same text\n" },
     { name: "c", version: "1.0.0", license: "ISC", text: "other text" },
   ]);
-  assert.equal(out.split("same text").length - 1, 1);
-  assert.ok(out.indexOf("a 2.0.0 (MIT)") < out.indexOf("b 1.0.0 (MIT)"));
-  assert.ok(out.includes("other text"));
+  assert.deepEqual(
+    entries.map((e) => e.name),
+    ["a", "b", "c"],
+  );
+  assert.deepEqual(texts, ["same text", "other text"]);
+  assert.deepEqual(
+    entries.map((e) => e.text),
+    [0, 0, 1],
+  );
 });

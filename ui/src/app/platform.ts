@@ -9,6 +9,14 @@ export function guessWindows(): boolean {
   return /^win|windows/i.test(source) || /windows/i.test(navigator.userAgent ?? "");
 }
 
+/** ブラウザの情報から macOS かを推し量る（app_info が届く前や失敗したときの代わり） */
+export function guessMac(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const uaData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  const source = uaData?.platform || navigator.platform || navigator.userAgent || "";
+  return /^mac/i.test(source);
+}
+
 /**
  * Windows で動いているか。Windows ではウィンドウ全体の枠を外しているので、
  * 画面のどの状態でもウィンドウボタンを出すためにこれで決める。
@@ -17,4 +25,13 @@ export function guessWindows(): boolean {
 export function useIsWindows(): boolean {
   const { data: info } = useQuery({ queryKey: ["appInfo"], queryFn: appInfo });
   return info?.os ? info.os === "windows" : guessWindows();
+}
+
+/**
+ * macOS で動いているか。macOS では OS のタイトルバーを消して、信号のボタン（赤黄緑）を
+ * アプリのバーに重ねているので、バーの左端をその分だけ空ける。
+ */
+export function useIsMac(): boolean {
+  const { data: info } = useQuery({ queryKey: ["appInfo"], queryFn: appInfo });
+  return info?.os ? info.os === "macos" : guessMac();
 }

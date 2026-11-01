@@ -34,12 +34,12 @@ const task = (patch: Partial<TaskSnapshot> = {}): TaskSnapshot => ({
   error: null, createdAt: 0, updatedAt: 0, ...patch,
 });
 
-function mount({ showWindowControls = true, tasks = [] as TaskSnapshot[] } = {}) {
+function mount({ showWindowControls = true, leadingInset = false, tasks = [] as TaskSnapshot[] } = {}) {
   window.history.replaceState(null, "", "/");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(TASKS_KEY, Object.fromEntries(tasks.map((t) => [t.id, t])));
   const router = createHashRouter([
-    { path: "*", element: <AppBar showWindowControls={showWindowControls} slot={<span>slot content</span>} /> },
+    { path: "*", element: <AppBar showWindowControls={showWindowControls} leadingInset={leadingInset} slot={<span>slot content</span>} /> },
   ]);
   render(
     <QueryClientProvider client={client}>
@@ -90,6 +90,13 @@ describe("AppBar", () => {
       await router.navigate("/sync");
     });
     expect(screen.getByTestId("page-name").textContent).toBe("共通設定");
+  });
+
+  it("leaves_room_for_the_macos_traffic_lights_when_asked", () => {
+    mount({ showWindowControls: false, leadingInset: true });
+    const bar = screen.getByTestId("app-bar");
+    expect(bar.className).toContain("pl-[78px]");
+    expect(bar.className).not.toContain("pl-6");
   });
 
   it("aligns_the_logo_and_name_with_the_sidebar_icon_and_label", () => {

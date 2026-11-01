@@ -20,7 +20,7 @@ export function EmptyState({
         <h1 className="font-display text-lg font-semibold text-text-strong">{title}</h1>
         {body && <p className="max-w-md text-text-muted">{body}</p>}
       </div>
-      {children && <div className="mt-3">{children}</div>}
+      {children && <div className="mt-3 flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
 }

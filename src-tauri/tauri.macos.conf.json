@@ -8,6 +8,8 @@
         "height": 720,
         "minWidth": 880,
         "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "transparent": true,
         "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
       }

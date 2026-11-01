@@ -2639,7 +2639,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nexora"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "nexora-core",
@@ -2662,7 +2662,7 @@ dependencies = [
 
 [[package]]
 name = "nexora-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.23.1",

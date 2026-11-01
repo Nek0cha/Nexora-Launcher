@@ -12,9 +12,14 @@ vi.mock("@tauri-apps/api/window", () => ({
     isMaximized: vi.fn().mockResolvedValue(false), onResized: vi.fn().mockResolvedValue(() => {}),
   }),
 }));
-vi.mock("../../app/platform", () => ({ useIsWindows: () => true }));
+const platform = { windows: true, mac: false };
+vi.mock("../../app/platform", () => ({ useIsWindows: () => platform.windows, useIsMac: () => platform.mac }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  platform.windows = true;
+  platform.mac = false;
+});
 
 describe("FallbackTitleBar", () => {
   it("lays_out_the_brand_exactly_like_the_app_bar", () => {
@@ -34,5 +39,19 @@ describe("FallbackTitleBar", () => {
     const bar = screen.getByTestId("app-bar");
     expect(screen.getByTestId("brand").outerHTML).toBe(fallbackBrand);
     expect(bar.className.match(/\bpl-\d+\b/)?.[0]).toBe(fallbackPad);
+  });
+
+  it("keeps_clear_of_the_traffic_lights_on_macos_and_has_no_window_buttons", () => {
+    platform.windows = false;
+    platform.mac = true;
+    render(<FallbackTitleBar />);
+    expect(screen.getByTestId("fallback-title-bar").className).toContain("pl-[78px]");
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("renders_nothing_on_other_systems", () => {
+    platform.windows = false;
+    render(<FallbackTitleBar />);
+    expect(screen.queryByTestId("fallback-title-bar")).toBeNull();
   });
 });
