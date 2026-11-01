@@ -3,8 +3,10 @@
 mod content;
 mod import;
 mod mrpack;
+mod upgrade;
 
 pub use content::{InstallPreview, VersionChoice};
+pub use upgrade::UpgradePreview;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,6 +77,8 @@ pub const CONTENT_KIND: &str = "content";
 pub const MRPACK_KIND: &str = "mrpack-import";
 /// 他のランチャーからインスタンスを作るタスク。
 pub const IMPORT_KIND: &str = "launcher-import";
+/// インスタンスのバージョンを上げるタスク。
+pub const UPGRADE_KIND: &str = "instance-upgrade";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 

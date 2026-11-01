@@ -204,7 +204,7 @@ impl Launcher {
         }
     }
 
-    async fn mod_rows(&self, id: &str) -> Result<Vec<Row>, CoreError> {
+    pub(super) async fn mod_rows(&self, id: &str) -> Result<Vec<Row>, CoreError> {
         let (db, id) = (self.env.db.clone(), id.to_string());
         blocking(move || store::rows(&db, &id, ContentKind::Mod)).await
     }

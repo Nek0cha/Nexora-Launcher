@@ -113,6 +113,9 @@
     "limit": "モッドパックが大きすぎるか、不正な圧縮のため、中止しました。（{{reason}}）",
     "needs_confirmation": "Modrinth で特定できないファイルがあります。内容を確認してから書き出してください。"
   },
+  "upgrade": {
+    "unavailable": "そのバージョンには上げられません。（{{reason}}）"
+  },
   "import": {
     "unavailable": "他のランチャーのデータを読めませんでした。（{{reason}}）",
     "duplicate": "すでに同じインスタンスがあります。"

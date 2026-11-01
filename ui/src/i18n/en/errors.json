@@ -113,6 +113,9 @@
     "limit": "The modpack is too large or unusually compressed, so it was stopped. ({{reason}})",
     "needs_confirmation": "Some files were not found on Modrinth. Check them before exporting."
   },
+  "upgrade": {
+    "unavailable": "This instance can't be upgraded to that version. ({{reason}})"
+  },
   "import": {
     "unavailable": "Could not read the other launcher's data. ({{reason}})",
     "duplicate": "An instance like this already exists."
