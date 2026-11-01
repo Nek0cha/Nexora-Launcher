@@ -1,6 +1,7 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
 mod content;
+mod import;
 mod mrpack;
 
 pub use content::{InstallPreview, VersionChoice};
@@ -72,6 +73,8 @@ pub const DUPLICATE_KIND: &str = "duplicate";
 pub const CONTENT_KIND: &str = "content";
 /// `.mrpack` からインスタンスを作るタスク。
 pub const MRPACK_KIND: &str = "mrpack-import";
+/// 他のランチャーからインスタンスを作るタスク。
+pub const IMPORT_KIND: &str = "launcher-import";
 /// メモリが自動のときの割り当て（自動設定はフェーズ 9）。
 const AUTO_MEMORY_MB: u32 = 2048;
 
@@ -753,7 +756,7 @@ impl Launcher {
         }
         if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
             // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
-            if kind == CONTENT_KIND || kind == MRPACK_KIND {
+            if kind == CONTENT_KIND || kind == MRPACK_KIND || kind == IMPORT_KIND {
                 return Err(CoreError::InstanceBusy {
                     instance_id: instance_id.to_string(),
                 });
@@ -867,7 +870,8 @@ impl Launcher {
                     && (t.kind == INSTALL_KIND
                         || t.kind == LAUNCH_KIND
                         || t.kind == CONTENT_KIND
-                        || t.kind == MRPACK_KIND)
+                        || t.kind == MRPACK_KIND
+                        || t.kind == IMPORT_KIND)
                     && !t.state.is_terminal()
             })
             .map(|t| (t.id, t.kind))

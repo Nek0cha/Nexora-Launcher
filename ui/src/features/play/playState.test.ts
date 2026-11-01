@@ -87,6 +87,15 @@ describe("a modpack import", () => {
   });
 });
 
+describe("an import from another launcher", () => {
+  it("shows the instance as preparing (install) and as its newest task", () => {
+    const state = playStateFrom(inputs({ task: task("running", { kind: "launcher-import" }) }));
+    expect(state.kind === "preparing" && state.phase).toBe("install");
+    const table = { a: task("running", { id: "0006", kind: "launcher-import" }) };
+    expect(latestInstanceTask(table, "i1")?.id).toBe("0006");
+  });
+});
+
 describe("latestInstanceTask", () => {
   it("picks the newest install or launch task of the instance", () => {
     const table = {

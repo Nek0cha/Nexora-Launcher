@@ -43,6 +43,9 @@ import type { SavedSkinPatch } from "../bindings/SavedSkinPatch";
 import type { DefaultSkin } from "../bindings/DefaultSkin";
 import type { ExportOptions } from "../bindings/ExportOptions";
 import type { ExportPreview } from "../bindings/ExportPreview";
+import type { ImportRequest } from "../bindings/ImportRequest";
+import type { ImportSourceKind } from "../bindings/ImportSourceKind";
+import type { SourceInstance } from "../bindings/SourceInstance";
 import type { MrpackInfo } from "../bindings/MrpackInfo";
 import { call } from "./ipc";
 
@@ -113,6 +116,17 @@ export const changeContentVersion = (instanceId: string, relPath: string, versio
 export const contentTaskReport = (taskId: string) =>
   call<ContentTaskReport | null>("content_task_report", { taskId });
 export const openModrinthProject = (slug: string) => call<null>("open_modrinth_project", { slug });
+
+export const listImportInstances = (source: ImportSourceKind, root: string | null) =>
+  call<SourceInstance[]>("list_import_instances", { source, root });
+export const findImportDuplicates = (source: ImportSourceKind, root: string | null, ids: string[]) =>
+  call<string[]>("find_import_duplicates", { source, root, ids });
+export const importFromLauncher = (
+  source: ImportSourceKind,
+  root: string | null,
+  requests: ImportRequest[],
+  allowDuplicates: boolean,
+) => call<CreatedInstance[]>("import_from_launcher", { source, root, requests, allowDuplicates });
 
 export const inspectMrpack = (path: string) => call<MrpackInfo>("inspect_mrpack", { path });
 export const importMrpack = (path: string, name: string) =>

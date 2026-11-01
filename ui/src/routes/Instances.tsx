@@ -12,6 +12,7 @@ import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { CreateInstanceDialog } from "../components/CreateInstanceDialog";
 import { EmptyState } from "../components/EmptyState";
 import { FailureNotice } from "../components/FailureNotice";
+import { ImportLauncherButton } from "../components/import/ImportLauncherButton";
 import { ImportMrpackButton } from "../components/mrpack/ImportMrpackButton";
 import { PlayButton } from "../components/PlayButton";
 import { useToast } from "../components/toast/useToast";
@@ -134,6 +135,7 @@ export default function Instances() {
         <EmptyState icon={IconEmpty} title={t("nav.instances")} body={t("empty.instances")}>
           <CreateInstanceDialog trigger="primary" />
           <ImportMrpackButton />
+          <ImportLauncherButton />
         </EmptyState>
         {dialog}
       </>
@@ -145,6 +147,7 @@ export default function Instances() {
         {title}
         <div className="flex items-center gap-1">
           <ImportMrpackButton />
+          <ImportLauncherButton />
           <CreateInstanceDialog trigger="quiet" />
         </div>
       </header>

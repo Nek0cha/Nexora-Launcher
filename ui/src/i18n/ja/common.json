@@ -86,7 +86,8 @@
       "login": "ログイン",
       "duplicate": "複製",
       "content": "MOD",
-      "mrpack-import": "パックの読み込み"
+      "mrpack-import": "パックの読み込み",
+      "launcher-import": "インスタンスの読み込み"
     },
     "state": {
       "queued": "待機中",
@@ -742,6 +743,23 @@
       "submit": "書き出す",
       "loading": "内容を調べています",
       "done": "書き出しました"
+    }
+  },
+  "launcherImport": {
+    "open": "他のランチャーから読み込む",
+    "title": "Modrinth App から読み込む",
+    "submit": "読み込む",
+    "submitCount": "{{count}} 件を読み込む",
+    "continue": "それでも続ける",
+    "duplicate": "重複しています",
+    "summary": "{{succeeded}} 件を読み込み、{{failed}} 件は失敗しました",
+    "done": "{{count}} 件を読み込みました",
+    "chooseFolder": "フォルダを選ぶ",
+    "empty": "インスタンスが見つかりません",
+    "kind": {
+      "mods": "MOD",
+      "screenshots": "スクリーンショット",
+      "saves": "セーブデータ"
     }
   }
 }

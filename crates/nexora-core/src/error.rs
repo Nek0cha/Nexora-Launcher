@@ -128,6 +128,12 @@ pub enum CoreError {
     /// Modrinth で特定できないファイルがあるのに、確認なしで書き出そうとした。
     #[error("the export includes files that were not identified and needs confirmation")]
     MrpackNeedsConfirmation,
+    /// 他のランチャーのデータが見つからない、または読めない。
+    #[error("the launcher data is unavailable: {reason}")]
+    ImportUnavailable { reason: String },
+    /// 取り込もうとしたインスタンスが、すでにあるものと重複している。
+    #[error("the instances to import are already present")]
+    ImportDuplicate,
     /// 指定のスクリーンショットが無い（一覧が古い、または名前がフォルダ直下の画像ではない）。
     #[error("the screenshot was not found")]
     ScreenshotNotFound,
@@ -278,6 +284,8 @@ impl CoreError {
             CoreError::MrpackUnsafePath { .. } => "mrpack.unsafe_path",
             CoreError::MrpackLimit { .. } => "mrpack.limit",
             CoreError::MrpackNeedsConfirmation => "mrpack.needs_confirmation",
+            CoreError::ImportUnavailable { .. } => "import.unavailable",
+            CoreError::ImportDuplicate => "import.duplicate",
             CoreError::ScreenshotNotFound => "screenshot.not_found",
             CoreError::LogNotFound => "log.not_found",
             CoreError::SyncNoOptions => "sync.no_options",
@@ -377,7 +385,8 @@ impl CoreError {
             CoreError::InvalidSkin { reason }
             | CoreError::MrpackInvalid { reason }
             | CoreError::MrpackUnsupported { reason }
-            | CoreError::MrpackLimit { reason } => {
+            | CoreError::MrpackLimit { reason }
+            | CoreError::ImportUnavailable { reason } => {
                 params.insert("reason".into(), ParamValue::Str(reason.clone()));
             }
             CoreError::MrpackUnsafePath { path } => {

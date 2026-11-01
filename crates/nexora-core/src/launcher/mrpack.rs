@@ -328,7 +328,7 @@ impl Launcher {
     }
 
     /// 失敗したインポートのインスタンスを、行もフォルダーも消す。共有のキャッシュは消さない。
-    async fn discard_import(&self, id: &str) {
+    pub(super) async fn discard_import(&self, id: &str) {
         let (db, paths, owned) = (self.env.db.clone(), self.env.paths.clone(), id.to_string());
         // 消せなかったときに、使える状態のまま残らないようにしておく
         let _ = instance::set_state(&db, id, InstanceState::Broken);

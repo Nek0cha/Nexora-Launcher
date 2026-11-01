@@ -112,5 +112,9 @@
     "unsafe_path": "The modpack contains an unsafe path, so it was stopped. ({{path}})",
     "limit": "The modpack is too large or unusually compressed, so it was stopped. ({{reason}})",
     "needs_confirmation": "Some files were not found on Modrinth. Check them before exporting."
+  },
+  "import": {
+    "unavailable": "Could not read the other launcher's data. ({{reason}})",
+    "duplicate": "An instance like this already exists."
   }
 }

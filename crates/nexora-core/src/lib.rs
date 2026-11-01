@@ -13,6 +13,7 @@ pub mod task;
 
 pub mod app_info;
 
+pub mod import;
 pub mod install;
 pub mod instance;
 pub mod meta;
