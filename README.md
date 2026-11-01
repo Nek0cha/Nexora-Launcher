@@ -17,7 +17,8 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - An instance's content tab lists its mods, resource packs and shaders, which can be enabled, disabled, removed, filtered, and added by drag and drop; files are identified on Modrinth by their hash
 - A Modrinth modpack (`.mrpack`) can be imported as a new instance (picked from a dialog or dropped onto the window), and an instance can be exported as a `.mrpack`. Files that Modrinth identifies are written as references; any others are bundled only after the user confirms they may be redistributed
 - Instances of Modrinth App can be imported by choosing, per instance, whether to copy its mods, screenshots, worlds and settings (`config/`, `options.txt`, `servers.dat`). The original data is only read, never changed, and an instance that looks like one you already have is reported before anything is copied.
-- Planned: content from CurseForge, and importing instances from Prism Launcher, the official launcher and the CurseForge app
+- Instances of Prism Launcher, the official Minecraft launcher and the CurseForge app can be imported the same way. Only Modrinth App has been tried against real data; the other three were written from public documentation and source and are untested on real installs (the CurseForge app in particular was never installed during development).
+- Planned: content from CurseForge
 
 ### Accounts and privacy
 
@@ -50,7 +51,7 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
   - MOD を検索、導入、更新するときは、Modrinth に次の内容を送ります。検索の文字列と絞り込みの条件（Minecraft のバージョン、ローダー、カテゴリ、環境）、導入と依存の解決のための版の問い合わせ、更新の確認のための MOD のファイルの SHA-1 ハッシュと、インスタンスの Minecraft のバージョンとローダーです。ファイルは cdn.modrinth.com からダウンロードします。これ以外は送りません。アカウントの情報も送りません。
   - Modrinth のモッドパック（`.mrpack`）を、新しいインスタンスとして読み込めます（ファイル選択か、ウィンドウへのドロップ）。インスタンスを `.mrpack` として書き出すこともできます。Modrinth で特定できたファイルは参照として書き、特定できなかったファイルは、配布してよいか確認したうえで同梱します。
   - `.mrpack` を読み込むときは、入った MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります。ファイルは cdn.modrinth.com、github.com、raw.githubusercontent.com、gitlab.com と GitHub のリリースの配信先からだけ、HTTPS でファイルをダウンロードします（リダイレクトは 3 回まで）。SHA-1、SHA-512、大きさのどれかが索引と違うファイルは受け入れません。書き出すときは、有効な MOD、リソースパック、シェーダーの SHA-1 ハッシュを、ダウンロード元の URL を調べるために api.modrinth.com へ送ります。これ以外は送りません。アカウントの情報も送りません。
-  - Modrinth App のインスタンスを、MOD、スクリーンショット、セーブデータ、設定（config、options.txt、servers.dat）のどれを持ってくるかを選んで読み込めます。元のデータは読むだけで変更せず、すでにあるインスタンスと重複しそうなときはコピーの前にお知らせします。Prism Launcher、公式ランチャー、CurseForge アプリからの読み込みは今後の予定です。
+  - Modrinth App のインスタンスを、MOD、スクリーンショット、セーブデータ、設定（config、options.txt、servers.dat）のどれを持ってくるかを選んで読み込めます。元のデータは読むだけで変更せず、すでにあるインスタンスと重複しそうなときはコピーの前にお知らせします。Prism Launcher、公式ランチャー、CurseForge アプリのインスタンスも同じ形で読み込めますが、実際のデータで試したのは Modrinth App だけです（ほかの 3 つは公開されている資料から書いたもので、CurseForge アプリは開発中に一度も入れていません）。
   - Modrinth App から読み込むこと自体は、何も送信しません。読み込んだ MOD は、ほかのインスタンスと同じく、それが何かを調べるために SHA-1 ハッシュを api.modrinth.com へ送ります。
 
 ## 開発環境
