@@ -132,13 +132,12 @@ function ImportForm() {
           </div>
         )}
         {listError && (
-          <div role="alert" className="flex items-center justify-between gap-3">
-            {listError.code === "import.unavailable" ? (
+          <div role="alert" className="flex flex-col items-start gap-3">
+            <FailureNotice error={listError} />
+            {listError.code === "import.unavailable" && (
               <Button type="button" onPress={choose} className={secondaryButton}>
                 {t("launcherImport.chooseFolder")}
               </Button>
-            ) : (
-              <FailureNotice error={listError} />
             )}
           </div>
         )}

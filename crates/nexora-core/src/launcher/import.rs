@@ -223,10 +223,16 @@ impl Launcher {
                 (game_dir.clone(), handle.token().clone(), handle.clone());
             let dest = game_dir.join(kind.dir_name());
             blocking(move || {
-                copy_tree(&from, &root, &dest, &token, &mut |done, total| {
+                let report = copy_tree(&from, &root, &dest, &token, &mut |done, total| {
                     progress.set_progress(kib(done), kib(total))
-                })
-                .map(|_| ())
+                })?;
+                if report.skipped_links > 0 {
+                    tracing::warn!(
+                        skipped_links = report.skipped_links,
+                        "skipped links while importing from another launcher"
+                    );
+                }
+                Ok(())
             })
             .await?;
         }

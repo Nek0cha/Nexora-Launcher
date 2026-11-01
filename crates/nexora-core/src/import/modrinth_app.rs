@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension};
 
+use super::copy::is_link;
 use super::{ImportKind, ImportSource, SourceInstance};
 use crate::error::CoreError;
 use crate::meta::loader::LoaderKind;
-use crate::mrpack::safe_path::{check_rel_path, is_link};
+use crate::mrpack::safe_path::check_rel_path;
 
 const APP_FOLDER: &str = "ModrinthApp";
 const DB_FILE: &str = "app.db";

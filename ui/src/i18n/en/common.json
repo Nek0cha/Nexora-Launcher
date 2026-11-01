@@ -86,7 +86,8 @@
       "login": "Sign in",
       "duplicate": "Duplicate",
       "content": "Mods",
-      "mrpack-import": "Import pack"
+      "mrpack-import": "Import pack",
+      "launcher-import": "Import instance"
     },
     "state": {
       "queued": "Queued",
@@ -751,6 +752,8 @@
     "submitCount": "Import {{count}}",
     "continue": "Import anyway",
     "duplicate": "Already added",
+    "summary": "Imported {{succeeded}}, {{failed}} failed",
+    "done": "Imported {{count}}",
     "chooseFolder": "Choose folder",
     "empty": "No instances found",
     "kind": {

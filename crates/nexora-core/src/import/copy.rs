@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CoreError;
-use crate::mrpack::safe_path::{ensure_contained, is_link};
+use crate::mrpack::safe_path::ensure_contained;
 
 /// コピーした結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +15,14 @@ pub struct CopyReport {
     pub bytes: u64,
     /// たどらずに飛ばしたリンク（ジャンクションを含む）の数。
     pub skipped_links: u64,
+}
+
+/// シンボリックリンクか、Windows のジャンクションか。読み込み元ではこれだけをたどらない。
+/// クラウド同期の未ダウンロードのファイルなど、ほかの再解析ポイントは普通のファイルとして読む。
+pub(crate) fn is_link(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 fn io_err(path: &Path, source: std::io::Error) -> CoreError {

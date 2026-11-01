@@ -130,6 +130,16 @@ describe("ImportLauncherDialog", () => {
     expect(listImportInstances).toHaveBeenLastCalledWith("modrinth_app", "D:\\Apps\\ModrinthApp");
   });
 
+  it("shows why the launcher data could not be read, next to the folder button", async () => {
+    vi.mocked(listImportInstances).mockRejectedValue(
+      new IpcError({ code: "import.unavailable", params: { reason: "no such column: name" }, detail: null }),
+    );
+    mount();
+
+    expect(await screen.findByRole("button", { name: "Choose folder" })).toBeTruthy();
+    expect(screen.getByText(/no such column: name/)).toBeTruthy();
+  });
+
   it("cannot import until a row is checked", async () => {
     vi.mocked(listImportInstances).mockResolvedValue([row()]);
     mount();
