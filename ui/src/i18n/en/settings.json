@@ -19,5 +19,17 @@
   "downloads": {
     "section": "Downloads",
     "label": "Concurrent downloads"
+  },
+  "about": {
+    "section": "About",
+    "version": "Version",
+    "updates": "Updates",
+    "check": "Check for updates",
+    "checking": "Checking",
+    "upToDate": "Up to date",
+    "checkFailed": "Could not check",
+    "releases": "Releases",
+    "license": "License",
+    "repository": "Repository"
   }
 }

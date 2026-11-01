@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { NumberField } from "../components/NumberField";
 import { Select } from "../components/Select";
+import { AboutRows } from "../components/AboutSection";
 import { FailureNotice } from "../components/FailureNotice";
 import { toErrorPayload } from "../api/ipc";
 import { MEMORY_MAX_MB, MEMORY_MIN_MB } from "../features/instances/settingsForm";
@@ -89,6 +90,9 @@ export default function Settings() {
           max={16}
           onChange={(value) => update.mutate({ key: "maxConcurrentDownloads", value })}
         />
+      </Section>
+      <Section title={t("about.section")}>
+        <AboutRows />
       </Section>
     </div>
   );
