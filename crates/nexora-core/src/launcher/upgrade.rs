@@ -96,14 +96,16 @@ fn prune_old_backups(paths: &AppPaths, instance_id: &str, keep: &Path) {
             .file_name()
             .to_string_lossy()
             .starts_with(BACKUP_PREFIX);
-        if is_backup && path != keep && path.is_dir() {
-            if let Err(err) = std::fs::remove_dir_all(&path) {
-                tracing::warn!(
-                    path = %path.display(),
-                    error = %err,
-                    "failed to remove an old upgrade backup"
-                );
-            }
+        if is_backup
+            && path != keep
+            && path.is_dir()
+            && let Err(err) = std::fs::remove_dir_all(&path)
+        {
+            tracing::warn!(
+                path = %path.display(),
+                error = %err,
+                "failed to remove an old upgrade backup"
+            );
         }
     }
 }
