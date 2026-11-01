@@ -747,7 +747,29 @@
   },
   "launcherImport": {
     "open": "他のランチャーから読み込む",
-    "title": "Modrinth App から読み込む",
+    "title": "インスタンスを読み込む",
+    "unsupported": {
+      "unsafe_name": "{{detail}} は名前として使えません",
+      "unsafe_folder": "フォルダ {{detail}} は使えません",
+      "linked_folder": "リンクのフォルダは読み込みません",
+      "unknown_loader": "ローダー {{detail}} には対応していません",
+      "missing_version": "Minecraft の版が分かりません",
+      "missing_loader_version": "ローダーの版が分かりません",
+      "loader_unavailable": "{{detail}} は導入できません",
+      "install_unfinished": "元のランチャーでの導入が終わっていません",
+      "missing_metadata": "{{detail}} が見つかりません",
+      "unreadable_metadata": "{{detail}} を読めません",
+      "multiple_loaders": "ローダーが複数入っています",
+      "latest_version": "最新版に追従しているため、版が決まりません",
+      "unsupported_version": "版 {{detail}} には対応していません"
+    },
+    "sourceLabel": "ランチャー",
+    "source": {
+      "modrinth_app": "Modrinth App",
+      "prism_launcher": "Prism Launcher",
+      "official_launcher": "Minecraft",
+      "curse_forge": "CurseForge"
+    },
     "submit": "読み込む",
     "submitCount": "{{count}} 件を読み込む",
     "continue": "それでも続ける",

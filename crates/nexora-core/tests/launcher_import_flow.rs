@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use common::mrpack::PackHarness;
 use nexora_core::error::CoreError;
-use nexora_core::import::{ImportKind, ImportRequest, ImportSource, SourceInstance};
+use nexora_core::import::{
+    ImportKind, ImportRequest, ImportSource, SourceInstance, Unsupported, UnsupportedCode,
+};
 use nexora_core::instance::{self, InstanceState};
 use nexora_core::meta::loader::LoaderKind;
 use nexora_core::task::TaskState;
@@ -280,7 +282,10 @@ async fn an_importing_instance_cannot_be_launched() {
 async fn an_unsupported_row_or_unknown_id_is_refused_before_anything_is_made() {
     let h = PackHarness::new().await;
     let mut bad = row("a", "Alpha");
-    bad.unsupported = Some("the loader is not supported".into());
+    bad.unsupported = Some(Unsupported::with(
+        UnsupportedCode::UnknownLoader,
+        "liteloader",
+    ));
     let src = source(&h, vec![bad], &[]);
 
     for id in ["a", "missing"] {
@@ -303,6 +308,9 @@ async fn the_listing_marks_a_loader_version_the_installer_does_not_know() {
 
     let list = h.launcher.list_source_instances(src).await.unwrap();
 
-    assert!(list[0].unsupported.is_some());
+    assert_eq!(
+        list[0].unsupported.as_ref().map(|u| u.code),
+        Some(UnsupportedCode::LoaderUnavailable)
+    );
     assert_eq!(list[1].unsupported, None);
 }

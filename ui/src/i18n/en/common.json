@@ -747,7 +747,29 @@
   },
   "launcherImport": {
     "open": "Import from another launcher",
-    "title": "Import from Modrinth App",
+    "title": "Import instances",
+    "unsupported": {
+      "unsafe_name": "{{detail}} can't be used as a name",
+      "unsafe_folder": "The folder {{detail}} can't be used",
+      "linked_folder": "The folder is a link",
+      "unknown_loader": "The loader {{detail}} is not supported",
+      "missing_version": "The Minecraft version is missing",
+      "missing_loader_version": "The loader version is missing",
+      "loader_unavailable": "{{detail}} is not available",
+      "install_unfinished": "The installation isn't finished",
+      "missing_metadata": "{{detail}} was not found",
+      "unreadable_metadata": "{{detail}} could not be read",
+      "multiple_loaders": "More than one loader is installed",
+      "latest_version": "The profile follows the latest version",
+      "unsupported_version": "The version {{detail}} is not supported"
+    },
+    "sourceLabel": "Launcher",
+    "source": {
+      "modrinth_app": "Modrinth App",
+      "prism_launcher": "Prism Launcher",
+      "official_launcher": "Minecraft",
+      "curse_forge": "CurseForge"
+    },
     "submit": "Import",
     "submitCount": "Import {{count}}",
     "continue": "Import anyway",

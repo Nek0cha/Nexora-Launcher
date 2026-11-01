@@ -3,6 +3,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import i18n from "../../i18n";
 import { importFromLauncher } from "../../api/commands";
 import type { ImportRequest } from "../../bindings/ImportRequest";
+import type { ImportSourceKind } from "../../bindings/ImportSourceKind";
 import { useToast } from "../../components/toast/useToast";
 import { INSTANCES_KEY } from "../instances/useInstances";
 import { isTerminal } from "../tasks/taskTable";
@@ -47,8 +48,18 @@ const watched = new Set<string>();
 export function useImportFromLauncher() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({ requests, allowDuplicates, root }: { requests: ImportRequest[]; allowDuplicates: boolean; root: string | null }) => {
-      const created = await importFromLauncher("modrinth_app", root, requests, allowDuplicates);
+    mutationFn: async ({
+      source,
+      requests,
+      allowDuplicates,
+      root,
+    }: {
+      source: ImportSourceKind;
+      requests: ImportRequest[];
+      allowDuplicates: boolean;
+      root: string | null;
+    }) => {
+      const created = await importFromLauncher(source, root, requests, allowDuplicates);
       const ids = created.map((item) => item.taskId);
       for (const id of ids) watched.add(id);
       batches.push(ids);

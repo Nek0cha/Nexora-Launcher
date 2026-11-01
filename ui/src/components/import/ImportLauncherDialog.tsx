@@ -1,13 +1,15 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, Checkbox, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button, Checkbox, Dialog, Heading, Modal, ModalOverlay, Radio, RadioGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconCheck from "~icons/ph/check";
+import IconFolder from "~icons/ph/folder-open";
 import IconWarning from "~icons/ph/warning";
 import { findImportDuplicates, listImportInstances } from "../../api/commands";
 import { pickFolder } from "../../api/dialog";
 import { toErrorPayload } from "../../api/ipc";
 import type { ImportKind } from "../../bindings/ImportKind";
+import type { ImportSourceKind } from "../../bindings/ImportSourceKind";
 import type { SourceInstance } from "../../bindings/SourceInstance";
 import {
   closeLauncherImport,
@@ -17,9 +19,19 @@ import {
 import { FailureNotice } from "../FailureNotice";
 import { modalClass, overlayClass } from "../modal";
 import { Skeleton } from "../Skeleton";
-import { checkboxClass, checkboxMark, onPanel, secondaryButton, submitButton } from "../mrpack/dialogStyles";
+import { checkboxClass, checkboxMark, onPanel, ring, secondaryButton, submitButton } from "../mrpack/dialogStyles";
 
-const SOURCE = "modrinth_app" as const;
+const SOURCES: ImportSourceKind[] = ["modrinth_app", "prism_launcher", "official_launcher", "curse_forge"];
+
+// ランチャーのタブが、ふつうの窓ではスクロールも折り返しもなく並ぶ幅にする
+const launcherModalClass = modalClass.replace("max-w-lg", "max-w-2xl");
+
+const sourceClass = [
+  "inline-flex h-8 shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm text-text-muted",
+  "transition-colors duration-(--duration-fast) ease-out-quint",
+  "data-hovered:bg-surface-2 data-hovered:text-text data-selected:bg-surface-3 data-selected:text-text-strong",
+  ring,
+].join(" ");
 
 /** 他のランチャーのインスタンスを選び、インスタンスごとに取り込む中身を選ぶ。 */
 export function ImportLauncherDialog() {
@@ -33,7 +45,7 @@ export function ImportLauncherDialog() {
       isDismissable
       className={overlayClass}
     >
-      <Modal className={modalClass}>
+      <Modal className={launcherModalClass}>
         <Dialog className="outline-hidden">{open && <ImportForm />}</Dialog>
       </Modal>
     </ModalOverlay>
@@ -50,13 +62,14 @@ function Mark() {
 
 function ImportForm() {
   const { t } = useTranslation();
+  const [source, setSource] = useState<ImportSourceKind>("modrinth_app");
   const [root, setRoot] = useState<string | null>(null);
   // 選んだ行と、その行で取り込む種類
   const [picked, setPicked] = useState<ReadonlyMap<string, ImportKind[]>>(new Map());
   const [duplicates, setDuplicates] = useState<string[]>([]);
   const list = useQuery({
-    queryKey: ["import-instances", SOURCE, root],
-    queryFn: () => listImportInstances(SOURCE, root),
+    queryKey: ["import-instances", source, root],
+    queryFn: () => listImportInstances(source, root),
     retry: false,
     gcTime: 0,
     staleTime: 0,
@@ -85,20 +98,27 @@ function ImportForm() {
   const submit = useMutation({
     mutationFn: async () => {
       if (!anyway) {
-        const found = await findImportDuplicates(SOURCE, root, ids);
+        const found = await findImportDuplicates(source, root, ids);
         if (found.length > 0) {
           setDuplicates(found);
           return false;
         }
       }
       const requests = ids.map((id) => ({ id, kinds: picked.get(id) ?? [] }));
-      await run.mutateAsync({ requests, allowDuplicates: anyway, root });
+      await run.mutateAsync({ source, requests, allowDuplicates: anyway, root });
       return true;
     },
     onSuccess: (started) => {
       if (started) closeLauncherImport();
     },
   });
+
+  const chooseSource = (next: ImportSourceKind) => {
+    setSource(next);
+    setRoot(null);
+    change(new Map());
+    submit.reset();
+  };
 
   const choose = () => {
     void pickFolder().then((dir) => {
@@ -123,6 +143,25 @@ function ImportForm() {
         {t("launcherImport.title")}
       </Heading>
       <div className="flex flex-col gap-3 px-5 pt-4 pb-5">
+        <div className="flex items-start justify-between gap-2">
+          <RadioGroup
+            aria-label={t("launcherImport.sourceLabel")}
+            orientation="horizontal"
+            value={source}
+            onChange={(value) => chooseSource(value as ImportSourceKind)}
+            className="flex flex-wrap gap-1"
+          >
+            {SOURCES.map((id) => (
+              <Radio key={id} value={id} className={sourceClass}>
+                {t(`launcherImport.source.${id}`)}
+              </Radio>
+            ))}
+          </RadioGroup>
+          <Button type="button" onPress={choose} className={`${sourceClass} bg-surface-1`}>
+            <IconFolder aria-hidden className="size-4" />
+            {t("launcherImport.chooseFolder")}
+          </Button>
+        </div>
         {list.isPending && (
           <div aria-busy="true" className="flex flex-col gap-3">
             {[0, 1, 2].map((i) => (
@@ -131,13 +170,8 @@ function ImportForm() {
           </div>
         )}
         {listError && (
-          <div role="alert" className="flex flex-col items-start gap-3">
+          <div role="alert">
             <FailureNotice error={listError} />
-            {listError.code === "import.unavailable" && (
-              <Button type="button" onPress={choose} className={secondaryButton}>
-                {t("launcherImport.chooseFolder")}
-              </Button>
-            )}
           </div>
         )}
         {list.data && rows.length === 0 && <p className="text-text-muted">{t("launcherImport.empty")}</p>}
@@ -168,7 +202,13 @@ function ImportForm() {
                       </span>
                     )}
                   </div>
-                  {row.unsupported !== null && <p className="pl-6 text-sm text-text-muted">{row.unsupported}</p>}
+                  {row.unsupported !== null && (
+                    <p className="pl-6 text-sm text-text-muted">
+                      {t(`launcherImport.unsupported.${row.unsupported.code}`, {
+                        detail: row.unsupported.detail ?? "",
+                      })}
+                    </p>
+                  )}
                   {selected && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 pl-6">
                       {row.available.map((kind) => (
