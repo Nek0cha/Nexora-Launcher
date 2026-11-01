@@ -458,8 +458,8 @@
     "chooseInstance": "追加先のインスタンス",
     "noInstances": "追加できるインスタンスがありません",
     "confirmTitle": "{{name}} を追加しますか？",
-    "confirmBody_one": "版 {{version}}、依存 {{count}} 件を一緒に導入します。",
-    "confirmBody_other": "版 {{version}}、依存 {{count}} 件を一緒に導入します。",
+    "confirmBody_one": "バージョン {{version}}、依存 {{count}} 件を一緒に導入します。",
+    "confirmBody_other": "バージョン {{version}}、依存 {{count}} 件を一緒に導入します。",
     "incompatibleBody": "導入済みの次の MOD は、この MOD と同時に使えないと宣言しています。",
     "installAnyway": "それでも追加",
     "cancel": "キャンセル",
@@ -483,15 +483,15 @@
     "checking": "確認中…",
     "checkLater": "いまは Modrinth に接続できません。更新はあとで確認します。",
     "upToDate": "すべて最新です",
-    "noCompatible": "このインスタンスに合う版が Modrinth に見つかりません",
+    "noCompatible": "このインスタンスに合うバージョンが Modrinth に見つかりません",
     "updated": "{{count}} 件を更新しました",
     "updateCancelled": "更新をキャンセルしました",
     "updateFailures": "{{count}} 件を更新できませんでした",
     "dismiss": "閉じる",
-    "changeVersion": "{{name}} の版を変える（いまは {{version}}）",
-    "versions": "{{name}} の版",
-    "versionsLoading": "版を読み込んでいます…",
-    "pinned": "この版に固定しているため、更新は案内しません。版の一覧で最新のリリースを選ぶと固定を外せます。",
+    "changeVersion": "{{name}} のバージョンを変える（いまは {{version}}）",
+    "versions": "{{name}} のバージョン",
+    "versionsLoading": "バージョンを読み込んでいます…",
+    "pinned": "このバージョンに固定しているため、更新は案内しません。バージョンの一覧で最新のリリースを選ぶと固定を外せます。",
     "currentVersion": "使用中",
     "versionType": {
       "release": "リリース",
@@ -499,7 +499,7 @@
       "alpha": "アルファ"
     },
     "versionChanged": "{{name}} を {{version}} に切り替えました",
-    "versionChangeCancelled": "版の切り替えをキャンセルしました"
+    "versionChangeCancelled": "バージョンの切り替えをキャンセルしました"
   },
   "sync": {
     "card": {
@@ -735,7 +735,7 @@
     "export": {
       "open": "mrpack として書き出す",
       "title": "モッドパックとして書き出す",
-      "version": "版",
+      "version": "バージョン",
       "includeConfig": "config を含める",
       "unidentified": "Modrinth で特定できなかったファイル",
       "warning": "配布が許可されているファイルか、確認してください。",
@@ -753,15 +753,15 @@
       "unsafe_folder": "フォルダ {{detail}} は使えません",
       "linked_folder": "リンクのフォルダは読み込みません",
       "unknown_loader": "ローダー {{detail}} には対応していません",
-      "missing_version": "Minecraft の版が分かりません",
-      "missing_loader_version": "ローダーの版が分かりません",
+      "missing_version": "Minecraft のバージョンが分かりません",
+      "missing_loader_version": "ローダーのバージョンが分かりません",
       "loader_unavailable": "{{detail}} は導入できません",
       "install_unfinished": "元のランチャーでの導入が終わっていません",
       "missing_metadata": "{{detail}} が見つかりません",
       "unreadable_metadata": "{{detail}} を読めません",
       "multiple_loaders": "ローダーが複数入っています",
-      "latest_version": "最新版に追従しているため、版が決まりません",
-      "unsupported_version": "版 {{detail}} には対応していません"
+      "latest_version": "最新バージョンに追従しているため、バージョンが決まりません",
+      "unsupported_version": "バージョン {{detail}} には対応していません"
     },
     "sourceLabel": "ランチャー",
     "source": {

@@ -97,12 +97,33 @@ describe("ImportLauncherDialog", () => {
     expect(screen.getByText("The loader liteloader is not supported")).toBeTruthy();
   });
 
+  it("does not show a version or loader for a row whose version is unknown", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([
+      row({ mcVersion: "", loader: "vanilla", unsupported: { code: "latest_version", detail: null } }),
+      row({ id: "b", name: "Bravo" }),
+    ]);
+    mount();
+
+    await check("Alpha");
+    expect(screen.queryAllByText(/Vanilla/)).toHaveLength(0);
+    expect(screen.getByText(/1\.21\.1/)).toBeTruthy();
+  });
+
+  it("is wide enough for the launcher tabs and the folder tab on one line", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([row()]);
+    mount();
+
+    await check("Alpha");
+    // このアプリの rem は 14px。max-w-2xl（42rem = 588px）では 5 つが入りきらなかった
+    expect(document.querySelector(".max-w-3xl")).not.toBeNull();
+  });
+
   it("writes the reason in Japanese too", async () => {
     await i18n.changeLanguage("ja");
     vi.mocked(listImportInstances).mockResolvedValue([row({ unsupported: { code: "latest_version", detail: null } })]);
     mount();
 
-    expect(await screen.findByText("最新版に追従しているため、版が決まりません")).toBeTruthy();
+    expect(await screen.findByText("最新バージョンに追従しているため、バージョンが決まりません")).toBeTruthy();
   });
 
   it("has a text for every reason code in both languages", () => {
