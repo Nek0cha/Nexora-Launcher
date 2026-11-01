@@ -7,7 +7,9 @@ import IconCheck from "~icons/ph/arrows-clockwise";
 import IconDrop from "~icons/ph/download-simple";
 import IconInfo from "~icons/ph/info";
 import IconPlus from "~icons/ph/plus";
+import IconUpload from "~icons/ph/upload-simple";
 import IconOffline from "~icons/ph/wifi-slash";
+import { pickContentFiles } from "../api/dialog";
 import { onFilesDropped } from "../api/dragDrop";
 import { withoutMrpack } from "../features/mrpack/mrpackPath";
 import { toErrorPayload } from "../api/ipc";
@@ -233,6 +235,17 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
       togglingRef.current.delete(id);
       setToggling(new Set(togglingRef.current));
     }
+  }, []);
+
+  // 選んだファイルを、ドロップと同じ流れで追加する。操作を受け付けない間は選ばせない
+  const pickFiles = useCallback((target: ContentKind) => {
+    const current = latest.current;
+    if (current.locked || current.dialogOpen || adding.current) return;
+    pickContentFiles(target)
+      .then((paths) => {
+        if (paths.length > 0) addFiles(target, paths, false);
+      })
+      .catch(current.toast.showError);
   }, []);
 
   const addFiles = useCallback((target: ContentKind, paths: string[], overwrite: boolean) => {
@@ -478,6 +491,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
               toggling={toggling}
               // ローダーの無いインスタンスには MOD を入れられないので出さない
               addHref={k === "mod" && canUpdate ? `/instances/${instance.id}/modrinth` : undefined}
+              onPickFiles={() => pickFiles(k)}
               updates={k === "mod" ? updateControls : undefined}
             />
           </TabPanel>
@@ -529,6 +543,13 @@ function KindSkeleton({ withUpdates }: { withUpdates: boolean }) {
       <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 pb-1">
           <Skeleton className="h-9 min-w-0 flex-1" />
+          <div
+            aria-hidden
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-transparent bg-surface-2 px-3 text-sm motion-safe:animate-pulse"
+          >
+            <span className="size-4 shrink-0" />
+            <span className="invisible">{t("content.addFiles")}</span>
+          </div>
           {withUpdates && (
             // 「Modrinth から追加」と同じ枠。見えない文字で幅を決めるので、どの言語でも同じ幅になる
             <div
@@ -574,6 +595,8 @@ function KindPanel(props: {
   toggling: ReadonlySet<string>;
   /** 「Modrinth から追加」の行き先。無ければボタンを出さない */
   addHref?: string;
+  /** 「ファイルを追加」を押したとき。ファイルを選ぶダイアログを開く */
+  onPickFiles: () => void;
   /** 更新の部品（MOD のサブタブだけ）。無ければ更新の確認もボタンも出さない */
   updates?: UpdateControls;
 }) {
@@ -633,6 +656,10 @@ function KindBody(props: Parameters<typeof KindPanel>[0] & { categories: ReturnT
             onChange={(query) => props.onFilterChange({ ...filter, query })}
             className="min-w-0 flex-1"
           />
+          <Button onPress={props.onPickFiles} isDisabled={props.busy} className={addLink}>
+            <IconUpload aria-hidden className="size-4 shrink-0" />
+            <span>{t("content.addFiles")}</span>
+          </Button>
           {props.addHref !== undefined && (
             <Link to={props.addHref} className={addLink}>
               <IconPlus aria-hidden className="size-4 shrink-0" />

@@ -399,6 +399,7 @@
     "excluded": "絞り込みの対象外 {{count}} 件",
     "excludedShow": "表示",
     "excludedHide": "隠す",
+    "addFiles": "ファイルを追加",
     "excludedList": "絞り込みの対象外のコンテンツ",
     "noMatch": "条件に合うものはありません。",
     "empty": {

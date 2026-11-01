@@ -17,6 +17,7 @@ import {
   setContentEnabled,
   updateContent,
 } from "../api/commands";
+import { pickContentFiles } from "../api/dialog";
 import { type DragDropHandlers, onFilesDropped } from "../api/dragDrop";
 import { IpcError } from "../api/ipc";
 import type { ContentTaskReport } from "../bindings/ContentTaskReport";
@@ -47,6 +48,7 @@ vi.mock("../api/commands", () => ({
 }));
 
 vi.mock("../api/dragDrop", () => ({ onFilesDropped: vi.fn() }));
+vi.mock("../api/dialog", () => ({ pickContentFiles: vi.fn() }));
 
 const instance: Instance = {
   id: "i1", name: "Survival", dirName: "Survival", mcVersion: "1.21.5", state: "ready",
@@ -339,6 +341,37 @@ describe("ContentTab", () => {
     view.setBusy(false);
     await waitFor(() => expect(screen.queryByText(/Can't change content right now/)).toBeNull());
     expect([...root.children]).toEqual(before);
+  });
+
+  it("the add-files button picks files for the open sub-tab and adds them like a drop", async () => {
+    vi.mocked(pickContentFiles).mockResolvedValue(["C:\Downloads\a.jar"]);
+    mount();
+    await ready();
+    await press(screen.getByRole("button", { name: "Add files" }));
+    expect(pickContentFiles).toHaveBeenLastCalledWith("mod");
+    await waitFor(() => expect(addContentFiles).toHaveBeenLastCalledWith("i1", "mod", ["C:\Downloads\a.jar"], false));
+
+    vi.mocked(pickContentFiles).mockResolvedValue(["/home/me/bsl.zip"]);
+    fireEvent.click(subTab(/^Shaders/));
+    await waitFor(() => expect(subTab(/^Shaders/).getAttribute("aria-selected")).toBe("true"));
+    await press(await screen.findByRole("button", { name: "Add files" }));
+    expect(pickContentFiles).toHaveBeenLastCalledWith("shader");
+    await waitFor(() => expect(addContentFiles).toHaveBeenLastCalledWith("i1", "shader", ["/home/me/bsl.zip"], false));
+  });
+
+  it("does nothing when the file picker is cancelled", async () => {
+    vi.mocked(pickContentFiles).mockResolvedValue([]);
+    mount();
+    await ready();
+    await press(screen.getByRole("button", { name: "Add files" }));
+    await waitFor(() => expect(pickContentFiles).toHaveBeenCalled());
+    expect(addContentFiles).not.toHaveBeenCalled();
+  });
+
+  it("disables the add-files button while the instance is busy", async () => {
+    mount(true);
+    await ready();
+    expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("dropping files calls addContentFiles for the open sub-tab with overwrite=false", async () => {

@@ -78,6 +78,10 @@ async fn identify_with(
     now_ms: i64,
     batches: Batches,
 ) -> Result<IdentifyReport, CoreError> {
+    // 確認済みでも、ファイルの中にアイコンがあるのに見つけられていなかった行（読み取りの改善前に
+    // 追加したものなど）は、アイコンだけを読み直す。名前などは変えない
+    refresh_missing_local_icons(db, icons_dir, game_dir, instance_id).await?;
+
     let mut targets = Vec::new();
     for kind in KINDS {
         targets.extend(
@@ -138,6 +142,69 @@ async fn identify_with(
     }
 
     write_remote(db, instance_id, &targets, &versions, &found, now_ms)
+}
+
+/// 入手元がローカルで、アイコンが何も無い行。
+fn lacks_any_icon(row: &Row) -> bool {
+    row.item.provider == Provider::Local
+        && row.item.icon_url.is_none()
+        && row.local_icon_key.is_none()
+}
+
+/// `lacks_any_icon` の行について、ファイルの中のアイコンを読み直して書く。
+/// アイコンの無いファイルは毎回読み直すことになるが、読むのは安い（zip の索引と数エントリだけ）。
+async fn refresh_missing_local_icons(
+    db: &Db,
+    icons_dir: &Path,
+    game_dir: &Path,
+    instance_id: &str,
+) -> Result<(), CoreError> {
+    let mut rows = Vec::new();
+    for kind in KINDS {
+        rows.extend(
+            store::rows(db, instance_id, kind)?
+                .into_iter()
+                // まだ確認していない行は、あとの通常の読み取り（名前なども書く）に任せる
+                .filter(|r| r.identified_at.is_some() && lacks_any_icon(r)),
+        );
+    }
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let (db, icons_dir, game_dir, instance_id) = (
+        db.clone(),
+        icons_dir.to_path_buf(),
+        game_dir.to_path_buf(),
+        instance_id.to_string(),
+    );
+    tokio::task::spawn_blocking(move || {
+        let found: Vec<(&Row, String)> = rows
+            .iter()
+            .filter_map(|row| {
+                let path = game_dir.join(&row.item.rel_path);
+                let png = read_local_meta(row.item.kind, &path).icon_png?;
+                Some((row, save_icon(&icons_dir, &row.item.sha1, &png)?))
+            })
+            .collect();
+        db.with_conn(|conn| {
+            let tx = conn.transaction()?;
+            for (row, key) in &found {
+                // 読んでいる間に中身が変わった行は書かない（sha1 で確かめる）
+                tx.execute(
+                    "UPDATE instance_contents SET local_icon_key = ?4
+                     WHERE instance_id = ?1 AND rel_path = ?2 AND sha1 = ?3
+                       AND local_icon_key IS NULL",
+                    params![instance_id, row.item.rel_path, row.item.sha1, key],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|e| CoreError::Unexpected {
+        message: format!("local icon task failed: {e}"),
+    })?
 }
 
 /// まだローカルのメタデータを読んでいない行か。
@@ -672,6 +739,35 @@ mod tests {
         let row = env.row("mods/a.jar");
         assert_eq!(row.local_icon_key.as_deref(), Some(sha1.as_str()));
         assert!(row.item.has_local_icon);
+    }
+
+    #[tokio::test]
+    async fn a_local_row_that_has_no_icon_gets_one_on_a_later_identify() {
+        let env = Env::new();
+        let sha1 = env.add_mod("a.jar", "Local A");
+        let server = MockServer::start().await;
+        mount_hashes(&server, serde_json::json!({})).await;
+        env.identify(&server.uri(), BATCHES).await.unwrap();
+        // 前の版の読み取りではアイコンが見つからなかった行（確認済みだが、アイコンが無い）
+        env.db
+            .with_conn(|conn| {
+                conn.execute("UPDATE instance_contents SET local_icon_key = NULL", [])?;
+                Ok(())
+            })
+            .unwrap();
+        std::fs::remove_file(env.icons().join(format!("{sha1}.png"))).unwrap();
+        assert!(!env.row("mods/a.jar").item.has_local_icon);
+
+        env.identify(&server.uri(), BATCHES).await.unwrap();
+
+        let row = env.row("mods/a.jar");
+        assert_eq!(row.local_icon_key.as_deref(), Some(sha1.as_str()));
+        assert_eq!(
+            std::fs::read(env.icons().join(format!("{sha1}.png"))).unwrap(),
+            PNG
+        );
+        // 名前など、ほかの列は変えない
+        assert_eq!(row.item.name.as_deref(), Some("Local A"));
     }
 
     #[tokio::test]
