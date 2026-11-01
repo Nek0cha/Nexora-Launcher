@@ -1,6 +1,7 @@
 //! 他のランチャーのインスタンスを、選んだ中身だけコピーして取り込む。
 
 pub mod copy;
+pub mod duplicates;
 
 use std::path::PathBuf;
 
