@@ -15,6 +15,7 @@ use nexora_core::content::ops::AddReport;
 use nexora_core::content::updates::UpdateCheck;
 use nexora_core::content::{ContentItem, ContentKind};
 use nexora_core::error::{CoreError, ErrorPayload};
+use nexora_core::import::{ImportRequest, ImportSourceKind, SourceInstance};
 use nexora_core::instance::folder::FolderKind;
 use nexora_core::instance::logs::{GameLog, LogContent};
 use nexora_core::instance::screenshots::{ImportReport, Screenshot};
@@ -443,6 +444,59 @@ pub async fn import_mrpack(
     services
         .launcher
         .import_mrpack(std::path::PathBuf::from(path), name)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 他のランチャーのインスタンスの一覧。`root` が無ければ既定の場所を探す。
+#[tauri::command]
+pub async fn list_import_instances(
+    state: State<'_, AppState>,
+    source: ImportSourceKind,
+    root: Option<String>,
+) -> CmdResult<Vec<SourceInstance>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .list_import_instances(source, root.map(std::path::PathBuf::from))
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 選んだ行のうち、すでにあるものと重複するものの `id`。
+#[tauri::command]
+pub async fn find_import_duplicates(
+    state: State<'_, AppState>,
+    source: ImportSourceKind,
+    root: Option<String>,
+    ids: Vec<String>,
+) -> CmdResult<Vec<String>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .find_import_duplicates(source, root.map(std::path::PathBuf::from), ids)
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+/// 選んだインスタンスを作り、中身をコピーするタスクをインスタンスごとに始める。
+#[tauri::command]
+pub async fn import_from_launcher(
+    state: State<'_, AppState>,
+    source: ImportSourceKind,
+    root: Option<String>,
+    requests: Vec<ImportRequest>,
+    allow_duplicates: bool,
+) -> CmdResult<Vec<CreatedInstance>> {
+    let services = state.services()?;
+    services
+        .launcher
+        .import_from_launcher(
+            source,
+            root.map(std::path::PathBuf::from),
+            requests,
+            allow_duplicates,
+        )
         .await
         .map_err(ErrorPayload::from)
 }

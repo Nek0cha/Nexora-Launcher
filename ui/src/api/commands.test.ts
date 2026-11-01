@@ -45,6 +45,7 @@ import {
   getCurrentSkin, setCape, listSavedSkins, getSavedSkinImage, addSavedSkin, addSavedSkinFromPath,
   updateSavedSkin, deleteSavedSkin, applySavedSkin, importCurrentSkin, listDefaultSkins, applyDefaultSkin,
   inspectMrpack, importMrpack, previewMrpackExport, exportMrpack,
+  listImportInstances, findImportDuplicates, importFromLauncher,
 } from "./commands";
 import type { ExportOptions } from "../bindings/ExportOptions";
 import type { SearchQuery } from "../bindings/SearchQuery";
@@ -291,5 +292,26 @@ describe("mrpack commands", () => {
     const options: ExportOptions = { versionId: "1.0.0", includeConfig: true, acceptUnidentified: false };
     await exportMrpack("i1", "C:\\out.mrpack", options);
     expect(invoke).toHaveBeenLastCalledWith("export_mrpack", { instanceId: "i1", dest: "C:\\out.mrpack", options });
+  });
+});
+
+describe("launcher import commands", () => {
+  it("passes the command names and camelCase arguments", async () => {
+    await listImportInstances("modrinth_app", null);
+    expect(invoke).toHaveBeenLastCalledWith("list_import_instances", { source: "modrinth_app", root: null });
+    await findImportDuplicates("modrinth_app", "/data/ModrinthApp", ["a", "b"]);
+    expect(invoke).toHaveBeenLastCalledWith("find_import_duplicates", {
+      source: "modrinth_app",
+      root: "/data/ModrinthApp",
+      ids: ["a", "b"],
+    });
+    const requests = [{ id: "a", kinds: ["mods" as const, "saves" as const] }];
+    await importFromLauncher("modrinth_app", null, requests, true);
+    expect(invoke).toHaveBeenLastCalledWith("import_from_launcher", {
+      source: "modrinth_app",
+      root: null,
+      requests,
+      allowDuplicates: true,
+    });
   });
 });
