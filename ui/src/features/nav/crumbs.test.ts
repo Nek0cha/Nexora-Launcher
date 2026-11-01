@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ITEMS } from "../../components/Sidebar";
+import { FOOTER_ROUTES, ITEMS } from "../../components/Sidebar";
 import i18n from "../../i18n";
 import { crumbsFor } from "./crumbs";
 
@@ -49,7 +49,7 @@ describe("crumbsFor", () => {
   });
 
   it("ends_with_the_same_word_as_the_sidebar_item", () => {
-    for (const { to, key } of ITEMS) {
+    for (const { to, key } of [...ITEMS, ...FOOTER_ROUTES]) {
       const crumbs = crumbsFor(to, ctx());
       expect(crumbs.at(-1)?.label).toBe(t(`nav.${key}`));
     }

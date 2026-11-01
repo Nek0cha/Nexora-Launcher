@@ -1,4 +1,4 @@
-import { Link, NavLink } from "react-router";
+import { NavLink } from "react-router";
 import { useTranslation } from "react-i18next";
 import IconHouse from "~icons/ph/house";
 import IconHouseFill from "~icons/ph/house-fill";
@@ -11,7 +11,6 @@ import IconCompassFill from "~icons/ph/compass-fill";
 import IconShirt from "~icons/ph/t-shirt";
 import IconShirtFill from "~icons/ph/t-shirt-fill";
 import IconUser from "~icons/ph/user-circle";
-import IconUserFill from "~icons/ph/user-circle-fill";
 import IconGear from "~icons/ph/gear-six";
 import IconGearFill from "~icons/ph/gear-six-fill";
 import type { ComponentType, SVGProps } from "react";
@@ -22,7 +21,7 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 type Item = {
   to: string;
-  key: "home" | "instances" | "sync" | "browse" | "skins" | "accounts" | "settings";
+  key: "home" | "instances" | "sync" | "browse" | "skins";
   Icon: IconComponent;
   /** 選択中に使う塗りのアイコン。面の明度と文字の強さに加え、形でも現在地を示す */
   ActiveIcon: IconComponent;
@@ -34,9 +33,13 @@ export const ITEMS: Item[] = [
   { to: "/sync", key: "sync", Icon: IconSliders, ActiveIcon: IconSlidersFill },
   { to: "/browse", key: "browse", Icon: IconCompass, ActiveIcon: IconCompassFill },
   { to: "/skins", key: "skins", Icon: IconShirt, ActiveIcon: IconShirtFill },
-  { to: "/accounts", key: "accounts", Icon: IconUser, ActiveIcon: IconUserFill },
-  { to: "/settings", key: "settings", Icon: IconGear, ActiveIcon: IconGearFill },
 ];
+
+/** 下の行（アカウントと設定）の行き先。ナビの項目ではないが、見出しの名前は同じ（`nav.<key>`）。 */
+export const FOOTER_ROUTES = [
+  { to: "/accounts", key: "accounts" },
+  { to: "/settings", key: "settings" },
+] as const;
 
 const itemBase = [
   "flex h-10 items-center gap-2.5 rounded-md px-3",
@@ -74,14 +77,42 @@ export function Sidebar({ materialOn }: { materialOn: boolean }) {
           )}
         </NavLink>
       ))}
-      <div className="mt-auto flex flex-col gap-1">
+      {/* 下の行：使用中のアカウントの顔と名前（アカウント画面へ）と、その右の設定のボタン */}
+      <div className="mt-auto flex items-center gap-1">
         <AccountLink />
+        <SettingsLink />
       </div>
     </nav>
   );
 }
 
-/** 使用中のアカウントの顔と名前。押すとアカウント画面に移る（spec 6.2）。 */
+const footerActive = "bg-surface-3 text-text-strong";
+const footerIdle = "text-text-muted hover:bg-surface-2 hover:text-text";
+
+/** 設定の画面へ。名前の行の右に置く、アイコンだけのボタン。 */
+function SettingsLink() {
+  const { t } = useTranslation();
+  return (
+    <NavLink
+      to="/settings"
+      aria-label={t("nav.settings")}
+      title={t("nav.settings")}
+      className={({ isActive }) =>
+        `${itemBase} ml-auto w-10 shrink-0 justify-center px-0 ${isActive ? footerActive : footerIdle}`
+      }
+    >
+      {({ isActive }) =>
+        isActive ? (
+          <IconGearFill aria-hidden className="size-5 shrink-0" />
+        ) : (
+          <IconGear aria-hidden className="size-5 shrink-0" />
+        )
+      }
+    </NavLink>
+  );
+}
+
+/** 使用中のアカウントの顔と名前。押すとアカウント画面に移る（spec 6.2）。アカウント画面にいる間は選択中の面にする。 */
 function AccountLink() {
   const { t } = useTranslation();
   const { data, active } = useAccounts();
@@ -90,12 +121,11 @@ function AccountLink() {
   const needsLogin = active?.kind === "msa" && active.account.needsLogin;
   const name = active?.kind === "msa" ? active.account.username : active?.username;
   return (
-    // 現在地はナビゲーションの「アカウント」の項目で示すため、ここは NavLink にしない
-    <Link
+    <NavLink
       to="/accounts"
       // 黄色の点は色だけなので、スクリーンリーダーには名前に続けて「ログインが必要」と伝える
       aria-label={needsLogin ? t("sidebar.accountNeedsLogin", { name }) : undefined}
-      className={`${itemBase} text-text-muted hover:bg-surface-2 hover:text-text`}
+      className={({ isActive }) => `${itemBase} min-w-0 flex-1 ${isActive ? footerActive : footerIdle}`}
     >
       {active ? (
         <>
@@ -114,6 +144,6 @@ function AccountLink() {
           <span className="truncate">{t("sidebar.login")}</span>
         </>
       )}
-    </Link>
+    </NavLink>
   );
 }

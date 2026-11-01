@@ -16,12 +16,12 @@ const account = (patch: Partial<Account> = {}): Account => ({
   id: "a1", username: "Alex", isActive: true, entitlement: "verified", needsLogin: false, loginSaved: true, hasSkin: false, ...patch,
 });
 
-function mount(list: AccountList) {
+function mount(list: AccountList, path = "/") {
   vi.mocked(listAccounts).mockResolvedValue(list);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <Sidebar materialOn={false} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -81,7 +81,7 @@ describe("Sidebar", () => {
   it("draws every item icon at size-5, the selected filled one too", async () => {
     mount({ accounts: [account()], devOffline: null });
     const nav = screen.getByRole("navigation");
-    // 末尾のアカウントの項目（顔の画像）を除いた、ナビの項目
+    // 末尾のアカウントと設定を除いた、ナビの項目
     const links = within(nav).getAllByRole("link").slice(0, ITEMS.length);
     expect(links).toHaveLength(ITEMS.length);
     for (const link of links) {
@@ -92,12 +92,51 @@ describe("Sidebar", () => {
     expect(within(nav).getByRole("link", { name: "Home" }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("has a skins item between browse and accounts", async () => {
+  it("has a skins item right after browse", async () => {
     mount({ accounts: [account()], devOffline: null });
     const nav = screen.getByRole("navigation");
     expect(within(nav).getByRole("link", { name: "Skins" }).getAttribute("href")).toBe("/skins");
     const keys = ITEMS.map((i) => i.key);
     expect(keys.indexOf("skins")).toBe(keys.indexOf("browse") + 1);
-    expect(keys.indexOf("accounts")).toBe(keys.indexOf("skins") + 1);
+  });
+
+  it("has no accounts or settings item in the list: the account is the one at the bottom", async () => {
+    mount({ accounts: [account()], devOffline: null });
+    const nav = screen.getByRole("navigation");
+    expect(ITEMS.map((i) => i.key)).toEqual(["home", "instances", "sync", "browse", "skins"]);
+    expect(within(nav).queryByRole("link", { name: "Accounts" })).toBeNull();
+    // 設定は名前の行の右の、アイコンだけのボタン
+    const settings = within(nav).getByRole("link", { name: "Settings" });
+    expect(settings.getAttribute("href")).toBe("/settings");
+    expect(settings.textContent).toBe("");
+    const accountLink = await within(nav).findByRole("link", { name: "Alex" });
+    expect(accountLink.parentElement).toBe(settings.parentElement);
+    expect(accountLink.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("marks the account link as the current page on the accounts screen", async () => {
+    mount({ accounts: [account()], devOffline: null }, "/accounts");
+    const link = await screen.findByRole("link", { name: "Alex" });
+    expect(link.getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
+  });
+
+  it("marks the settings button as the current page on the settings screen", async () => {
+    mount({ accounts: [account()], devOffline: null }, "/settings");
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
+    expect((await screen.findByRole("link", { name: "Alex" })).getAttribute("aria-current")).toBeNull();
+  });
+
+  it("keeps the settings button at the right edge before the account list has loaded", () => {
+    vi.mocked(listAccounts).mockReturnValue(new Promise(() => {}));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Sidebar materialOn={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("link", { name: "Settings" }).className).toContain("ml-auto");
   });
 });
