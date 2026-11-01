@@ -4,7 +4,7 @@ A modern, lightweight, open-source launcher for Minecraft: Java Edition, built w
 
 ## About
 
-Nexora Launcher installs and launches official Minecraft: Java Edition versions. Windows is the first target, and macOS and Linux are planned.
+Nexora Launcher installs and launches official Minecraft: Java Edition versions. Builds for Windows, macOS and Linux are published on the [Releases](https://github.com/Nek0cha/Nexora-Launcher/releases) page.
 
 The project is in early development. Building the Microsoft sign-in needs a client ID in the `NEXORA_MS_CLIENT_ID` environment variable; forks must register their own and pass Minecraft API review (aka.ms/mce-reviewappid).
 
@@ -20,6 +20,25 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - Instances of Prism Launcher, the official Minecraft launcher and the CurseForge app can be imported the same way. Only Modrinth App has been tried against real data; the other three were written from public documentation and source and are untested on real installs (the CurseForge app in particular was never installed during development).
 - Planned: content from CurseForge
 
+## Install
+
+Download the file for your system from the [Releases](https://github.com/Nek0cha/Nexora-Launcher/releases) page.
+
+| System | File |
+|---|---|
+| Windows | `Nexora_<version>_x64-setup.exe` |
+| macOS (Apple Silicon) | `Nexora_<version>_aarch64.dmg` |
+| macOS (Intel) | `Nexora_<version>_x64.dmg` |
+| Linux | `Nexora_<version>_amd64.AppImage` or `Nexora_<version>_amd64.deb` |
+
+The installers are not code-signed, because a signing certificate costs money and Nexora Launcher is a free project. The first launch therefore shows a warning from the operating system:
+
+- **Windows:** SmartScreen shows "Windows protected your PC". Choose "More info", then "Run anyway".
+- **macOS:** the app is blocked as coming from an unidentified developer. Open it once, then go to System Settings → Privacy & Security and choose "Open Anyway" next to the message about Nexora. If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Nexora.app` in a terminal.
+- **Linux:** make the AppImage executable (`chmod +x`) and run it. Only the AppImage updates itself; with the `.deb`, install the new package by hand.
+
+The app checks for a new version when it starts, and shows an update button in the title bar when there is one. Updates are verified with a signing key of the project; nothing is installed until you press the button.
+
 ### Accounts and privacy
 
 - Players sign in with their own Microsoft account in the system browser. The launcher uses the authorization code flow with PKCE, and does not use a client secret.
@@ -28,6 +47,7 @@ The project is in early development. Building the Microsoft sign-in needs a clie
 - When content is searched, installed or updated, the launcher also contacts Modrinth: the search text and filters (Minecraft version, loader, categories, environment) go to api.modrinth.com; version lookups for installs and their dependencies go to api.modrinth.com; update checks send the SHA-1 hashes of the installed mods together with the instance's Minecraft version and loader; and files are downloaded from cdn.modrinth.com. Nothing else is sent, and none of it includes account data.
 - Importing a `.mrpack` also sends the SHA-1 hashes of the imported mods, resource packs and shaders to api.modrinth.com to identify them. It downloads its files only from cdn.modrinth.com, github.com, raw.githubusercontent.com, gitlab.com and GitHub's release-asset hosts, over HTTPS with at most three redirects, and rejects any file whose SHA-1, SHA-512 or size differs from the pack's index. Exporting sends the SHA-1 hashes of the enabled mods, resource packs and shaders to api.modrinth.com to look up their download URLs. Nothing else is sent, and none of it includes account data.
 - Importing from Modrinth App sends nothing by itself; the imported mods are then identified like those of any instance, by sending their SHA-1 hashes to api.modrinth.com.
+- At startup, and when you press "Check for updates" in Settings, the launcher requests `latest.json` from github.com (the project's release page). Only the request itself is sent; it contains no account data.
 - The Microsoft refresh token is stored only in the operating system's credential store (Windows Credential Manager, macOS Keychain, or Secret Service on Linux).
 - Tokens are sent only to Microsoft, Xbox, and Minecraft services, and are never written to logs.
 - Release builds require an account that owns Minecraft: Java Edition.
@@ -36,7 +56,7 @@ Nexora Launcher is not an official Minecraft product and is not approved by or a
 
 ## 概要（日本語）
 
-Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です（フェーズ 7：`.mrpack` のインポートとエクスポートまで）。
+Minecraft: Java Edition 用のオープンソースのランチャーです。現在は開発の初期段階です。Windows、macOS、Linux 向けの配布物を [Releases](https://github.com/Nek0cha/Nexora-Launcher/releases) で公開しています。
 
 - インスタンスの一覧、作成、複製、削除ができます。
 - インスタンスごとに、メモリ、Java、JVM 引数を設定できます。
@@ -53,6 +73,18 @@ Minecraft: Java Edition 用のオープンソースのランチャーです。�
   - `.mrpack` を読み込むときは、入った MOD、リソースパック、シェーダーのファイルの SHA-1 ハッシュを、それが何かを調べるために api.modrinth.com へ送ります。ファイルは cdn.modrinth.com、github.com、raw.githubusercontent.com、gitlab.com と GitHub のリリースの配信先からだけ、HTTPS でファイルをダウンロードします（リダイレクトは 3 回まで）。SHA-1、SHA-512、大きさのどれかが索引と違うファイルは受け入れません。書き出すときは、有効な MOD、リソースパック、シェーダーの SHA-1 ハッシュを、ダウンロード元の URL を調べるために api.modrinth.com へ送ります。これ以外は送りません。アカウントの情報も送りません。
   - Modrinth App のインスタンスを、MOD、スクリーンショット、セーブデータ、設定（config、options.txt、servers.dat）のどれを持ってくるかを選んで読み込めます。元のデータは読むだけで変更せず、すでにあるインスタンスと重複しそうなときはコピーの前にお知らせします。Prism Launcher、公式ランチャー、CurseForge アプリのインスタンスも同じ形で読み込めますが、実際のデータで試したのは Modrinth App だけです（ほかの 3 つは公開されている資料から書いたもので、CurseForge アプリは開発中に一度も入れていません）。
   - Modrinth App から読み込むこと自体は、何も送信しません。読み込んだ MOD は、ほかのインスタンスと同じく、それが何かを調べるために SHA-1 ハッシュを api.modrinth.com へ送ります。
+
+## 導入（日本語）
+
+[Releases](https://github.com/Nek0cha/Nexora-Launcher/releases) から、お使いの環境のファイルをダウンロードしてください（Windows は `-setup.exe`、macOS は `.dmg`、Linux は `.AppImage` か `.deb`）。
+
+配布物にはコード署名をしていません（署名の証明書は有料で、このプロジェクトは無料で公開しているためです）。そのため、初回の起動で OS が警告を出します。
+
+- **Windows：** SmartScreen が「Windows によって PC が保護されました」と表示します。「詳細情報」を押して、「実行」を選んでください。
+- **macOS：** 開発元を確認できないアプリとして止められます。いちど開いてみたあと、「システム設定 → プライバシーとセキュリティ」で、Nexora についての表示の横にある「このまま開く」を押してください。「壊れているため開けません」と出たときは、ターミナルで `xattr -dr com.apple.quarantine /Applications/Nexora.app` を実行してください。
+- **Linux：** AppImage に実行権限を付けて（`chmod +x`）起動してください。自動で更新されるのは AppImage だけです。`.deb` は、新しいパッケージを手で入れ直してください。
+
+アプリは起動したときに新しいバージョンを確認し、あればタイトルバーに更新のボタンを出します。更新はプロジェクトの署名鍵で検証され、ボタンを押すまでは何もインストールしません。更新の確認では、github.com へリクエストを送るだけで、アカウントの情報は送りません。
 
 ## 開発環境
 
@@ -123,6 +155,8 @@ pnpm --filter ui typecheck
 - フェーズ 1 の設計：`docs/specs/2026-10-15-phase1-foundation-design.md`
 - フェーズ 4 の設計：`docs/specs/2026-10-19-phase4-instance-ui-design.md`
 - フェーズ 5 の設計：`docs/specs/2026-10-20-phase5-loaders-and-content-design.md`
+- フェーズ 10 の設計：`docs/specs/2026-11-01-phase10-release-design.md`
+- リリースの手順：`docs/releasing.md`
 - 調査資料：`docs/research/`
 
 ## ライセンス
