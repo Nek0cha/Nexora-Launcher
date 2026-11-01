@@ -232,18 +232,20 @@ impl Launcher {
         let game_dir = instance::game_dir(&self.env.paths, &inst);
 
         handle.set_phase(TaskPhase::Downloading);
-        for kind in ImportKind::ALL
+        let parts: Vec<&'static str> = ImportKind::ALL
             .into_iter()
             .filter(|k| request.kinds.contains(k))
-        {
+            .flat_map(|k| k.parts().iter().copied())
+            .collect();
+        for part in parts {
             let from = {
                 let (source, source_id) = (source.clone(), request.id.clone());
-                blocking(move || source.folder(&source_id, kind)).await?
+                blocking(move || source.source_path(&source_id, part)).await?
             };
             let Some(from) = from else { continue };
             let (root, token, progress) =
                 (game_dir.clone(), handle.token().clone(), handle.clone());
-            let dest = game_dir.join(kind.dir_name());
+            let dest = game_dir.join(part);
             blocking(move || {
                 let report = copy_tree(&from, &root, &dest, &token, &mut |done, total| {
                     progress.set_progress(kib(done), kib(total))

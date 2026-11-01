@@ -75,6 +75,28 @@ fn plan(src: &Path, token: &CancellationToken) -> Result<Plan, CoreError> {
     Ok(plan)
 }
 
+/// 1 つのファイルを `dest` へコピーする。
+fn copy_one(
+    src: &Path,
+    dest: &Path,
+    token: &CancellationToken,
+    progress: &mut dyn FnMut(u64, u64),
+) -> Result<CopyReport, CoreError> {
+    if token.is_cancelled() {
+        return Err(CoreError::Cancelled);
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
+    }
+    let bytes = fs::copy(src, dest).map_err(|e| io_err(src, e))?;
+    progress(bytes, bytes);
+    Ok(CopyReport {
+        files: 1,
+        bytes,
+        skipped_links: 0,
+    })
+}
+
 /// `src` の中身を `dest` へコピーする。`dest` は `dest_root` の下でなければならない。
 /// リンクはたどらず数えるだけ。`progress(done, total)` はバイト数で呼ぶ。
 pub fn copy_tree(
@@ -85,6 +107,9 @@ pub fn copy_tree(
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<CopyReport, CoreError> {
     ensure_contained(dest_root, dest)?;
+    if !is_link(src) && fs::metadata(src).is_ok_and(|m| m.is_file()) {
+        return copy_one(src, dest, token, progress);
+    }
     let plan = plan(src, token)?;
     let total: u64 = plan.files.iter().map(|(_, len)| len).sum();
     fs::create_dir_all(dest).map_err(|e| io_err(dest, e))?;
@@ -165,6 +190,35 @@ mod tests {
             (2, 7, 0)
         );
         assert_eq!(fs::read(src.join("a.jar")).unwrap(), b"aaa");
+    }
+
+    #[test]
+    fn copies_a_single_file_to_the_destination_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("options.txt");
+        write(&src, b"fov:90");
+        let root = tmp.path().join("inst");
+        let dest = root.join("options.txt");
+        let report = run(&src, &root, &dest, &CancellationToken::new()).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"fov:90");
+        assert_eq!((report.files, report.bytes), (1, 6));
+        assert_eq!(fs::read(&src).unwrap(), b"fov:90");
+    }
+
+    #[test]
+    fn a_single_file_cannot_land_outside_the_instance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("servers.dat");
+        write(&src, b"x");
+        let root = tmp.path().join("inst");
+        let err = run(
+            &src,
+            &root,
+            &tmp.path().join("elsewhere.dat"),
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "mrpack.unsafe_path");
     }
 
     #[test]

@@ -20,17 +20,25 @@ pub enum ImportKind {
     Mods,
     Screenshots,
     Saves,
+    /// ゲームと MOD の設定（`config/`、`options.txt`、`servers.dat`）。
+    Settings,
 }
 
 impl ImportKind {
-    pub const ALL: [ImportKind; 3] = [ImportKind::Mods, ImportKind::Screenshots, ImportKind::Saves];
+    pub const ALL: [ImportKind; 4] = [
+        ImportKind::Mods,
+        ImportKind::Screenshots,
+        ImportKind::Saves,
+        ImportKind::Settings,
+    ];
 
-    /// インスタンスのフォルダの中での名前。
-    pub fn dir_name(self) -> &'static str {
+    /// インスタンスのフォルダの中での、フォルダまたはファイルの名前。種類によっては複数になる。
+    pub fn parts(self) -> &'static [&'static str] {
         match self {
-            ImportKind::Mods => "mods",
-            ImportKind::Screenshots => "screenshots",
-            ImportKind::Saves => "saves",
+            ImportKind::Mods => &["mods"],
+            ImportKind::Screenshots => &["screenshots"],
+            ImportKind::Saves => &["saves"],
+            ImportKind::Settings => &["config", "options.txt", "servers.dat"],
         }
     }
 }
@@ -73,8 +81,8 @@ pub struct ImportRequest {
 pub trait ImportSource: Send + Sync {
     /// 見つかったインスタンスの一覧。
     fn list(&self) -> Result<Vec<SourceInstance>, CoreError>;
-    /// 指定の種類のコピー元のフォルダ。無ければ `None`。
-    fn folder(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError>;
+    /// 指定の部分（`ImportKind::parts` の 1 つ）のコピー元。フォルダまたはファイル。無ければ `None`。
+    fn source_path(&self, id: &str, part: &str) -> Result<Option<PathBuf>, CoreError>;
 }
 
 #[cfg(test)]
@@ -83,10 +91,15 @@ mod tests {
     use crate::error::CoreError;
 
     #[test]
-    fn kinds_map_to_the_folder_names_of_the_instance() {
-        assert_eq!(ImportKind::Mods.dir_name(), "mods");
-        assert_eq!(ImportKind::Screenshots.dir_name(), "screenshots");
-        assert_eq!(ImportKind::Saves.dir_name(), "saves");
+    fn kinds_map_to_their_places_in_the_instance() {
+        assert_eq!(ImportKind::Mods.parts(), ["mods"]);
+        assert_eq!(ImportKind::Screenshots.parts(), ["screenshots"]);
+        assert_eq!(ImportKind::Saves.parts(), ["saves"]);
+        assert_eq!(
+            ImportKind::Settings.parts(),
+            ["config", "options.txt", "servers.dat"]
+        );
+        assert_eq!(ImportKind::ALL.len(), 4);
     }
 
     #[test]

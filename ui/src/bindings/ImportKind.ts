@@ -3,4 +3,4 @@
 /**
  * 取り込める中身の種類。
  */
-export type ImportKind = "mods" | "screenshots" | "saves";
+export type ImportKind = "mods" | "screenshots" | "saves" | "settings";

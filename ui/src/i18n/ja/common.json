@@ -759,7 +759,8 @@
     "kind": {
       "mods": "MOD",
       "screenshots": "スクリーンショット",
-      "saves": "セーブデータ"
+      "saves": "セーブデータ",
+      "settings": "設定"
     }
   }
 }

@@ -759,7 +759,8 @@
     "kind": {
       "mods": "Mods",
       "screenshots": "Screenshots",
-      "saves": "Worlds"
+      "saves": "Worlds",
+      "settings": "Settings"
     }
   }
 }
