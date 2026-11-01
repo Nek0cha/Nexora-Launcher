@@ -39,7 +39,7 @@ pub fn read_local_meta(kind: ContentKind, path: &Path) -> LocalMeta {
 }
 
 /// エントリを 4 MiB までだけ読む。上限を超えるものは読まない。
-fn read_entry(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
+pub(crate) fn read_entry(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
     let entry = zip.by_name(name).ok()?;
     if entry.size() > MAX_ENTRY_BYTES {
         return None;
@@ -53,7 +53,7 @@ fn read_entry(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
 }
 
 /// 先頭の UTF-8 BOM（EF BB BF）を外す。メモ帳などで保存されたメタデータに付いていることがある。
-fn strip_bom(bytes: &[u8]) -> &[u8] {
+pub(crate) fn strip_bom(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes)
 }
 

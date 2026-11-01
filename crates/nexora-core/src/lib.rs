@@ -7,6 +7,7 @@ pub mod content;
 pub mod error;
 
 pub mod db;
+pub mod diagnose;
 pub mod settings;
 
 pub mod task;
