@@ -125,7 +125,7 @@ describe("ImportLauncherDialog", () => {
     await check("Alpha");
     expect(document.querySelector(".overflow-x-auto")).toBeNull();
     // 名前の途中で折り返さない
-    expect(screen.getByRole("radio", { name: "Minecraft" }).className).toContain("whitespace-nowrap");
+    expect(screen.getByRole("radio", { name: "Minecraft" }).closest("label")?.className).toContain("whitespace-nowrap");
     const folder = screen.getByRole("button", { name: "Choose folder" });
     expect(screen.getByRole("radio", { name: "CurseForge" }).compareDocumentPosition(folder)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
