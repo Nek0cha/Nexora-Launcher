@@ -377,6 +377,8 @@ pub struct RecordingGame {
     pub started: Mutex<Vec<RunningSession>>,
     pub logs: Mutex<Vec<(String, LogRecord)>>,
     pub exits: Mutex<Vec<(String, Option<i32>)>>,
+    /// 終了の通知に付いてきた、その起動の時刻。
+    pub exit_launch_times: Mutex<Vec<(String, i64)>>,
     pub sync_applied: Mutex<Vec<SyncApplyFinishedEvent>>,
 }
 
@@ -393,11 +395,15 @@ impl GameNotifier for RecordingGame {
             .unwrap()
             .push((instance_id.to_string(), record.clone()));
     }
-    fn exited(&self, instance_id: &str, exit_code: Option<i32>) {
+    fn exited(&self, instance_id: &str, exit_code: Option<i32>, launched_at: i64) {
         self.exits
             .lock()
             .unwrap()
             .push((instance_id.to_string(), exit_code));
+        self.exit_launch_times
+            .lock()
+            .unwrap()
+            .push((instance_id.to_string(), launched_at));
     }
 }
 

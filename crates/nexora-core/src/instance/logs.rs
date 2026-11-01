@@ -90,22 +90,28 @@ pub fn read(dir: &Path, name: &str) -> Result<LogContent, CoreError> {
         return Err(CoreError::LogNotFound);
     }
     let path = dir.join(name);
-    let meta = match std::fs::symlink_metadata(&path) {
-        Ok(meta) if meta.is_file() => meta,
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() => {}
         Ok(_) => return Err(CoreError::LogNotFound),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(CoreError::LogNotFound),
         Err(e) => return Err(io_err(&path, e)),
-    };
-    let mut file = std::fs::File::open(&path).map_err(|e| io_err(&path, e))?;
-    let truncated = meta.len() > MAX_READ_BYTES;
+    }
+    read_tail(&path)
+}
+
+/// ファイルの末尾（最大 `MAX_READ_BYTES`）を文字列で返す。途中から読んだときは、切れた最初の行を捨てる。
+pub(crate) fn read_tail(path: &Path) -> Result<LogContent, CoreError> {
+    let mut file = std::fs::File::open(path).map_err(|e| io_err(path, e))?;
+    let len = file.metadata().map_err(|e| io_err(path, e))?.len();
+    let truncated = len > MAX_READ_BYTES;
     if truncated {
-        file.seek(SeekFrom::Start(meta.len() - MAX_READ_BYTES))
-            .map_err(|e| io_err(&path, e))?;
+        file.seek(SeekFrom::Start(len - MAX_READ_BYTES))
+            .map_err(|e| io_err(path, e))?;
     }
     let mut bytes = Vec::new();
     file.take(MAX_READ_BYTES)
         .read_to_end(&mut bytes)
-        .map_err(|e| io_err(&path, e))?;
+        .map_err(|e| io_err(path, e))?;
     if truncated {
         // 行の途中から始まっているので、最初の改行までを捨てる
         let start = bytes.iter().position(|&b| b == b'\n').map_or(0, |i| i + 1);

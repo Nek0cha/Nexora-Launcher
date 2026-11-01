@@ -3,10 +3,14 @@
 mod clues;
 mod modids;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
 use ts_rs::TS;
+
+use crate::content::ContentItem;
+use crate::instance::logs;
 
 pub use clues::{extract_clues, stack_classes};
 pub use modids::{jar_defines_class, read_mod_ids};
@@ -162,6 +166,70 @@ pub fn build_candidates(
         key(a).cmp(&key(b)).then_with(|| a.name.cmp(&b.name))
     });
     out
+}
+
+/// スタックトレースから調べるクラスの数の上限（jar を開く回数を抑える）。
+const MAX_STACK_CLASSES: usize = 20;
+
+/// 今回の起動以降に更新された `crash-reports/` のファイルのうち、最も新しい 1 つの中身。
+fn newest_crash_report(game_dir: &Path, launched_at: i64) -> Option<String> {
+    let since = SystemTime::UNIX_EPOCH + Duration::from_millis(u64::try_from(launched_at).ok()?);
+    let entries = std::fs::read_dir(game_dir.join("crash-reports")).ok()?;
+    let newest = entries
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "txt"))
+        .filter_map(|e| {
+            let meta = std::fs::symlink_metadata(e.path()).ok()?;
+            let modified = meta.modified().ok()?;
+            (meta.is_file() && modified >= since).then_some((modified, e.path()))
+        })
+        .max_by_key(|(modified, _)| *modified)?;
+    logs::read_tail(&newest.1).ok().map(|c| c.text)
+}
+
+/// 異常終了の診断。ログとレポートが読めなくても、壊れた jar があっても失敗せず、候補なしにする。
+/// `items` は MOD の一覧（無効のものは候補にしない）。
+pub fn diagnose(
+    items: &[ContentItem],
+    game_dir: &Path,
+    log_dir: &Path,
+    launched_at: i64,
+) -> CrashDiagnosis {
+    let log_name = format!("{launched_at}.log");
+    let log = logs::read(log_dir, &log_name).ok().map(|c| c.text);
+    let report = newest_crash_report(game_dir, launched_at);
+    let texts: Vec<&str> = [log.as_deref(), report.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let mods: Vec<ModEntry> = items
+        .iter()
+        .filter(|i| i.enabled)
+        .map(|i| {
+            let jar = game_dir.join(&i.rel_path);
+            ModEntry {
+                rel_path: i.rel_path.clone(),
+                name: i.name.clone().unwrap_or_else(|| i.file_name.clone()),
+                mod_ids: read_mod_ids(&jar),
+                jar,
+            }
+        })
+        .collect();
+
+    let clues: Vec<Clue> = texts.iter().flat_map(|t| extract_clues(t)).collect();
+    let mut stack: Vec<String> = Vec::new();
+    for class in texts.iter().flat_map(|t| stack_classes(t)) {
+        if !stack.contains(&class) {
+            stack.push(class);
+        }
+    }
+    stack.truncate(MAX_STACK_CLASSES);
+
+    CrashDiagnosis {
+        candidates: build_candidates(clues, &stack, &mods),
+        log_name: log.is_some().then_some(log_name),
+    }
 }
 
 #[cfg(test)]

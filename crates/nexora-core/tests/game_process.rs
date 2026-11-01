@@ -73,6 +73,20 @@ async fn records_output_exit_and_play_time() {
 }
 
 #[tokio::test]
+async fn the_exit_carries_the_launch_time_of_the_run_that_ended() {
+    let f = fixture();
+    let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
+    let mut spec = spec(&f, &inst.id, "exit 3", None);
+    spec.launched_at = 1_700_000_000_000;
+    f.processes.spawn(spec).await.unwrap();
+    assert_eq!(f.game.wait_exit(&inst.id).await, Some(3));
+    assert_eq!(
+        f.game.exit_launch_times.lock().unwrap().as_slice(),
+        &[(inst.id.clone(), 1_700_000_000_000)]
+    );
+}
+
+#[tokio::test]
 async fn argfile_is_removed_when_the_game_exits() {
     let f = fixture();
     let inst = instance::create(&f.db, &f.paths, &NewInstance::vanilla("x", "1.0"), 1).unwrap();
@@ -170,6 +184,10 @@ async fn reattach_finishes_dead_sessions_using_latest_log_time() {
     assert_eq!(
         f.game.exits.lock().unwrap().as_slice(),
         &[(inst.id.clone(), None)]
+    );
+    assert_eq!(
+        f.game.exit_launch_times.lock().unwrap().as_slice(),
+        &[(inst.id.clone(), 1_000)]
     );
 }
 

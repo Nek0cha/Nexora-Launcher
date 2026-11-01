@@ -14,6 +14,7 @@ use nexora_core::content::modrinth::{SearchPage, SearchQuery};
 use nexora_core::content::ops::AddReport;
 use nexora_core::content::updates::UpdateCheck;
 use nexora_core::content::{ContentItem, ContentKind};
+use nexora_core::diagnose::CrashDiagnosis;
 use nexora_core::error::{CoreError, ErrorPayload};
 use nexora_core::import::{ImportRequest, ImportSourceKind, SourceInstance};
 use nexora_core::instance::folder::FolderKind;
@@ -1019,6 +1020,21 @@ pub async fn list_game_logs(
 ) -> CmdResult<Vec<GameLog>> {
     let services = state.services()?;
     blocking(move || services.launcher.list_game_logs(&instance_id)).await
+}
+
+/// 異常終了した起動（`launched_at`）の原因の候補。ログやレポートが読めなければ候補なし。
+#[tauri::command]
+pub async fn diagnose_crash(
+    state: State<'_, AppState>,
+    instance_id: String,
+    launched_at: i64,
+) -> CmdResult<CrashDiagnosis> {
+    let services = state.services()?;
+    services
+        .launcher
+        .diagnose_crash(&instance_id, launched_at)
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]

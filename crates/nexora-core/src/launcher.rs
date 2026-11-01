@@ -1,6 +1,7 @@
 //! UI からの操作の入口。インストールと起動をタスクとして動かす。
 
 mod content;
+mod crash;
 mod import;
 mod mrpack;
 mod upgrade;

@@ -224,6 +224,7 @@ pub fn run() {
             commands::import_screenshots,
             commands::list_game_logs,
             commands::read_game_log,
+            commands::diagnose_crash,
             commands::system_memory_mb,
         ])
         .run(tauri::generate_context!())
