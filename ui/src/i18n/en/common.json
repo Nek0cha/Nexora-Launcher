@@ -819,6 +819,9 @@
     }
   },
   "update": {
+    "available": "A new version is available",
+    "install": "Update and restart",
+    "downloading": "Downloading",
     "failed": "The update failed"
   }
 }

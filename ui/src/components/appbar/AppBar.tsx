@@ -8,6 +8,7 @@ import { useHistoryNav } from "../../features/nav/useHistoryNav";
 import { Brand } from "./Brand";
 import { Breadcrumb } from "./Breadcrumb";
 import { TaskButton } from "./TaskButton";
+import { UpdateButton } from "./UpdateButton";
 import { WindowControls } from "./WindowControls";
 
 // Tauri 2.12.4 の drag.js（isClickableElement、isDragRegion）と同じ判定。
@@ -101,6 +102,7 @@ export function AppBar({
       {/* 空きの部分。ここをつかんでウィンドウを動かす */}
       <div data-testid="drag-region" className="h-full min-w-8 flex-1" />
       {slot}
+      <UpdateButton />
       <TaskButton />
       {showWindowControls && (
         <div className="ml-2 h-full">

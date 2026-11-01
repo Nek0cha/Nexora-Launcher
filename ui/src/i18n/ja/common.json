@@ -819,6 +819,9 @@
     }
   },
   "update": {
+    "available": "新しいバージョンがあります",
+    "install": "更新して再起動",
+    "downloading": "ダウンロード中",
     "failed": "更新に失敗しました"
   }
 }
