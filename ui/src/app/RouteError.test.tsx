@@ -22,7 +22,7 @@ function Broken(): never {
 }
 
 function mount(os: string) {
-  vi.mocked(appInfo).mockResolvedValue({ version: "0", build: "dev", os, dataDir: "", materialAvailable: false });
+  vi.mocked(appInfo).mockResolvedValue({ version: "0", build: "dev", os, dataDir: "", materialAvailable: false, selfUpdate: false });
   window.history.replaceState(null, "", "/");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createHashRouter([{ path: "/", element: <Broken />, errorElement: <RouteError /> }]);

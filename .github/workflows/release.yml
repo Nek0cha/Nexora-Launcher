@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ""
+          - os: ubuntu-24.04
+            args: ""
+          - os: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust-target: aarch64-apple-darwin
+          - os: macos-latest
+            args: "--target x86_64-apple-darwin"
+            rust-target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential pkg-config libssl-dev
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+
+      - name: Add the macOS target
+        if: matrix.rust-target
+        run: rustup target add ${{ matrix.rust-target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # タグと、tauri.conf.json、Cargo.toml の版番号が食い違っていたら、ここで止める
+      - name: Check the version
+        run: node scripts/check-version.mjs
+
+      - name: Generate the third-party licenses
+        run: node scripts/gen-licenses.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NEXORA_MS_CLIENT_ID: ${{ vars.NEXORA_MS_CLIENT_ID }}
+        with:
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Nexora ${{ github.ref_name }}
+          # 下書きで作る。内容を確かめてから、人が公開する
+          releaseDraft: true
+          # 更新の確認は pre-release を見ないため、正式版として出す
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

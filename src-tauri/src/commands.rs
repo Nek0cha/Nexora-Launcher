@@ -93,6 +93,10 @@ pub fn app_info(state: State<'_, AppState>) -> CmdResult<AppInfo> {
         os: std::env::consts::OS.to_string(),
         data_dir: state.data_dir().unwrap_or_default(),
         material_available: crate::material::material_available(),
+        self_update: nexora_core::app_info::self_update_supported(
+            std::env::consts::OS,
+            std::env::var_os("APPIMAGE").is_some(),
+        ),
     })
 }
 

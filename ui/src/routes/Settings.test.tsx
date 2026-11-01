@@ -6,7 +6,7 @@ import { IpcError } from "../api/ipc";
 import i18n from "../i18n";
 import Settings from "./Settings";
 
-vi.mock("../api/commands", () => ({ getSettings: vi.fn(), setSetting: vi.fn() }));
+vi.mock("../api/commands", () => ({ getSettings: vi.fn(), setSetting: vi.fn(), appInfo: vi.fn() }));
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

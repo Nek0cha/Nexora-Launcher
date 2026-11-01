@@ -26,4 +26,25 @@ pub struct AppInfo {
     pub os: String,
     pub data_dir: String,
     pub material_available: bool,
+    /// アプリの中から自己更新できるか（`self_update_supported`）
+    pub self_update: bool,
+}
+
+/// アプリの中から自己更新できるか。Linux では AppImage だけが置き換えられる
+/// （deb などのパッケージは更新を適用できない）。
+pub fn self_update_supported(os: &str, appimage: bool) -> bool {
+    os != "linux" || appimage
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_update_supported_by_os() {
+        assert!(!self_update_supported("linux", false));
+        assert!(self_update_supported("linux", true));
+        assert!(self_update_supported("windows", false));
+        assert!(self_update_supported("macos", false));
+    }
 }

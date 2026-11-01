@@ -19,5 +19,19 @@
   "downloads": {
     "section": "ダウンロード",
     "label": "同時ダウンロード数"
+  },
+  "about": {
+    "section": "このアプリについて",
+    "version": "バージョン",
+    "updates": "更新",
+    "check": "更新を確認",
+    "checking": "確認中",
+    "upToDate": "最新です",
+    "checkFailed": "確認できませんでした",
+    "releases": "リリース",
+    "license": "ライセンス",
+    "open": "開く",
+    "thirdParty": "第三者のライセンス",
+    "repository": "リポジトリ"
   }
 }

@@ -17,6 +17,7 @@ import { usePrefetch } from "../features/prefetch/usePrefetch";
 import { useTaskSync } from "../features/tasks/useTasks";
 import { useGameSync } from "../features/play/useGameSync";
 import { useSyncEvents } from "../features/sync/useSyncEvents";
+import { useStartupUpdateCheck } from "../features/update/useStartupUpdateCheck";
 import { useSettings, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, setLanguage } from "../i18n";
 import { useIsWindows } from "./platform";
@@ -45,6 +46,7 @@ export function App() {
   const { data: settings } = useSettings();
   const update = useUpdateSetting();
   const { data: info } = useQuery({ queryKey: ["appInfo"], queryFn: appInfo });
+  useStartupUpdateCheck(info);
   // app_info が失敗しても、Windows ではウィンドウボタンを出す
   const isWindows = useIsWindows();
 

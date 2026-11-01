@@ -4,4 +4,8 @@ export type AppInfo = { version: string,
 /**
  * "release" または "dev"
  */
-build: string, os: string, dataDir: string, materialAvailable: boolean, };
+build: string, os: string, dataDir: string, materialAvailable: boolean, 
+/**
+ * アプリの中から自己更新できるか（`self_update_supported`）
+ */
+selfUpdate: boolean, };
