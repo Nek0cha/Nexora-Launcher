@@ -745,6 +745,19 @@
       "done": "書き出しました"
     }
   },
+  "upgrade": {
+    "open": "バージョンを上げる",
+    "title": "バージョンを上げる",
+    "target": "上げ先",
+    "loading": "バージョンを読み込んでいます",
+    "checking": "MOD を調べています",
+    "none": "上げられるバージョンがありません",
+    "compatible": "対応あり",
+    "incompatible": "対応なし",
+    "unknown": "確認できない",
+    "skip": "確認せずに上げる",
+    "submit": "上げる"
+  },
   "launcherImport": {
     "open": "他のランチャーから読み込む",
     "title": "インスタンスを読み込む",

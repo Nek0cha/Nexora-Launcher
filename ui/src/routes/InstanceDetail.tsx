@@ -24,6 +24,7 @@ import type { FolderKind } from "../bindings/FolderKind";
 import type { Instance } from "../bindings/Instance";
 import { FailureNotice } from "../components/FailureNotice";
 import { ExportMrpackDialog } from "../components/mrpack/ExportMrpackDialog";
+import { UpgradeInstanceDialog } from "../components/upgrade/UpgradeInstanceDialog";
 import { InstanceAdvancedFields } from "../components/InstanceAdvancedFields";
 import { controlWidth, inputBase, Notice, Row } from "../components/settingsLayout";
 import { SyncCard } from "../components/sync/SyncCard";
@@ -157,6 +158,12 @@ export default function InstanceDetail() {
           <div className="flex min-w-0 items-center gap-1">
             <h1 className={`${title} truncate`}>{instance.name}</h1>
             <ExportMrpackDialog instanceId={instance.id} instanceName={instance.name} />
+            <UpgradeInstanceDialog
+              instanceId={instance.id}
+              mcVersion={instance.mcVersion}
+              loader={instance.loader}
+              isDisabled={contentLocked}
+            />
           </div>
           <span className="tabular text-sm text-text-muted">{instance.mcVersion}</span>
         </div>

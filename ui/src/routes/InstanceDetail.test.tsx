@@ -485,6 +485,21 @@ describe("InstanceDetail: exporting a modpack", () => {
   });
 });
 
+describe("InstanceDetail: upgrading the version", () => {
+  it("has an upgrade button next to the title that is disabled while installing", async () => {
+    mount([instance()]);
+    const title = await screen.findByRole("heading", { level: 1, name: "Survival" });
+    const button = (await screen.findByRole("button", { name: "Upgrade version" })) as HTMLButtonElement;
+    expect(title.parentElement?.contains(button)).toBe(true);
+    expect(button.disabled).toBe(false);
+    cleanup();
+
+    mount([instance({ state: "installing" })]);
+    const locked = (await screen.findByRole("button", { name: "Upgrade version" })) as HTMLButtonElement;
+    expect(locked.disabled).toBe(true);
+  });
+});
+
 describe("InstanceDetail: header layout", () => {
   it("puts the export button right next to the title, apart from the folder buttons", async () => {
     mount([instance()]);
