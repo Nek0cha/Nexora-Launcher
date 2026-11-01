@@ -21,7 +21,41 @@
         "minHeight": 600
       }
     ],
-    "security": { "csp": null, "assetProtocol": { "enable": true, "scope": [] } }
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
   },
-  "bundle": { "active": true, "targets": "all", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"] }
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "dmg",
+      "appimage",
+      "deb"
+    ],
+    "createUpdaterArtifacts": true,
+    "licenseFile": "../LICENSE",
+    "copyright": "Copyright 2026 Nexora Launcher contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PENDING_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/Nek0cha/Nexora-Launcher/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

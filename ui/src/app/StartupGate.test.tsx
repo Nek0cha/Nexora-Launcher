@@ -17,7 +17,7 @@ const win = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => win }));
 
-const info = (os: string) => ({ version: "0", build: "dev", os, dataDir: "", materialAvailable: false });
+const info = (os: string) => ({ version: "0", build: "dev", os, dataDir: "", materialAvailable: false, selfUpdate: false });
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

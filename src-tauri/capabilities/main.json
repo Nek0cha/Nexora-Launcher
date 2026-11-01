@@ -11,6 +11,8 @@
     "core:window:allow-is-maximized",
     "dialog:allow-open",
     "dialog:allow-save",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }]
