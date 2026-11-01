@@ -760,7 +760,11 @@ impl Launcher {
         }
         if let Some((active, kind)) = self.active_task_with_kind(instance_id) {
             // 中身の導入や更新は起動ではないので、同じタスクとして返さず断る
-            if kind == CONTENT_KIND || kind == MRPACK_KIND || kind == IMPORT_KIND {
+            if kind == CONTENT_KIND
+                || kind == MRPACK_KIND
+                || kind == IMPORT_KIND
+                || kind == UPGRADE_KIND
+            {
                 return Err(CoreError::InstanceBusy {
                     instance_id: instance_id.to_string(),
                 });
@@ -881,7 +885,8 @@ impl Launcher {
                         || t.kind == LAUNCH_KIND
                         || t.kind == CONTENT_KIND
                         || t.kind == MRPACK_KIND
-                        || t.kind == IMPORT_KIND)
+                        || t.kind == IMPORT_KIND
+                        || t.kind == UPGRADE_KIND)
                     && !t.state.is_terminal()
             })
             .map(|t| (t.id, t.kind))
