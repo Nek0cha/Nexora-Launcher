@@ -117,6 +117,30 @@ async fn only_the_chosen_kinds_are_copied_and_the_instance_becomes_ready() {
         src.root.join("a/mods/a.jar").exists(),
         "the source is untouched"
     );
+    // 取り込みを終えた行は、起動時の後始末で消されない
+    assert_eq!(h.launcher.discard_interrupted_imports().unwrap(), 0);
+    assert!(instance::get(h.launcher.db(), &inst.id).is_ok());
+}
+
+#[tokio::test]
+async fn a_row_left_importing_is_removed_at_startup() {
+    let h = PackHarness::new().await;
+    let src = source(&h, vec![row("a", "Alpha")], &[]);
+    let created = h
+        .launcher
+        .import_from_source(src, vec![request("a", &[ImportKind::Mods])], false)
+        .await
+        .unwrap();
+    h.wait(&created[0].task_id).await;
+    let id = &created[0].instance.id;
+    // 落ちた直後の状態を作る：取り込み中の印が付いたまま
+    instance::mark_importing(h.launcher.db(), id).unwrap();
+    let dir = game_dir(&h, id);
+    assert!(dir.exists());
+
+    assert_eq!(h.launcher.discard_interrupted_imports().unwrap(), 1);
+    assert!(instance::get(h.launcher.db(), id).is_err());
+    assert!(!dir.exists());
 }
 
 #[tokio::test]

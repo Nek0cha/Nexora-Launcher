@@ -173,7 +173,16 @@ impl Launcher {
                 ..NewInstance::vanilla("", "")
             };
             match instance::create(&self.env.db, &self.env.paths, &new, now_ms()) {
-                Ok(created) => made.push(created),
+                Ok(created) => match instance::mark_importing(&self.env.db, &created.id) {
+                    Ok(()) => made.push(created),
+                    Err(err) => {
+                        self.discard_import(&created.id).await;
+                        for created in &made {
+                            self.discard_import(&created.id).await;
+                        }
+                        return Err(err);
+                    }
+                },
                 Err(err) => {
                     for created in &made {
                         self.discard_import(&created.id).await;
@@ -324,6 +333,7 @@ impl Launcher {
             );
         }
         instance::set_state(&self.env.db, id, InstanceState::Ready)?;
+        instance::finish_importing(&self.env.db, id)?;
         Ok(())
     }
 }

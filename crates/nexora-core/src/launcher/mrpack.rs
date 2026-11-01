@@ -122,6 +122,10 @@ impl Launcher {
             ..NewInstance::vanilla("", "")
         };
         let instance = instance::create(&self.env.db, &self.env.paths, &new, now_ms())?;
+        if let Err(err) = instance::mark_importing(&self.env.db, &instance.id) {
+            self.discard_import(&instance.id).await;
+            return Err(err);
+        }
         let this = self.clone();
         let id = instance.id.clone();
         let task_id = self
@@ -198,6 +202,7 @@ impl Launcher {
             );
         }
         instance::set_state(&self.env.db, id, InstanceState::Ready)?;
+        instance::finish_importing(&self.env.db, id)?;
         Ok(())
     }
 
