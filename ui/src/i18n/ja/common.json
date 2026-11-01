@@ -823,5 +823,9 @@
     "install": "更新して再起動",
     "downloading": "ダウンロード中",
     "failed": "更新に失敗しました"
+  },
+  "licenses": {
+    "title": "第三者のライセンス",
+    "close": "閉じる"
   }
 }

@@ -30,6 +30,8 @@
     "checkFailed": "確認できませんでした",
     "releases": "リリース",
     "license": "ライセンス",
+    "open": "開く",
+    "thirdParty": "第三者のライセンス",
     "repository": "リポジトリ"
   }
 }

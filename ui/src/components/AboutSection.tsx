@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { appInfo } from "../api/commands";
 import { openExternal } from "../api/opener";
 import { checkForUpdate, useUpdateState } from "../features/update/updateStore";
 import { RELEASES_URL, REPO_URL } from "../features/update/repo";
+import { LicensesDialog } from "./LicensesDialog";
 import { UpdateInstall } from "./UpdateInstall";
 import { rowLabel } from "./settingsLayout";
 
@@ -22,6 +24,7 @@ export function AboutRows() {
   const { t } = useTranslation("settings");
   const { data: info } = useQuery({ queryKey: ["appInfo"], queryFn: appInfo });
   const update = useUpdateState();
+  const [licensesOpen, setLicensesOpen] = useState(false);
   if (!info) return null;
 
   const status =
@@ -66,6 +69,13 @@ export function AboutRows() {
       <div className={rowClass}>
         <span className={rowLabel}>{t("about.license")}</span>
         <span className="text-text-muted">Apache-2.0</span>
+      </div>
+      <div className={rowClass}>
+        <span className={rowLabel}>{t("about.thirdParty")}</span>
+        <Button onPress={() => setLicensesOpen(true)} className={actionButton}>
+          {t("about.open")}
+        </Button>
+        <LicensesDialog isOpen={licensesOpen} onOpenChange={setLicensesOpen} />
       </div>
       <div className={rowClass}>
         <span className={rowLabel}>{t("about.repository")}</span>
