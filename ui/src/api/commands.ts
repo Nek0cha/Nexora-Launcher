@@ -2,6 +2,7 @@ import type { CreatedInstance } from "../bindings/CreatedInstance";
 import type { Instance } from "../bindings/Instance";
 import type { InstanceSettings } from "../bindings/InstanceSettings";
 import type { RunningSession } from "../bindings/RunningSession";
+import type { UpgradePreview } from "../bindings/UpgradePreview";
 import type { VersionEntry } from "../bindings/VersionEntry";
 import type { AppInfo } from "../bindings/AppInfo";
 import type { SettingChange } from "../bindings/SettingChange";
@@ -131,6 +132,10 @@ export const importFromLauncher = (
 export const inspectMrpack = (path: string) => call<MrpackInfo>("inspect_mrpack", { path });
 export const importMrpack = (path: string, name: string) =>
   call<CreatedInstance>("import_mrpack", { path, name });
+export const previewUpgrade = (instanceId: string, targetMcVersion: string) =>
+  call<UpgradePreview>("preview_upgrade", { instanceId, targetMcVersion });
+export const upgradeInstance = (instanceId: string, targetMcVersion: string) =>
+  call<string>("upgrade_instance", { instanceId, targetMcVersion });
 export const previewMrpackExport = (instanceId: string) =>
   call<ExportPreview>("preview_mrpack_export", { instanceId });
 export const exportMrpack = (instanceId: string, dest: string, options: ExportOptions) =>
