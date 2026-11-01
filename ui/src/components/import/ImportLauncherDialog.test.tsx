@@ -147,7 +147,7 @@ describe("ImportLauncherDialog", () => {
     mount();
 
     fireEvent.click(await check("Alpha"));
-    expect(await check("Settings (options.txt)")).toBeTruthy();
+    expect(await check("Game settings")).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Server list" })).toBeTruthy();
     fireEvent.click(await check("Mod configs"));
     fireEvent.click(screen.getByRole("button", { name: "Import 1" }));
