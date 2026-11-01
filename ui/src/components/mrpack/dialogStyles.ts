@@ -23,5 +23,9 @@ export const quietTrigger = [
   ring,
 ].join(" ");
 
+export const checkboxClass = `group flex w-fit items-center gap-2 text-text ${ring}`;
+export const checkboxMark =
+  "flex size-4 items-center justify-center rounded-sm border border-line-control bg-surface-1 text-surface-0 group-data-selected:border-text-strong group-data-selected:bg-text-strong";
+
 // ダイアログの面（surface-2）の上では、ふだんのスケルトンの色が溶けるため、一段濃くする
 export const onPanel = "bg-surface-3!";

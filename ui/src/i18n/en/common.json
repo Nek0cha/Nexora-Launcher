@@ -743,5 +743,20 @@
       "loading": "Checking contents",
       "done": "Exported"
     }
+  },
+  "launcherImport": {
+    "open": "Import from another launcher",
+    "title": "Import from Modrinth App",
+    "submit": "Import",
+    "submitCount": "Import {{count}}",
+    "continue": "Import anyway",
+    "duplicate": "Already added",
+    "chooseFolder": "Choose folder",
+    "empty": "No instances found",
+    "kind": {
+      "mods": "Mods",
+      "screenshots": "Screenshots",
+      "saves": "Worlds"
+    }
   }
 }

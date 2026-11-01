@@ -26,7 +26,7 @@ import { Skeleton } from "../Skeleton";
 import { controlWidth, inputBase, rowLabel } from "../settingsLayout";
 import { useToast } from "../toast/useToast";
 import { tooltipClass } from "../tooltip";
-import { onPanel, ring, secondaryButton, submitButton } from "./dialogStyles";
+import { checkboxClass, checkboxMark, onPanel, ring, secondaryButton, submitButton } from "./dialogStyles";
 
 const iconButton = [
   "inline-flex size-8 items-center justify-center rounded-md text-text-muted",
@@ -36,10 +36,6 @@ const iconButton = [
 ].join(" ");
 
 const inputClass = `${inputBase} ${controlWidth}`;
-
-const checkboxClass = `group flex w-fit items-center gap-2 text-text ${ring}`;
-const checkboxMark =
-  "flex size-4 items-center justify-center rounded-sm border border-line-control bg-surface-1 text-surface-0 group-data-selected:border-text-strong group-data-selected:bg-text-strong";
 
 /** 保存ダイアログの既定のファイル名。ファイル名に使えない文字は `_` にする。 */
 function defaultFileName(instanceName: string): string {

@@ -8,6 +8,12 @@ export async function pickMrpack(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+/** フォルダを 1 つ選ぶ。キャンセルしたら null。 */
+export async function pickFolder(): Promise<string | null> {
+  const picked = await open({ multiple: false, directory: true });
+  return typeof picked === "string" ? picked : null;
+}
+
 /** `.mrpack` の保存先を選ぶ。キャンセルしたら null。 */
 export async function pickMrpackSavePath(defaultName: string): Promise<string | null> {
   return save({ defaultPath: defaultName, filters: [MRPACK_FILTER] });

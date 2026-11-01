@@ -743,5 +743,20 @@
       "loading": "内容を調べています",
       "done": "書き出しました"
     }
+  },
+  "launcherImport": {
+    "open": "他のランチャーから読み込む",
+    "title": "Modrinth App から読み込む",
+    "submit": "読み込む",
+    "submitCount": "{{count}} 件を読み込む",
+    "continue": "それでも続ける",
+    "duplicate": "重複しています",
+    "chooseFolder": "フォルダを選ぶ",
+    "empty": "インスタンスが見つかりません",
+    "kind": {
+      "mods": "MOD",
+      "screenshots": "スクリーンショット",
+      "saves": "セーブデータ"
+    }
   }
 }
