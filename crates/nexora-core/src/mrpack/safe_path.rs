@@ -77,7 +77,7 @@ impl PathGuard {
 }
 
 /// すでにあるパスがシンボリックリンクか、Windows の再解析ポイントか。
-fn is_link(path: &Path) -> bool {
+pub(crate) fn is_link(path: &Path) -> bool {
     let Ok(meta) = std::fs::symlink_metadata(path) else {
         return false;
     };

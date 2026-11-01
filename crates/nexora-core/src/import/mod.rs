@@ -1,5 +1,7 @@
 //! 他のランチャーのインスタンスを、選んだ中身だけコピーして取り込む。
 
+pub mod copy;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
