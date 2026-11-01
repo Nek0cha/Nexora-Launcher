@@ -760,9 +760,7 @@
       "mods": "MOD",
       "screenshots": "スクリーンショット",
       "saves": "セーブデータ",
-      "config": "MOD の設定",
-      "options": "ゲームの設定",
-      "servers": "サーバー一覧"
+      "settings": "設定"
     }
   }
 }

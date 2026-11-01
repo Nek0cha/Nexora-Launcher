@@ -18,41 +18,28 @@ use crate::meta::loader::LoaderKind;
 #[ts(export)]
 pub enum ImportKind {
     Mods,
-    /// MOD の設定（`config/`）。
-    Config,
     Screenshots,
     Saves,
-    /// ゲームの設定（`options.txt`）。
-    Options,
-    /// サーバー一覧（`servers.dat`）。
-    Servers,
+    /// ゲームと MOD の設定（`config/`、`options.txt`、`servers.dat`）。
+    Settings,
 }
 
 impl ImportKind {
-    pub const ALL: [ImportKind; 6] = [
+    pub const ALL: [ImportKind; 4] = [
         ImportKind::Mods,
-        ImportKind::Config,
         ImportKind::Screenshots,
         ImportKind::Saves,
-        ImportKind::Options,
-        ImportKind::Servers,
+        ImportKind::Settings,
     ];
 
-    /// インスタンスのフォルダの中での、フォルダまたはファイルの名前。
-    pub fn rel_path(self) -> &'static str {
+    /// インスタンスのフォルダの中での、フォルダまたはファイルの名前。種類によっては複数になる。
+    pub fn parts(self) -> &'static [&'static str] {
         match self {
-            ImportKind::Mods => "mods",
-            ImportKind::Config => "config",
-            ImportKind::Screenshots => "screenshots",
-            ImportKind::Saves => "saves",
-            ImportKind::Options => "options.txt",
-            ImportKind::Servers => "servers.dat",
+            ImportKind::Mods => &["mods"],
+            ImportKind::Screenshots => &["screenshots"],
+            ImportKind::Saves => &["saves"],
+            ImportKind::Settings => &["config", "options.txt", "servers.dat"],
         }
-    }
-
-    /// フォルダではなく、1 つのファイルか。
-    pub fn is_file(self) -> bool {
-        matches!(self, ImportKind::Options | ImportKind::Servers)
     }
 }
 
@@ -94,8 +81,8 @@ pub struct ImportRequest {
 pub trait ImportSource: Send + Sync {
     /// 見つかったインスタンスの一覧。
     fn list(&self) -> Result<Vec<SourceInstance>, CoreError>;
-    /// 指定の種類のコピー元（フォルダまたはファイル）。無ければ `None`。
-    fn source_path(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError>;
+    /// 指定の部分（`ImportKind::parts` の 1 つ）のコピー元。フォルダまたはファイル。無ければ `None`。
+    fn source_path(&self, id: &str, part: &str) -> Result<Option<PathBuf>, CoreError>;
 }
 
 #[cfg(test)]
@@ -104,18 +91,15 @@ mod tests {
     use crate::error::CoreError;
 
     #[test]
-    fn kinds_map_to_their_place_in_the_instance() {
-        for (kind, rel, file) in [
-            (ImportKind::Mods, "mods", false),
-            (ImportKind::Config, "config", false),
-            (ImportKind::Screenshots, "screenshots", false),
-            (ImportKind::Saves, "saves", false),
-            (ImportKind::Options, "options.txt", true),
-            (ImportKind::Servers, "servers.dat", true),
-        ] {
-            assert_eq!((kind.rel_path(), kind.is_file()), (rel, file));
-        }
-        assert_eq!(ImportKind::ALL.len(), 6);
+    fn kinds_map_to_their_places_in_the_instance() {
+        assert_eq!(ImportKind::Mods.parts(), ["mods"]);
+        assert_eq!(ImportKind::Screenshots.parts(), ["screenshots"]);
+        assert_eq!(ImportKind::Saves.parts(), ["saves"]);
+        assert_eq!(
+            ImportKind::Settings.parts(),
+            ["config", "options.txt", "servers.dat"]
+        );
+        assert_eq!(ImportKind::ALL.len(), 4);
     }
 
     #[test]

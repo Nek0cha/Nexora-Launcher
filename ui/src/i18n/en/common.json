@@ -760,9 +760,7 @@
       "mods": "Mods",
       "screenshots": "Screenshots",
       "saves": "Worlds",
-      "config": "Mod configs",
-      "options": "Game settings",
-      "servers": "Server list"
+      "settings": "Settings"
     }
   }
 }
