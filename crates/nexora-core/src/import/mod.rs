@@ -2,6 +2,7 @@
 
 pub mod copy;
 pub mod duplicates;
+pub mod modrinth_app;
 
 use std::path::PathBuf;
 
