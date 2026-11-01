@@ -13,6 +13,8 @@ Built with Rust and Tauri 2.
 
 **English** | [日本語](README.ja.md)
 
+<img src="docs/images/mods.png" width="820" alt="The content tab lists a Fabric instance's mods with Modrinth icons">
+
 </div>
 
 ## Features
@@ -26,6 +28,8 @@ Built with Rust and Tauri 2.
 - **Version upgrade:** move an instance to a newer Minecraft version.
 - **Skins, screenshots and logs** for each account and instance.
 - **Self-updating**, with no backend server: sign-in happens on your device with your own Microsoft account.
+
+<img src="docs/images/instance.png" width="820" alt="The instance list">
 
 The status of each feature, including what has not yet been tried on a real machine, is in [docs/features.md](docs/features.md).
 

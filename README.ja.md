@@ -13,6 +13,8 @@ Rust と Tauri 2 で作っています。
 
 [English](README.md) | **日本語**
 
+<img src="docs/images/mods.png" width="820" alt="Fabric インスタンスのコンテンツタブ（MOD の一覧）">
+
 </div>
 
 ## 概要
