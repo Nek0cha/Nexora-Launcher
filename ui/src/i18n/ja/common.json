@@ -759,7 +759,10 @@
     "kind": {
       "mods": "MOD",
       "screenshots": "スクリーンショット",
-      "saves": "セーブデータ"
+      "saves": "セーブデータ",
+      "config": "MOD の設定",
+      "options": "ゲームの設定（options.txt）",
+      "servers": "サーバー一覧"
     }
   }
 }

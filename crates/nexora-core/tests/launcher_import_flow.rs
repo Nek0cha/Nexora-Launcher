@@ -24,14 +24,19 @@ impl ImportSource for FakeSource {
         Ok(self.rows.clone())
     }
 
-    fn folder(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError> {
+    fn source_path(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError> {
         if self.broken.contains(id) {
             return Err(CoreError::ImportUnavailable {
                 reason: "unreadable".into(),
             });
         }
-        let dir = self.root.join(id).join(kind.dir_name());
-        Ok(dir.is_dir().then_some(dir))
+        let path = self.root.join(id).join(kind.rel_path());
+        Ok((if kind.is_file() {
+            path.is_file()
+        } else {
+            path.is_dir()
+        })
+        .then_some(path))
     }
 }
 
@@ -59,6 +64,9 @@ fn source(h: &PackHarness, rows: Vec<SourceInstance>, broken: &[&str]) -> Arc<Fa
         put(&root, &format!("{}/mods/{}.jar", r.id, r.id), b"mod");
         put(&root, &format!("{}/saves/world/level.dat", r.id), b"save");
         put(&root, &format!("{}/screenshots/s.png", r.id), b"shot");
+        put(&root, &format!("{}/config/mod.toml", r.id), b"cfg");
+        put(&root, &format!("{}/options.txt", r.id), b"fov:90");
+        put(&root, &format!("{}/servers.dat", r.id), b"srv");
     }
     Arc::new(FakeSource {
         root,
@@ -112,6 +120,33 @@ async fn only_the_chosen_kinds_are_copied_and_the_instance_becomes_ready() {
         src.root.join("a/mods/a.jar").exists(),
         "the source is untouched"
     );
+}
+
+#[tokio::test]
+async fn settings_files_and_the_config_folder_are_copied_when_chosen() {
+    let h = PackHarness::new().await;
+    let src = source(&h, vec![row("a", "Alpha")], &[]);
+
+    let created = h
+        .launcher
+        .import_from_source(
+            src,
+            vec![request(
+                "a",
+                &[ImportKind::Config, ImportKind::Options, ImportKind::Servers],
+            )],
+            false,
+        )
+        .await
+        .unwrap();
+    let snap = h.wait(&created[0].task_id).await;
+
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+    let dir = game_dir(&h, &created[0].instance.id);
+    assert_eq!(std::fs::read(dir.join("config/mod.toml")).unwrap(), b"cfg");
+    assert_eq!(std::fs::read(dir.join("options.txt")).unwrap(), b"fov:90");
+    assert_eq!(std::fs::read(dir.join("servers.dat")).unwrap(), b"srv");
+    assert!(!dir.join("saves").exists());
 }
 
 #[tokio::test]

@@ -238,12 +238,12 @@ impl Launcher {
         {
             let from = {
                 let (source, source_id) = (source.clone(), request.id.clone());
-                blocking(move || source.folder(&source_id, kind)).await?
+                blocking(move || source.source_path(&source_id, kind)).await?
             };
             let Some(from) = from else { continue };
             let (root, token, progress) =
                 (game_dir.clone(), handle.token().clone(), handle.clone());
-            let dest = game_dir.join(kind.dir_name());
+            let dest = game_dir.join(kind.rel_path());
             blocking(move || {
                 let report = copy_tree(&from, &root, &dest, &token, &mut |done, total| {
                     progress.set_progress(kib(done), kib(total))

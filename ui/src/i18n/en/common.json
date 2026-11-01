@@ -759,7 +759,10 @@
     "kind": {
       "mods": "Mods",
       "screenshots": "Screenshots",
-      "saves": "Worlds"
+      "saves": "Worlds",
+      "config": "Mod configs",
+      "options": "Settings (options.txt)",
+      "servers": "Server list"
     }
   }
 }

@@ -140,6 +140,28 @@ describe("ImportLauncherDialog", () => {
     expect(screen.getByText(/no such column: name/)).toBeTruthy();
   });
 
+  it("offers the settings kinds as their own checkboxes and sends them", async () => {
+    vi.mocked(listImportInstances).mockResolvedValue([row({ available: ["mods", "config", "options", "servers"] })]);
+    vi.mocked(findImportDuplicates).mockResolvedValue([]);
+    vi.mocked(importFromLauncher).mockResolvedValue([{ instance: {} as never, taskId: "t1" }]);
+    mount();
+
+    fireEvent.click(await check("Alpha"));
+    expect(await check("Settings (options.txt)")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Server list" })).toBeTruthy();
+    fireEvent.click(await check("Mod configs"));
+    fireEvent.click(screen.getByRole("button", { name: "Import 1" }));
+
+    await waitFor(() =>
+      expect(importFromLauncher).toHaveBeenCalledWith(
+        "modrinth_app",
+        null,
+        [{ id: "a", kinds: ["mods", "options", "servers"] }],
+        false,
+      ),
+    );
+  });
+
   it("handles a folder whose name is also an object property", async () => {
     vi.mocked(listImportInstances).mockResolvedValue([row({ id: "constructor", name: "Odd" })]);
     mount();

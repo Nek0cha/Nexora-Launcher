@@ -177,6 +177,16 @@ fn parse_loader(value: &str) -> Option<LoaderKind> {
     }
 }
 
+/// 種類ごとに、取り込めるものが実際にあるか。フォルダなら中に何か入っていること、ファイルなら普通のファイルであること。
+fn has_kind(base: &Path, kind: ImportKind) -> bool {
+    let path = base.join(kind.rel_path());
+    if kind.is_file() {
+        !is_link(&path) && path.is_file()
+    } else {
+        has_content(&path)
+    }
+}
+
 /// フォルダがあり、中に何か入っていて、リンクではないか。
 fn has_content(dir: &Path) -> bool {
     !is_link(dir)
@@ -209,7 +219,7 @@ impl ImportSource for ModrinthApp {
                 let available = if unsupported.is_none() {
                     ImportKind::ALL
                         .into_iter()
-                        .filter(|k| has_content(&profiles.join(&row.path).join(k.dir_name())))
+                        .filter(|k| has_kind(&profiles.join(&row.path), *k))
                         .collect()
                 } else {
                     Vec::new()
@@ -227,10 +237,16 @@ impl ImportSource for ModrinthApp {
             .collect())
     }
 
-    fn folder(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError> {
+    fn source_path(&self, id: &str, kind: ImportKind) -> Result<Option<PathBuf>, CoreError> {
         let rel = check_rel_path(id)?;
-        let dir = self.profiles_dir_of_db()?.join(rel).join(kind.dir_name());
-        Ok((dir.is_dir() && !is_link(&dir)).then_some(dir))
+        let base = self.profiles_dir_of_db()?.join(rel);
+        let path = base.join(kind.rel_path());
+        let exists = if kind.is_file() {
+            path.is_file()
+        } else {
+            path.is_dir()
+        };
+        Ok((exists && !is_link(&path)).then_some(path))
     }
 }
 
@@ -306,6 +322,31 @@ mod tests {
     }
 
     #[test]
+    fn lists_the_single_files_and_the_config_folder_when_they_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        db(
+            tmp.path(),
+            NEW_SCHEMA,
+            &new_row("a", "S", "S", "installed", "1.21", "vanilla"),
+        );
+        file(&tmp.path().join("profiles/S/options.txt"));
+        file(&tmp.path().join("profiles/S/servers.dat"));
+        file(&tmp.path().join("profiles/S/config/sodium.json"));
+        fs::create_dir_all(tmp.path().join("profiles/S/saves")).unwrap();
+        let app = ModrinthApp::at(tmp.path().to_path_buf());
+        let list = app.list().unwrap();
+        assert_eq!(
+            list[0].available,
+            [ImportKind::Config, ImportKind::Options, ImportKind::Servers]
+        );
+        assert_eq!(
+            app.source_path("S", ImportKind::Options).unwrap(),
+            Some(tmp.path().join("profiles").join("S").join("options.txt"))
+        );
+        assert_eq!(app.source_path("S", ImportKind::Screenshots).unwrap(), None);
+    }
+
+    #[test]
     fn falls_back_to_the_profiles_table_of_older_versions() {
         let tmp = tempfile::tempdir().unwrap();
         db(
@@ -336,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn folder_returns_existing_directories_only() {
+    fn source_path_returns_existing_paths_only() {
         let tmp = tempfile::tempdir().unwrap();
         db(
             tmp.path(),
@@ -346,18 +387,21 @@ mod tests {
         file(&tmp.path().join("profiles/Survival/mods/a.jar"));
         let app = ModrinthApp::at(tmp.path().to_path_buf());
         assert_eq!(
-            app.folder("Survival", ImportKind::Mods).unwrap(),
+            app.source_path("Survival", ImportKind::Mods).unwrap(),
             Some(tmp.path().join("profiles").join("Survival").join("mods"))
         );
-        assert_eq!(app.folder("Survival", ImportKind::Saves).unwrap(), None);
+        assert_eq!(
+            app.source_path("Survival", ImportKind::Saves).unwrap(),
+            None
+        );
     }
 
     #[test]
-    fn folder_refuses_an_id_that_leaves_the_profiles_directory() {
+    fn source_path_refuses_an_id_that_leaves_the_profiles_directory() {
         let tmp = tempfile::tempdir().unwrap();
         db(tmp.path(), NEW_SCHEMA, "");
         let err = ModrinthApp::at(tmp.path().to_path_buf())
-            .folder("../outside", ImportKind::Mods)
+            .source_path("../outside", ImportKind::Mods)
             .unwrap_err();
         assert_eq!(err.code(), "mrpack.unsafe_path");
     }
@@ -420,9 +464,9 @@ mod tests {
         file(&tmp.path().join("profiles/S/mods/a.jar"));
         file(&tmp.path().join("profiles/S/saves/w/level.dat"));
         let app = ModrinthApp::at(tmp.path().to_path_buf());
-        assert!(app.folder("S", ImportKind::Mods).unwrap().is_some());
+        assert!(app.source_path("S", ImportKind::Mods).unwrap().is_some());
         fs::remove_file(tmp.path().join("app.db")).unwrap();
-        assert!(app.folder("S", ImportKind::Saves).unwrap().is_some());
+        assert!(app.source_path("S", ImportKind::Saves).unwrap().is_some());
     }
 
     #[test]
