@@ -817,5 +817,8 @@
       "saves": "Worlds",
       "settings": "Settings"
     }
+  },
+  "update": {
+    "failed": "The update failed"
   }
 }
