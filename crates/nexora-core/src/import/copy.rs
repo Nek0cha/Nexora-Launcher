@@ -152,7 +152,10 @@ mod tests {
         let report = run(&src, &root, &dest, &CancellationToken::new()).unwrap();
         assert_eq!(fs::read(dest.join("a.jar")).unwrap(), b"aaa");
         assert_eq!(fs::read(dest.join("world/region/r.mca")).unwrap(), b"rrrr");
-        assert_eq!((report.files, report.bytes, report.skipped_links), (2, 7, 0));
+        assert_eq!(
+            (report.files, report.bytes, report.skipped_links),
+            (2, 7, 0)
+        );
         assert_eq!(fs::read(src.join("a.jar")).unwrap(), b"aaa");
     }
 
@@ -164,9 +167,13 @@ mod tests {
         write(&src.join("b"), &[0u8; 20]);
         let root = tmp.path().join("inst");
         let mut last = (0, 0);
-        copy_tree(&src, &root, &root.join("mods"), &CancellationToken::new(), &mut |d, t| {
-            last = (d, t)
-        })
+        copy_tree(
+            &src,
+            &root,
+            &root.join("mods"),
+            &CancellationToken::new(),
+            &mut |d, t| last = (d, t),
+        )
         .unwrap();
         assert_eq!(last, (30, 30));
     }

@@ -52,6 +52,14 @@ pub struct SourceInstance {
     pub unsupported: Option<String>,
 }
 
+/// 読み込み元のランチャー。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ImportSourceKind {
+    ModrinthApp,
+}
+
 /// 取り込むインスタンスと、その中で取り込む種類。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +70,7 @@ pub struct ImportRequest {
 }
 
 /// 読み込み元。ランチャーごとに 1 つ実装する。元のデータは読むだけ。
-pub trait ImportSource {
+pub trait ImportSource: Send + Sync {
     /// 見つかったインスタンスの一覧。
     fn list(&self) -> Result<Vec<SourceInstance>, CoreError>;
     /// 指定の種類のコピー元のフォルダ。無ければ `None`。

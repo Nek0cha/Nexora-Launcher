@@ -15,7 +15,12 @@ const APP_FOLDER: &str = "ModrinthApp";
 const DB_FILE: &str = "app.db";
 const PROFILES_DIR: &str = "profiles";
 /// 導入の途中で、遊べる状態ではない `install_stage`。
-const INCOMPLETE_STAGES: [&str; 4] = ["not_installed", "installing", "minecraft_installing", "pack_installing"];
+const INCOMPLETE_STAGES: [&str; 4] = [
+    "not_installed",
+    "installing",
+    "minecraft_installing",
+    "pack_installing",
+];
 
 /// Modrinth App のデータフォルダ（`app.db` があるところ）。
 pub struct ModrinthApp {
@@ -37,7 +42,8 @@ impl TempCopy {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("nexora-import-{}-{nanos}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("nexora-import-{}-{nanos}", std::process::id()));
         fs::create_dir_all(&dir)?;
         Ok(Self(dir))
     }
@@ -126,7 +132,9 @@ impl ModrinthApp {
     /// インスタンスのフォルダがある `profiles` フォルダ。設定に `custom_dir` があればその下。
     fn profiles_dir(&self, conn: &Connection) -> PathBuf {
         let custom: Option<String> = conn
-            .query_row("SELECT custom_dir FROM settings WHERE id = 0", [], |r| r.get(0))
+            .query_row("SELECT custom_dir FROM settings WHERE id = 0", [], |r| {
+                r.get(0)
+            })
             .ok()
             .flatten();
         match custom.filter(|c| !c.trim().is_empty()) {
@@ -163,7 +171,8 @@ fn has_content(dir: &Path) -> bool {
 impl ImportSource for ModrinthApp {
     fn list(&self) -> Result<Vec<SourceInstance>, CoreError> {
         let (_dir, conn) = self.open_copy()?;
-        let rows = Self::rows(&conn).map_err(|e| unavailable(format!("app.db could not be read: {e}")))?;
+        let rows =
+            Self::rows(&conn).map_err(|e| unavailable(format!("app.db could not be read: {e}")))?;
         let profiles = self.profiles_dir(&conn);
         Ok(rows
             .into_iter()
@@ -254,7 +263,14 @@ mod tests {
         db(
             tmp.path(),
             NEW_SCHEMA,
-            &new_row("a", "Survival", "Survival 2024", "installed", "1.21.1", "fabric"),
+            &new_row(
+                "a",
+                "Survival",
+                "Survival 2024",
+                "installed",
+                "1.21.1",
+                "fabric",
+            ),
         );
         file(&tmp.path().join("profiles/Survival/mods/a.jar"));
         file(&tmp.path().join("profiles/Survival/saves/w/level.dat"));
@@ -262,7 +278,10 @@ mod tests {
         let list = ModrinthApp::at(tmp.path().to_path_buf()).list().unwrap();
         assert_eq!(list.len(), 1);
         let i = &list[0];
-        assert_eq!((i.name.as_str(), i.mc_version.as_str()), ("Survival 2024", "1.21.1"));
+        assert_eq!(
+            (i.name.as_str(), i.mc_version.as_str()),
+            ("Survival 2024", "1.21.1")
+        );
         assert_eq!(i.loader, LoaderKind::Fabric);
         assert_eq!(i.loader_version.as_deref(), Some("1.0"));
         assert_eq!(i.available, [ImportKind::Mods, ImportKind::Saves]);
@@ -330,16 +349,22 @@ mod tests {
     fn a_broken_or_foreign_database_is_unavailable() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("app.db"), b"not a database at all").unwrap();
-        let err = ModrinthApp::at(tmp.path().to_path_buf()).list().unwrap_err();
+        let err = ModrinthApp::at(tmp.path().to_path_buf())
+            .list()
+            .unwrap_err();
         assert_eq!(err.code(), "import.unavailable");
 
         let other = tempfile::tempdir().unwrap();
         db(other.path(), "CREATE TABLE unrelated (x INTEGER);", "");
-        let err = ModrinthApp::at(other.path().to_path_buf()).list().unwrap_err();
+        let err = ModrinthApp::at(other.path().to_path_buf())
+            .list()
+            .unwrap_err();
         assert_eq!(err.code(), "import.unavailable");
 
         let empty = tempfile::tempdir().unwrap();
-        let err = ModrinthApp::at(empty.path().to_path_buf()).list().unwrap_err();
+        let err = ModrinthApp::at(empty.path().to_path_buf())
+            .list()
+            .unwrap_err();
         assert_eq!(err.code(), "import.unavailable");
     }
 
@@ -368,7 +393,10 @@ mod tests {
         );
         Connection::open(tmp.path().join("app.db"))
             .unwrap()
-            .execute("UPDATE settings SET custom_dir = ?1", [custom.path().to_str().unwrap()])
+            .execute(
+                "UPDATE settings SET custom_dir = ?1",
+                [custom.path().to_str().unwrap()],
+            )
             .unwrap();
         file(&custom.path().join("profiles/S/mods/a.jar"));
         let list = ModrinthApp::at(tmp.path().to_path_buf()).list().unwrap();

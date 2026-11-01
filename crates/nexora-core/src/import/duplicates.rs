@@ -9,7 +9,11 @@ use crate::meta::loader::LoaderKind;
 type Key = (String, String, &'static str);
 
 fn key(name: &str, mc_version: &str, loader: LoaderKind) -> Key {
-    (name.trim().to_lowercase(), mc_version.to_string(), loader.as_str())
+    (
+        name.trim().to_lowercase(),
+        mc_version.to_string(),
+        loader.as_str(),
+    )
 }
 
 /// 選ばれた行のうち、Nexora のインスタンスか、選択の中の先の行と
@@ -66,7 +70,10 @@ mod tests {
     #[test]
     fn an_existing_instance_with_the_same_name_version_and_loader_is_a_duplicate() {
         let have = [existing("Survival", "1.21.1", LoaderKind::Fabric)];
-        let dup = find_duplicates(&have, &[picked("a", "Survival", "1.21.1", LoaderKind::Fabric)]);
+        let dup = find_duplicates(
+            &have,
+            &[picked("a", "Survival", "1.21.1", LoaderKind::Fabric)],
+        );
         assert_eq!(dup, ["a"]);
     }
 
@@ -98,7 +105,10 @@ mod tests {
     #[test]
     fn names_are_compared_without_case_or_surrounding_spaces() {
         let have = [existing("survival", "1.21", LoaderKind::Vanilla)];
-        let dup = find_duplicates(&have, &[picked("a", "  SURVIVAL ", "1.21", LoaderKind::Vanilla)]);
+        let dup = find_duplicates(
+            &have,
+            &[picked("a", "  SURVIVAL ", "1.21", LoaderKind::Vanilla)],
+        );
         assert_eq!(dup, ["a"]);
     }
 }
