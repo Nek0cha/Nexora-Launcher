@@ -147,13 +147,17 @@ export default function InstanceDetail() {
     hasActiveTask(tasks, CONTENT_TASK_KIND, instance.id);
 
   // コンテンツとスクリーンショットのタブでは一覧を広く見せる。高さを画面に合わせ、一覧はその中でスクロールする
-  const layout = tab === "settings" ? "max-w-2xl" : "h-full min-h-[34rem] max-w-5xl";
+  // 見出しのボタンの位置がタブで動かないよう、どのタブでも同じ幅にする（設定の入力だけ、読みやすい幅に収める）
+  const layout = tab === "settings" ? "max-w-5xl" : "h-full min-h-[34rem] max-w-5xl";
 
   return (
     <div className={`flex ${layout} flex-col gap-6 p-10`}>
       <header className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 className={`${title} truncate`}>{instance.name}</h1>
+          <div className="flex min-w-0 items-center gap-1">
+            <h1 className={`${title} truncate`}>{instance.name}</h1>
+            <ExportMrpackDialog instanceId={instance.id} instanceName={instance.name} />
+          </div>
           <span className="tabular text-sm text-text-muted">{instance.mcVersion}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -174,7 +178,6 @@ export default function InstanceDetail() {
               </Tooltip>
             </TooltipTrigger>
           ))}
-          <ExportMrpackDialog instanceId={instance.id} instanceName={instance.name} />
           <Link to="/instances" className={quietLink}>
             <IconBack aria-hidden className="size-4" />
             <span>{t("nav.instances")}</span>
@@ -214,7 +217,7 @@ export default function InstanceDetail() {
           <LogsTab key={instance.id} instance={instance} />
         </TabPanel>
         {/* 設定は、タブを切り替えても保存前の入力を残すよう、隠すだけにする */}
-        <TabPanel id="settings" shouldForceMount className="pt-6 outline-none data-inert:hidden">
+        <TabPanel id="settings" shouldForceMount className="max-w-2xl pt-6 outline-none data-inert:hidden">
           {/* インスタンスが替わったら入力を作り直す */}
           <SettingsTab key={instance.id} instance={instance} running={isRunning} />
         </TabPanel>

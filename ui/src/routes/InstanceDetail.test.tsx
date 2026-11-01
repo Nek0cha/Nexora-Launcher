@@ -484,3 +484,27 @@ describe("InstanceDetail: exporting a modpack", () => {
     expect(previewMrpackExport).toHaveBeenCalledWith("i1");
   });
 });
+
+describe("InstanceDetail: header layout", () => {
+  it("puts the export button right next to the title, apart from the folder buttons", async () => {
+    mount([instance()]);
+
+    const title = await screen.findByRole("heading", { level: 1, name: "Survival" });
+    const exportButton = await screen.findByRole("button", { name: "Export as mrpack" });
+    const folderButton = screen.getByRole("button", { name: "Game folder" });
+
+    expect(title.parentElement?.contains(exportButton)).toBe(true);
+    expect(folderButton.parentElement?.contains(exportButton)).toBe(false);
+  });
+
+  it("keeps the same page width on the settings tab so the header buttons stay put", async () => {
+    mount([instance()]);
+
+    const header = (await screen.findByRole("heading", { level: 1, name: "Survival" })).closest("header");
+    const page = header?.parentElement;
+    expect(page?.className).toContain("max-w-5xl");
+    expect(page?.className).not.toContain("max-w-2xl");
+    // 設定の入力は、広い見出しの下でも読みやすい幅に収める
+    expect(page?.querySelector(".max-w-2xl")).not.toBeNull();
+  });
+});
