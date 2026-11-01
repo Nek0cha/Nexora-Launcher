@@ -23,7 +23,18 @@ function isReferenced(key: string): boolean {
   return quoted.some((q) => sourceText.includes(q)) || dynamicPrefixes.some((p) => key.startsWith(p));
 }
 
+function strings(obj: unknown): string[] {
+  if (typeof obj === "string") return [obj];
+  if (typeof obj !== "object" || obj === null) return [];
+  return Object.values(obj).flatMap(strings);
+}
+
 describe("i18n", () => {
+  it("writes version as バージョン in Japanese, not 版 (製品版 and 体験版 are different words)", () => {
+    const offenders = strings(resources.ja).filter((text) => /(?<!製品|体験)版/.test(text));
+    expect(offenders).toEqual([]);
+  });
+
   it("ja and en have the same keys", () => {
     expect(keys(resources.en).sort()).toEqual(keys(resources.ja).sort());
   });

@@ -24,7 +24,7 @@ import { checkboxClass, checkboxMark, onPanel, ring, secondaryButton, submitButt
 const SOURCES: ImportSourceKind[] = ["modrinth_app", "prism_launcher", "official_launcher", "curse_forge"];
 
 // ランチャーのタブが、ふつうの窓ではスクロールも折り返しもなく並ぶ幅にする
-const launcherModalClass = modalClass.replace("max-w-lg", "max-w-2xl");
+const launcherModalClass = modalClass.replace("max-w-lg", "max-w-3xl");
 
 const sourceClass = [
   "inline-flex h-8 shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm text-text-muted",
@@ -192,9 +192,11 @@ function ImportForm() {
                       <Mark />
                       <span className="truncate">{row.name}</span>
                     </Checkbox>
-                    <span className="tabular shrink-0 text-sm text-text-muted">
-                      {row.mcVersion} · {t(`create.tab.${row.loader}`)}
-                    </span>
+                    {row.mcVersion !== "" && (
+                      <span className="tabular shrink-0 text-sm text-text-muted">
+                        {row.mcVersion} · {t(`create.tab.${row.loader}`)}
+                      </span>
+                    )}
                     {duplicated && (
                       <span className="ml-auto flex shrink-0 items-center gap-1 text-sm text-warning">
                         <IconWarning aria-hidden className="size-4" />
