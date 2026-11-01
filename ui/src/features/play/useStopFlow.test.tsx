@@ -127,7 +127,7 @@ describe("useStopFlow", () => {
     await run(() => flow().requestStop("i1"));
     await advance(STOP_WAIT_MS);
     expect(flow().confirmingFor).toBe("i1");
-    await run(() => exited({ instanceId: "i1", exitCode: 0 }));
+    await run(() => exited({ instanceId: "i1", exitCode: 0, launchedAt: 0 }));
     expect(flow().confirmingFor).toBeNull();
     expect(flow().stateOf("i1")).toBe("idle");
     expect(stopInstance).not.toHaveBeenCalledWith("i1", true);
@@ -163,7 +163,7 @@ describe("useStopFlow", () => {
     const { flow } = setup();
     await flush();
     await run(() => flow().requestStop("i1"));
-    await run(() => exited({ instanceId: "i1", exitCode: 0 }));
+    await run(() => exited({ instanceId: "i1", exitCode: 0, launchedAt: 0 }));
     await advance(STOP_WAIT_MS);
     expect(flow().confirmingFor).toBeNull();
     expect(flow().stateOf("i1")).toBe("idle");

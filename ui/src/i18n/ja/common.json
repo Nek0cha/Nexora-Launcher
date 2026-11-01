@@ -278,6 +278,23 @@
     "openDetail": "{{name}} の詳細を開く",
     "waiting": "{{name}} の終了を待っています"
   },
+  "crash": {
+    "title": "ゲームが異常終了しました",
+    "instance": "インスタンス: {{name}}",
+    "unknown": "原因は分かりませんでした",
+    "lowConfidence": "可能性は低め",
+    "disable": "無効化",
+    "close": "閉じる",
+    "openLog": "ログを開く",
+    "reason": {
+      "missingDependency": "必要な Mod が入っていない {{missing}}",
+      "incompatibleVersion": "Mod のバージョンが合わない {{missing}}",
+      "modLoadingError": "読み込みに失敗した",
+      "mixinFailure": "Mixin の適用に失敗した",
+      "suspectedInReport": "クラッシュレポートに疑わしい Mod として載っている",
+      "stackTrace": "エラーの経路に含まれている"
+    }
+  },
   "forceStop": {
     "title": "ゲームが閉じません",
     "instance": "対象：{{name}}",

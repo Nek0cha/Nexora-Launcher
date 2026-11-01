@@ -278,6 +278,23 @@
     "openDetail": "Open details for {{name}}",
     "waiting": "Waiting for {{name}} to close"
   },
+  "crash": {
+    "title": "The game crashed",
+    "instance": "Instance: {{name}}",
+    "unknown": "The cause could not be found",
+    "lowConfidence": "Less likely",
+    "disable": "Disable",
+    "close": "Close",
+    "openLog": "Open log",
+    "reason": {
+      "missingDependency": "Missing required mod {{missing}}",
+      "incompatibleVersion": "Mod version does not match {{missing}}",
+      "modLoadingError": "Failed to load",
+      "mixinFailure": "Mixin failed to apply",
+      "suspectedInReport": "Listed as suspected in the crash report",
+      "stackTrace": "Appears in the error trace"
+    }
+  },
   "forceStop": {
     "title": "The game is not closing",
     "instance": "Instance: {{name}}",

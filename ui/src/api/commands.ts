@@ -20,6 +20,7 @@ import type { LoaderKind } from "../bindings/LoaderKind";
 import type { LoaderVersionEntry } from "../bindings/LoaderVersionEntry";
 import type { NewInstance } from "../bindings/NewInstance";
 import type { ContentKind } from "../bindings/ContentKind";
+import type { CrashDiagnosis } from "../bindings/CrashDiagnosis";
 import type { ContentItem } from "../bindings/ContentItem";
 import type { IdentifyReport } from "../bindings/IdentifyReport";
 import type { AddReport } from "../bindings/AddReport";
@@ -195,6 +196,9 @@ export const deleteScreenshot = (instanceId: string, name: string) =>
 export const importScreenshots = (instanceId: string, paths: string[]) =>
   call<ImportReport>("import_screenshots", { instanceId, paths });
 
+/** 異常終了した起動（`launchedAt`）の原因の候補。ログやレポートが読めなければ候補なし。 */
+export const diagnoseCrash = (instanceId: string, launchedAt: number) =>
+  call<CrashDiagnosis>("diagnose_crash", { instanceId, launchedAt });
 export const listGameLogs = (instanceId: string) => call<GameLog[]>("list_game_logs", { instanceId });
 export const readGameLog = (instanceId: string, name: string) =>
   call<LogContent>("read_game_log", { instanceId, name });

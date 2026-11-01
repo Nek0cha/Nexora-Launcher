@@ -96,7 +96,7 @@ describe("useSyncEvents", () => {
     const { invalidate } = setup();
     await flush();
     invalidate.mockClear();
-    act(() => exited({ instanceId: "i1", exitCode: 0 }));
+    act(() => exited({ instanceId: "i1", exitCode: 0, launchedAt: 0 }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: SYNC_KEY });
   });
 
