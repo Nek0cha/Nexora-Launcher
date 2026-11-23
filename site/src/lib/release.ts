@@ -35,7 +35,14 @@ export function pickAssets(assets: { name: string; url: string }[]): Partial<Rec
   return out;
 }
 
-const fallback = (): ReleaseLinks => ({ version: null, pageUrl: RELEASES_URL, assets: {} });
+/** GitHub が応答しないとき、ビルドを止めずに諦めるまでの時間（ミリ秒） */
+const TIMEOUT_MS = 10_000;
+
+// 落ちたことに気づけるよう、理由をビルドのログに残す（ボタンは Releases の一覧になる）
+const fallback = (reason: string): ReleaseLinks => {
+  console.warn(`[release] using the releases page instead of direct links: ${reason}`);
+  return { version: null, pageUrl: RELEASES_URL, assets: {} };
+};
 
 /** 最新のリリースを読む。失敗しても throw せず、Releases の一覧へのリンクだけを返す（ビルドを止めない）。 */
 export async function loadRelease(fetchImpl: typeof fetch = fetch): Promise<ReleaseLinks> {
@@ -43,14 +50,14 @@ export async function loadRelease(fetchImpl: typeof fetch = fetch): Promise<Rele
     const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
     const token = typeof process !== "undefined" ? process.env.GITHUB_TOKEN : undefined;
     if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetchImpl(LATEST_API, { headers });
-    if (!res.ok) return fallback();
+    const res = await fetchImpl(LATEST_API, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) return fallback(`HTTP ${res.status}`);
     const body = (await res.json()) as {
       tag_name?: unknown;
       html_url?: unknown;
       assets?: { name?: unknown; browser_download_url?: unknown }[];
     };
-    if (typeof body.tag_name !== "string" || !Array.isArray(body.assets)) return fallback();
+    if (typeof body.tag_name !== "string" || !Array.isArray(body.assets)) return fallback("unexpected response");
     const assets = body.assets.flatMap((a) =>
       typeof a.name === "string" && typeof a.browser_download_url === "string"
         ? [{ name: a.name, url: a.browser_download_url }]
@@ -61,7 +68,7 @@ export async function loadRelease(fetchImpl: typeof fetch = fetch): Promise<Rele
       pageUrl: typeof body.html_url === "string" ? body.html_url : RELEASES_URL,
       assets: pickAssets(assets),
     };
-  } catch {
-    return fallback();
+  } catch (error) {
+    return fallback(error instanceof Error ? error.message : String(error));
   }
 }

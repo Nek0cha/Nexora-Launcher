@@ -1,0 +1,36 @@
+name: Site CI
+
+# 公式サイト（site/）のテストとビルド。アプリの CI は site/ の変更では走らないため、こちらで確かめる
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "pnpm-lock.yaml", ".github/workflows/site-ci.yml"]
+  pull_request:
+    paths: ["site/**", "pnpm-lock.yaml", ".github/workflows/site-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter nexora-site...
+      - name: Test
+        run: pnpm --filter nexora-site test
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm --filter nexora-site build

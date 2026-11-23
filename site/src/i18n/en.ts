@@ -11,7 +11,7 @@ export const en = {
     download: "Download",
     downloadFor: {
       windows: "Download for Windows",
-      "macos-arm": "Download for macOS",
+      "macos-arm": "Download for macOS (Apple Silicon)",
       "macos-intel": "Download for macOS",
       "linux-appimage": "Download for Linux",
       "linux-deb": "Download for Linux",
@@ -30,7 +30,7 @@ export const en = {
   },
   compare: {
     title: "How it compares",
-    lead: "Among launchers whose source is public, Nexora is the one that is not GPL. You can take its code into your own project without your project having to become GPL.",
+    lead: "Of the launchers in this table, Nexora is the only one that is not GPL. You can take its code into your own project without your project having to become GPL.",
     feature: "Launcher",
     rows: {
       license: "License",
@@ -97,7 +97,7 @@ export const en = {
       },
       {
         os: "macOS",
-        body: "Open the app once, then go to System Settings → Privacy & Security and choose Open Anyway next to Nexora.",
+        body: "Open the app once, then go to System Settings → Privacy & Security and choose Open Anyway next to Nexora. If macOS says the app is damaged, run xattr -dr com.apple.quarantine /Applications/Nexora.app in Terminal.",
       },
       {
         os: "Linux",

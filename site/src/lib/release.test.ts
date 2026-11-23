@@ -63,4 +63,19 @@ describe("loadRelease", () => {
     expect(await loadRelease(throwing)).toEqual({ version: null, pageUrl: RELEASES_URL, assets: {} });
     expect(await loadRelease(ok({ message: "x" }))).toEqual({ version: null, pageUrl: RELEASES_URL, assets: {} });
   });
+
+  it("gives up on a hanging request through an abort signal", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 404 })) as unknown as typeof fetch;
+    await loadRelease(fetchImpl);
+    const init = (fetchImpl as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]![1];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("warns in the build log when it falls back", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 403 })) as unknown as typeof fetch;
+    await loadRelease(fetchImpl);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

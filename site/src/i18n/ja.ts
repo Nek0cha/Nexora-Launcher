@@ -13,7 +13,7 @@ export const ja: Dict = {
     download: "ダウンロード",
     downloadFor: {
       windows: "Windows 用をダウンロード",
-      "macos-arm": "macOS 用をダウンロード",
+      "macos-arm": "macOS（Apple シリコン）用をダウンロード",
       "macos-intel": "macOS 用をダウンロード",
       "linux-appimage": "Linux 用をダウンロード",
       "linux-deb": "Linux 用をダウンロード",
@@ -32,7 +32,7 @@ export const ja: Dict = {
   },
   compare: {
     title: "ほかのランチャーとの違い",
-    lead: "ソースを公開しているランチャーの中で、GPL ではないのは Nexora だけです。コードを自分のプロジェクトに取り込んでも、そのプロジェクトを GPL にする必要はありません。",
+    lead: "この表の中で、GPL ではないのは Nexora だけです。コードを自分のプロジェクトに取り込んでも、そのプロジェクトを GPL にする必要はありません。",
     feature: "ランチャー",
     rows: {
       license: "ライセンス",
@@ -99,7 +99,7 @@ export const ja: Dict = {
       },
       {
         os: "macOS",
-        body: "いちど開いたあと、「システム設定 → プライバシーとセキュリティ」で、Nexora の横の「このまま開く」を押します。",
+        body: "いちど開いたあと、「システム設定 → プライバシーとセキュリティ」で、Nexora の横の「このまま開く」を押します。「壊れているため開けません」と出たときは、ターミナルで xattr -dr com.apple.quarantine /Applications/Nexora.app を実行します。",
       },
       {
         os: "Linux",
