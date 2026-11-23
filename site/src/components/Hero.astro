@@ -1,0 +1,102 @@
+---
+import IconDownload from "~icons/ph/download-simple";
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+import type { Platform, ReleaseLinks } from "../lib/release";
+
+const { lang, release } = Astro.props as { lang: Lang; release: ReleaseLinks };
+const t = dict(lang);
+const order: Platform[] = ["windows", "macos-arm", "macos-intel", "linux-appimage", "linux-deb"];
+const available = order.filter((p) => release.assets[p]);
+// 主ボタンの文字は、すべての候補を同じ場所に重ねて置き、選ばれたものだけを見せる（差し替えで幅が変わらない）
+const labels: { key: Platform | "default"; text: string }[] = [
+  { key: "default", text: t.hero.download },
+  ...available.map((p) => ({ key: p, text: t.hero.downloadFor[p] })),
+];
+---
+
+<div class="overflow-x-clip">
+<section class="mx-auto grid max-w-[1240px] items-center gap-12 px-5 pt-10 pb-20 md:px-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16 lg:pt-16 lg:pb-28">
+  <div class="flex flex-col items-start gap-7">
+    <h1 class="font-display text-[clamp(40px,5.6vw,76px)] leading-[1.02] font-bold tracking-[-0.035em] text-text-strong text-balance [:lang(ja)_&]:text-[clamp(34px,4.4vw,58px)] [:lang(ja)_&]:leading-[1.25] [:lang(ja)_&]:tracking-[0.02em]">
+      {t.hero.title}
+    </h1>
+    <p class="max-w-[34em] text-[18px] text-text-muted">{t.hero.lead}</p>
+
+    <div class="flex flex-col items-start gap-4" data-download data-links={JSON.stringify(release.assets)}>
+      <a
+        href={release.pageUrl}
+        data-primary
+        class="group inline-flex h-13 items-center gap-3 rounded-md bg-text-strong px-6 text-[17px] font-semibold text-surface-0 transition-[opacity,transform] duration-(--duration-fast) ease-out-quint hover:opacity-90 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        <IconDownload aria-hidden="true" class="size-5 shrink-0" />
+        <span class="grid">
+          {
+            labels.map((l) => (
+              <span data-label={l.key} class:list={["col-start-1 row-start-1", l.key !== "default" && "invisible"]}>
+                {l.text}
+              </span>
+            ))
+          }
+        </span>
+      </a>
+      <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-muted">
+        {
+          release.version && (
+            <span>
+              {t.hero.version.split("{v}")[0]}
+              <span class="font-mono tabular-nums">{release.version}</span>
+              {t.hero.version.split("{v}")[1]}
+            </span>
+          )
+        }
+        {release.version && <span aria-hidden="true" class="text-text-faint">·</span>}
+        <a href={release.pageUrl} class="underline decoration-line-strong underline-offset-4 hover:text-text-strong">{t.hero.allReleases}</a>
+      </p>
+      {
+        available.length > 0 && (
+          <div class="flex flex-col gap-2 text-sm">
+            <p class="text-text-muted">{t.hero.others}</p>
+            <ul class="flex flex-wrap gap-x-4 gap-y-1.5">
+              {available.map((p) => (
+                <li>
+                  <a href={release.assets[p]} data-platform={p} class="text-text underline decoration-line-strong underline-offset-4 hover:text-text-strong hover:decoration-text-strong">
+                    {t.hero.platform[p]}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+    </div>
+  </div>
+
+  <figure class="relative lg:-mr-24 xl:-mr-40">
+    <img
+      src="/images/mods.png"
+      alt={t.hero.screenshotAlt}
+      width="1100"
+      height="720"
+      class="block w-full rounded-lg border border-line bg-surface-1 shadow-float"
+    />
+  </figure>
+</section>
+</div>
+
+<script>
+  import { detectPlatform } from "../lib/os";
+
+  const root = document.querySelector<HTMLElement>("[data-download]");
+  const primary = root?.querySelector<HTMLAnchorElement>("[data-primary]");
+  if (root && primary) {
+    const links = JSON.parse(root.dataset.links ?? "{}") as Record<string, string>;
+    const platform = detectPlatform(navigator.userAgent, navigator.maxTouchPoints);
+    if (platform && links[platform]) {
+      primary.href = links[platform];
+      for (const label of primary.querySelectorAll<HTMLElement>("[data-label]")) {
+        label.classList.toggle("invisible", label.dataset.label !== platform);
+      }
+    }
+  }
+</script>

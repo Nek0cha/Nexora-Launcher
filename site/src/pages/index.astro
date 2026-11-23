@@ -1,7 +1,5 @@
 ---
-import "../styles/global.css";
-import { loadRelease } from "../lib/release";
-const release = await loadRelease();
+import Page from "../components/Page.astro";
 ---
-<html lang="en"><head><meta charset="utf-8" /><title>Nexora Launcher</title><link rel="icon" href="/favicon.svg" type="image/svg+xml" /></head>
-<body><p>{release.version}</p></body></html>
+
+<Page lang="en" />

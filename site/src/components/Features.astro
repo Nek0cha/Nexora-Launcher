@@ -1,0 +1,58 @@
+---
+import IconCrash from "~icons/ph/first-aid-kit";
+import IconImport from "~icons/ph/arrow-square-in";
+import IconModrinth from "~icons/ph/magnifying-glass";
+import IconPack from "~icons/ph/package";
+import IconSync from "~icons/ph/sliders-horizontal";
+import IconUpgrade from "~icons/ph/arrow-fat-lines-up";
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+
+const { lang } = Astro.props as { lang: Lang };
+const t = dict(lang);
+const icons = {
+  sync: IconSync,
+  modrinth: IconModrinth,
+  import: IconImport,
+  upgrade: IconUpgrade,
+  pack: IconPack,
+  crash: IconCrash,
+} as const;
+---
+
+<section class="border-t border-line">
+  <div class="mx-auto grid max-w-[1240px] gap-12 px-5 py-20 md:px-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16 lg:py-28">
+    <div class="flex flex-col gap-8">
+      <h2 class="font-display text-[32px] leading-tight font-semibold tracking-[-0.02em] text-text-strong [:lang(ja)_&]:text-[28px] [:lang(ja)_&]:tracking-[0.02em]">
+        {t.features.title}
+      </h2>
+      <img
+        src="/images/instance.png"
+        alt=""
+        width="1100"
+        height="720"
+        loading="lazy"
+        class="hidden w-full rounded-island border border-line lg:block"
+      />
+    </div>
+    <ul class="grid gap-x-12 sm:grid-cols-2">
+      {
+        t.features.items.map((item) => {
+          const Icon = icons[item.icon as keyof typeof icons];
+          return (
+            <li class="flex flex-col gap-2 border-t border-line py-6">
+              <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-text-strong">
+                <Icon aria-hidden="true" class="size-5 shrink-0 text-text-muted" />
+                <span>{item.title}</span>
+                {"tag" in item && item.tag && (
+                  <span class="rounded-sm border border-line-strong px-1.5 py-0.5 text-xs font-normal text-text-muted">{item.tag}</span>
+                )}
+              </h3>
+              <p class="text-[16px] text-text-muted">{item.body}</p>
+            </li>
+          );
+        })
+      }
+    </ul>
+  </div>
+</section>

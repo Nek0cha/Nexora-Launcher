@@ -120,6 +120,11 @@
     font-size: 17px;
     line-height: 1.6;
   }
+  /* 和文の見出しは語の途中で折り返さない。折り返してよい位置はゼロ幅スペースで示す */
+  :lang(ja) :is(h1, h2, h3, th) {
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
   :lang(ja) body {
     line-height: 1.8;
     letter-spacing: 0.05em;

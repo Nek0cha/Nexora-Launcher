@@ -1,0 +1,103 @@
+---
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+
+const { lang } = Astro.props as { lang: Lang };
+const t = dict(lang);
+const v = t.compare.values;
+const r = t.compare.rows;
+// 調べた内容は docs/research/10-launcher-comparison.md。確かめた行だけを載せる
+const columns = [
+  { name: "Nexora", own: true, cells: [v.apache, v.public, v.rustTauri] },
+  { name: "Prism Launcher", own: false, cells: [v.gpl3, v.public, v.cppQt] },
+  { name: "Modrinth App", own: false, cells: [v.gpl3, v.public, v.rustTauri] },
+  { name: t.compare.official, own: false, cells: [v.proprietary, v.closed, v.unknown] },
+];
+const rows = [r.license, r.source, r.stack];
+---
+
+<section class="border-t border-line">
+  <div class="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 md:px-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16 lg:py-28">
+    <div class="flex flex-col gap-4">
+      <h2 class="font-display text-[32px] leading-tight font-semibold tracking-[-0.02em] text-text-strong [:lang(ja)_&]:text-[28px] [:lang(ja)_&]:tracking-[0.02em]">
+        {t.compare.title}
+      </h2>
+      <p class="text-text-muted">{t.compare.lead}</p>
+    </div>
+
+    <div class="flex flex-col gap-5">
+      {/* 広い画面は表。Nexora の列だけ明暗を反転させる */}
+      <table class="hidden w-full table-fixed border-collapse text-left md:table">
+        <thead>
+          <tr>
+            <th scope="col" class="w-[16%] pb-3 text-sm font-normal text-text-muted"><span class="sr-only">{t.compare.feature}</span></th>
+            {
+              columns.map((c) => (
+                <th
+                  scope="col"
+                  class:list={[
+                    "px-4 pt-4 pb-3 align-bottom text-[15px] font-semibold",
+                    c.own ? "rounded-t-lg bg-text-strong text-surface-0" : "text-text-strong",
+                  ]}
+                >
+                  {c.name}
+                </th>
+              ))
+            }
+          </tr>
+        </thead>
+        <tbody>
+          {
+            rows.map((row, i) => (
+              <tr class="border-t border-line">
+                <th scope="row" class="py-4 pr-4 text-sm font-normal text-text-muted">{row}</th>
+                {columns.map((c) => (
+                  <td
+                    class:list={[
+                      "px-4 py-4",
+                      c.own ? "border-t border-surface-0/15 bg-text-strong font-semibold text-surface-0" : "text-text",
+                      c.own && i === rows.length - 1 && "rounded-b-lg",
+                    ]}
+                  >
+                    {c.cells[i]}
+                  </td>
+                ))}
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+
+      {/* 狭い画面は、行ごとに 4 つを縦に並べる（表を横にスクロールさせない） */}
+      <dl class="flex flex-col md:hidden">
+        {
+          rows.map((row, i) => (
+            <div class="flex flex-col gap-2 border-t border-line py-4">
+              <dt class="text-sm text-text-muted">{row}</dt>
+              <dd>
+                <ul class="flex flex-col gap-1">
+                  {columns.map((c) => (
+                    <li
+                      class:list={[
+                        "flex justify-between gap-4 rounded-sm px-3 py-1.5",
+                        c.own ? "bg-text-strong font-semibold text-surface-0" : "text-text",
+                      ]}
+                    >
+                      <span>{c.name}</span>
+                      <span class="text-right">{c.cells[i]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ))
+        }
+      </dl>
+
+      <div class="flex flex-col gap-1.5 text-sm text-text-muted">
+        <p>{t.compare.deps}</p>
+        <p class="text-text-faint">{t.compare.checked}</p>
+      </div>
+    </div>
+  </div>
+</section>

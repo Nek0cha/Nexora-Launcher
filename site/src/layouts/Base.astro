@@ -1,0 +1,32 @@
+---
+import "../styles/global.css";
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+
+const { lang } = Astro.props as { lang: Lang };
+const t = dict(lang);
+const canonical = new URL(lang === "ja" ? "/ja/" : "/", Astro.site);
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{t.meta.title}</title>
+    <meta name="description" content={t.meta.description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="en" href={new URL("/", Astro.site)} />
+    <link rel="alternate" hreflang="ja" href={new URL("/ja/", Astro.site)} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:title" content={t.meta.title} />
+    <meta property="og:description" content={t.meta.description} />
+    <meta property="og:image" content={new URL("/images/mods.png", Astro.site)} />
+    <meta property="og:url" content={canonical} />
+    <meta name="theme-color" content="#0e1214" />
+  </head>
+  <body class="min-h-dvh antialiased">
+    <slot />
+  </body>
+</html>
