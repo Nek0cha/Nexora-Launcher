@@ -85,7 +85,7 @@ describe("InstanceModrinth", () => {
   it("goes back to the content tab of the instance", async () => {
     mount([instance()]);
     fireEvent.click(await screen.findByRole("link", { name: "Survival" }));
-    expect(await screen.findByText('detail page {"tab":"content"}')).toBeTruthy();
+    expect(await screen.findByText('detail page {"tab":"content","kind":"mod"}')).toBeTruthy();
   });
 
   it("explains that a vanilla instance can't take mods", async () => {

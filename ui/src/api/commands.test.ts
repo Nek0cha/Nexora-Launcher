@@ -161,14 +161,19 @@ describe("content commands", () => {
 describe("modrinth commands", () => {
   it("passes the camelCase argument names", async () => {
     const query: SearchQuery = {
-      query: "x", mcVersion: null, loaders: [], categories: [], clientSides: [], serverSides: [], sort: "relevance",
+      kind: "mod", query: "x", mcVersion: null, loaders: [], categories: [], clientSides: [], serverSides: [], sort: "relevance",
     };
     await searchModrinth(null, query, 20);
     expect(invoke).toHaveBeenLastCalledWith("search_modrinth", { instanceId: null, query, offset: 20 });
-    await previewContentInstall("i1", "p1");
-    expect(invoke).toHaveBeenLastCalledWith("preview_content_install", { instanceId: "i1", projectId: "p1" });
-    await installContent("i1", "p1", true);
-    expect(invoke).toHaveBeenLastCalledWith("install_content", { instanceId: "i1", projectId: "p1", acceptIncompatible: true });
+    await previewContentInstall("i1", "shader", "p1");
+    expect(invoke).toHaveBeenLastCalledWith("preview_content_install", { instanceId: "i1", kind: "shader", projectId: "p1" });
+    await installContent("i1", "resourcepack", "p1", true);
+    expect(invoke).toHaveBeenLastCalledWith("install_content", {
+      instanceId: "i1",
+      kind: "resourcepack",
+      projectId: "p1",
+      acceptIncompatible: true,
+    });
     await checkContentUpdates("i1", true);
     expect(invoke).toHaveBeenLastCalledWith("check_content_updates", { instanceId: "i1", force: true });
     await updateContent("i1", ["mods/a.jar"]);

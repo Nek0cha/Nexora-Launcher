@@ -103,10 +103,14 @@ export const getContentIcon = (key: string) => call<string | null>("get_content_
 
 export const searchModrinth = (instanceId: string | null, query: SearchQuery, offset: number) =>
   call<SearchPage>("search_modrinth", { instanceId, query, offset });
-export const previewContentInstall = (instanceId: string, projectId: string) =>
-  call<InstallPreview>("preview_content_install", { instanceId, projectId });
-export const installContent = (instanceId: string, projectId: string, acceptIncompatible: boolean) =>
-  call<string>("install_content", { instanceId, projectId, acceptIncompatible });
+export const previewContentInstall = (instanceId: string, kind: ContentKind, projectId: string) =>
+  call<InstallPreview>("preview_content_install", { instanceId, kind, projectId });
+export const installContent = (
+  instanceId: string,
+  kind: ContentKind,
+  projectId: string,
+  acceptIncompatible: boolean,
+) => call<string>("install_content", { instanceId, kind, projectId, acceptIncompatible });
 export const checkContentUpdates = (instanceId: string, force: boolean) =>
   call<UpdateCheck>("check_content_updates", { instanceId, force });
 export const updateContent = (instanceId: string, relPaths: string[]) =>

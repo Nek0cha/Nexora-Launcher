@@ -16,10 +16,11 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// 中身の種類。DB と JSON には `mod`、`resourcepack`、`shader` で持つ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
 pub enum ContentKind {
+    #[default]
     Mod,
     ResourcePack,
     Shader,

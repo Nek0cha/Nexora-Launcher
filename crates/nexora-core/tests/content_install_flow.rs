@@ -27,7 +27,10 @@ async fn install_content_is_refused_while_the_game_runs() {
     publish(&h, "pa", b"a", None).await;
     h.run();
 
-    let err = h.launcher.install_content(&h.id, "pa", false).unwrap_err();
+    let err = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap_err();
     assert_eq!(err.code(), "instance.busy");
     let err = h
         .launcher
@@ -41,12 +44,18 @@ async fn install_content_is_refused_while_the_game_runs() {
 async fn launch_is_refused_while_a_content_task_runs() {
     let h = Harness::new().await;
     publish(&h, "pa", b"a", Some(Duration::from_millis(600))).await;
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
 
     let err = h.launcher.launch_instance(&h.id, true).unwrap_err();
     assert_eq!(err.code(), "instance.busy");
     // 同じインスタンスに、もう 1 つ中身のタスクは始められない
-    let err = h.launcher.install_content(&h.id, "pa", false).unwrap_err();
+    let err = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap_err();
     assert_eq!(err.code(), "instance.busy");
 
     let snap = h.wait(&task).await;
@@ -58,7 +67,10 @@ async fn content_task_blocks_toggle_and_remove() {
     let h = Harness::new().await;
     h.seed_local("old.jar", b"old");
     publish(&h, "pa", b"a", Some(Duration::from_millis(600))).await;
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
 
     let err = h
         .launcher
@@ -90,7 +102,10 @@ async fn a_left_prepared_operation_refuses_further_changes() {
     publish(&h, "pa", b"a", None).await;
     h.leave_prepared_operation();
 
-    let err = h.launcher.install_content(&h.id, "pa", false).unwrap_err();
+    let err = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap_err();
     assert_eq!(err.code(), "instance.busy");
     let err = h
         .launcher
@@ -119,12 +134,15 @@ async fn install_refuses_when_incompatible_installed_and_not_accepted() {
     // 導入の前の確認に、非互換の導入済みの MOD が出る
     let preview = h
         .launcher
-        .preview_content_install(&h.id, "pa")
+        .preview_content_install(&h.id, ContentKind::Mod, "pa")
         .await
         .unwrap();
     assert_eq!(preview.incompatible, ["rival.jar"]);
 
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
     let snap = h.wait(&task).await;
 
     assert_eq!(snap.state, TaskState::Failed);
@@ -138,7 +156,10 @@ async fn install_refuses_when_incompatible_installed_and_not_accepted() {
     assert!(h.launcher.content_task_report(&task).is_none());
 
     // 承知したうえでなら入る
-    let task = h.launcher.install_content(&h.id, "pa", true).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", true)
+        .unwrap();
     let snap = h.wait(&task).await;
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
     assert_eq!(h.mods(), ["pa.jar", "rival.jar"]);
@@ -155,7 +176,7 @@ async fn install_records_last_added_instance_and_report() {
 
     let preview = h
         .launcher
-        .preview_content_install(&h.id, "pa")
+        .preview_content_install(&h.id, ContentKind::Mod, "pa")
         .await
         .unwrap();
     assert_eq!(preview.version_number, "pa-v1-number");
@@ -166,7 +187,10 @@ async fn install_records_last_added_instance_and_report() {
     let before = nexora_core::settings::load(h.launcher.db()).unwrap();
     assert_eq!(before.last_added_instance, None);
 
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
     let snap = h.wait(&task).await;
 
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
@@ -253,7 +277,7 @@ async fn adding_an_enabled_installed_project_is_refused() {
     // 確認の段階で断る
     let err = h
         .launcher
-        .preview_content_install(&h.id, "pa")
+        .preview_content_install(&h.id, ContentKind::Mod, "pa")
         .await
         .unwrap_err();
     assert_eq!(err.code(), "content.already_installed");
@@ -264,7 +288,10 @@ async fn adding_an_enabled_installed_project_is_refused() {
     );
 
     // タスクでも断り、2 つ目は入らない
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
     let snap = h.wait(&task).await;
     assert_eq!(snap.state, TaskState::Failed);
     assert_eq!(snap.error.unwrap().code, "content.already_installed");
@@ -280,14 +307,17 @@ async fn adding_a_disabled_installed_project_enables_it() {
 
     let preview = h
         .launcher
-        .preview_content_install(&h.id, "pa")
+        .preview_content_install(&h.id, ContentKind::Mod, "pa")
         .await
         .unwrap();
     assert!(preview.enables_installed, "{preview:?}");
     assert_eq!(preview.dependency_count, 0);
     assert!(preview.incompatible.is_empty());
 
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
     let snap = h.wait(&task).await;
     assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
     // ダウンロードせず、無効の jar を有効にするだけ
@@ -312,13 +342,13 @@ async fn install_into_an_instance_without_a_loader_is_refused() {
 
     let err = h
         .launcher
-        .preview_content_install(&vanilla.id, "pa")
+        .preview_content_install(&vanilla.id, ContentKind::Mod, "pa")
         .await
         .unwrap_err();
     assert_eq!(err.code(), "content.no_loader");
     let err = h
         .launcher
-        .install_content(&vanilla.id, "pa", false)
+        .install_content(&vanilla.id, ContentKind::Mod, "pa", false)
         .unwrap_err();
     assert_eq!(err.code(), "content.no_loader");
     assert_eq!(h.hits("/project/pa/version").await, 0);
@@ -329,7 +359,7 @@ async fn invalid_project_id_is_refused_before_any_request() {
     let h = Harness::new().await;
     let err = h
         .launcher
-        .preview_content_install(&h.id, "../pa")
+        .preview_content_install(&h.id, ContentKind::Mod, "../pa")
         .await
         .unwrap_err();
     assert_eq!(err.code(), "meta.invalid");
@@ -369,7 +399,10 @@ async fn unresolved_dependency_error_names_the_project() {
         .mount(&h.server)
         .await;
 
-    let task = h.launcher.install_content(&h.id, "pa", false).unwrap();
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::Mod, "pa", false)
+        .unwrap();
     let snap = h.wait(&task).await;
 
     assert_eq!(snap.state, TaskState::Failed);
@@ -380,4 +413,75 @@ async fn unresolved_dependency_error_names_the_project() {
         Some(&nexora_core::error::ParamValue::Str("Lib Name".into()))
     );
     assert!(h.mods().is_empty());
+}
+
+#[tokio::test]
+async fn resource_pack_goes_into_resourcepacks_without_dependencies() {
+    let h = Harness::new().await;
+    let mut version = h.version_json("rp", "rp-v1", "pack.zip", b"pack");
+    version["loaders"] = json!(["minecraft"]);
+    // リソースパックの依存はたどらない（取りに行けば、版の無い project として失敗する）
+    version["dependencies"] = json!([{ "project_id": "missing", "dependency_type": "required" }]);
+    h.serve_project_versions("rp", vec![version]).await;
+    h.serve_file("rp", "rp-v1", "pack.zip", b"pack", None).await;
+
+    let task = h
+        .launcher
+        .install_content(&h.id, ContentKind::ResourcePack, "rp", false)
+        .unwrap();
+    let snap = h.wait(&task).await;
+    assert_eq!(snap.state, TaskState::Succeeded, "{:?}", snap.error);
+
+    assert!(
+        h.game_dir()
+            .join("resourcepacks")
+            .join("pack.zip")
+            .is_file()
+    );
+    let rows = h
+        .launcher
+        .list_content(&h.id, ContentKind::ResourcePack)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].rel_path, "resourcepacks/pack.zip");
+    assert_eq!(rows[0].project_id.as_deref(), Some("rp"));
+    assert_eq!(h.hits("/project/missing/version").await, 0);
+
+    // 同じものをもう一度入れようとすると断る
+    let err = h
+        .launcher
+        .preview_content_install(&h.id, ContentKind::ResourcePack, "rp")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "content.already_installed");
+}
+
+#[tokio::test]
+async fn resource_pack_can_go_into_a_vanilla_instance_but_a_shader_cannot() {
+    let h = Harness::new().await;
+    let vanilla = nexora_core::instance::create(
+        h.launcher.db(),
+        &h.paths,
+        &nexora_core::instance::NewInstance::vanilla("v", "1.99-test"),
+        0,
+    )
+    .unwrap();
+    let mut version = h.version_json("rp", "rp-v1", "pack.zip", b"pack");
+    version["loaders"] = json!(["minecraft"]);
+    h.serve_project_versions("rp", vec![version]).await;
+
+    let preview = h
+        .launcher
+        .preview_content_install(&vanilla.id, ContentKind::ResourcePack, "rp")
+        .await
+        .unwrap();
+    assert_eq!(preview.version_number, "rp-v1-number");
+    assert_eq!(preview.dependency_count, 0);
+
+    let err = h
+        .launcher
+        .install_content(&vanilla.id, ContentKind::Shader, "sh", false)
+        .unwrap_err();
+    assert_eq!(err.code(), "content.no_loader");
 }

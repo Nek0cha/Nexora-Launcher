@@ -34,4 +34,14 @@ describe("compatibleInstances", () => {
   it("returns nothing when the version is missing", () => {
     expect(compatibleInstances(hit(["fabric"], ["1.19"]), instances)).toEqual([]);
   });
+
+  it("takes every instance of the version for a resource pack, including vanilla", () => {
+    const ids = compatibleInstances(hit(["16x"], ["1.20.1"]), instances, "resourcepack").map((i) => i.id);
+    expect(ids).toEqual(["fabric120", "quilt120", "forge120", "vanilla120"]);
+  });
+
+  it("takes instances with any loader for a shader, but not vanilla", () => {
+    const ids = compatibleInstances(hit(["iris"], ["1.20.1"]), instances, "shader").map((i) => i.id);
+    expect(ids).toEqual(["fabric120", "quilt120", "forge120"]);
+  });
 });

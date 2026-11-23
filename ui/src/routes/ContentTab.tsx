@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import { acceptsKind } from "../features/modrinth/compatibleInstances";
+import { parseKind } from "../features/modrinth/kind";
 import IconUpdate from "~icons/ph/arrow-up";
 import IconCheck from "~icons/ph/arrows-clockwise";
 import IconDrop from "~icons/ph/download-simple";
@@ -142,7 +144,11 @@ function baseName(path: string): string {
 export function ContentTab({ instance, busy: locked }: { instance: Instance; busy: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [kind, setKind] = useState<ContentKind>("mod");
+  // Modrinth の画面から戻ったときは、そこで開いていた種類のサブタブを開く
+  const location = useLocation();
+  const [kind, setKind] = useState<ContentKind>(() =>
+    parseKind((location.state as { kind?: string } | null)?.kind),
+  );
   // 絞り込みはサブタブごとに持つ。サブタブを切り替えても残す
   const [filters, setFilters] = useState<Record<ContentKind, FilterState>>({
     mod: emptyFilter,
@@ -489,8 +495,12 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
               onRemove={onRemove}
               busy={busy}
               toggling={toggling}
-              // ローダーの無いインスタンスには MOD を入れられないので出さない
-              addHref={k === "mod" && canUpdate ? `/instances/${instance.id}/modrinth` : undefined}
+              // ローダーの無いインスタンスには MOD とシェーダーを入れられないので出さない
+              addHref={
+                acceptsKind(instance, k)
+                  ? `/instances/${instance.id}/modrinth${k === "mod" ? "" : `?kind=${k}`}`
+                  : undefined
+              }
               onPickFiles={() => pickFiles(k)}
               updates={k === "mod" ? updateControls : undefined}
             />

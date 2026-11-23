@@ -119,7 +119,7 @@ function mount(instance?: Instance) {
 }
 
 const lastQuery = (): SearchQuery => vi.mocked(searchModrinth).mock.lastCall![1];
-const searchbox = () => screen.getByRole("searchbox", { name: "Search mods" });
+const searchbox = () => screen.getByRole("searchbox", { name: "Search Modrinth" });
 const card = (name: string) => screen.getByRole("article", { name });
 const toasts = () => screen.getByRole("region", { name: "Notifications" });
 
@@ -222,10 +222,10 @@ describe("ModrinthBrowser", () => {
   it("empty_result_and_offline_states_are_shown", async () => {
     vi.mocked(searchModrinth).mockResolvedValueOnce(page([]));
     mount();
-    await screen.findByText("No mods match this search.");
+    await screen.findByText("Nothing matches this search.");
     vi.mocked(searchModrinth).mockRejectedValue(new IpcError({ code: "net.offline", params: {}, detail: null }));
     fireEvent.change(searchbox(), { target: { value: "x" } });
-    await screen.findByText("Can't reach Modrinth. Searching and adding mods work when you're online.");
+    await screen.findByText("Can't reach Modrinth. Searching and adding work when you're online.");
     vi.mocked(searchModrinth).mockResolvedValue(page([hit()]));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByRole("article", { name: "Sodium" });
@@ -261,7 +261,7 @@ describe("ModrinthBrowser", () => {
     const quilt = (await within(card("Sodium")).findByRole("button", { name: "Add to Quilt 1.20.1" })) as HTMLButtonElement;
     expect(quilt.disabled).toBe(false);
     fireEvent.click(quilt);
-    await waitFor(() => expect(installContent).toHaveBeenCalledWith("q120", "AANobbMI", false));
+    await waitFor(() => expect(installContent).toHaveBeenCalledWith("q120", "mod", "AANobbMI", false));
   });
 
   it("incompatible_installed_asks_for_confirmation_before_installing", async () => {
@@ -282,7 +282,7 @@ describe("ModrinthBrowser", () => {
     // 了承すると、非互換を受け入れて入れる
     fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Add anyway" }));
-    await waitFor(() => expect(installContent).toHaveBeenCalledWith("f120", "AANobbMI", true));
+    await waitFor(() => expect(installContent).toHaveBeenCalledWith("f120", "mod", "AANobbMI", true));
   });
 
   it("installing_with_dependencies_shows_the_dependency_toast", async () => {
@@ -291,7 +291,7 @@ describe("ModrinthBrowser", () => {
     await screen.findByRole("article", { name: "Sodium" });
     fireEvent.click(within(card("Sodium")).getByRole("button", { name: "Add" }));
     await within(toasts()).findByText("Added 2 required mods");
-    expect(installContent).toHaveBeenCalledWith("f120", "AANobbMI", false);
+    expect(installContent).toHaveBeenCalledWith("f120", "mod", "AANobbMI", false);
     expect(within(toasts()).getByText("Added Sodium to Fabric 1.20.1")).toBeTruthy();
   });
 

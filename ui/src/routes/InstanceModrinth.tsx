@@ -1,11 +1,13 @@
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import IconBack from "~icons/ph/arrow-left";
 import { toErrorPayload } from "../api/ipc";
 import { FailureNotice } from "../components/FailureNotice";
 import { ModrinthBrowser } from "../components/modrinth/ModrinthBrowser";
 import { Notice } from "../components/settingsLayout";
 import { useInstances } from "../features/instances/useInstances";
+import { acceptsKind } from "../features/modrinth/compatibleInstances";
+import { parseKind } from "../features/modrinth/kind";
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -19,10 +21,15 @@ const quietLink = [
 
 const title = "font-display text-xl font-semibold tracking-[-0.01em] text-text-strong";
 
-/** インスタンスの「コンテンツ」タブから開く、そのインスタンスに MOD を追加する画面（spec 6.1）。 */
+/**
+ * インスタンスの「コンテンツ」タブから開く、そのインスタンスに MOD、リソースパック、シェーダーを追加する画面
+ * （spec 6.1）。種類は `?kind=` で受け取り、無ければ MOD。
+ */
 export default function InstanceModrinth() {
   const { t } = useTranslation();
   const { id } = useParams();
+  const [params] = useSearchParams();
+  const kind = parseKind(params.get("kind"));
   const { data, error } = useInstances();
 
   if (!data && error)
@@ -52,20 +59,20 @@ export default function InstanceModrinth() {
     <div className="flex h-full min-h-[34rem] max-w-5xl flex-col gap-6 p-10">
       <header className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 className={`${title} truncate`}>{t("modrinth.instanceTitle", { name: instance.name })}</h1>
+          <h1 className={`${title} truncate`}>{t(`modrinth.instanceTitle.${kind}`, { name: instance.name })}</h1>
           <span className="text-sm text-text-muted">{t("modrinth.title")}</span>
         </div>
         {/* 戻るとコンテンツのタブを開く */}
-        <Link to={`/instances/${instance.id}`} state={{ tab: "content" }} className={`${quietLink} shrink-0`}>
+        <Link to={`/instances/${instance.id}`} state={{ tab: "content", kind }} className={`${quietLink} shrink-0`}>
           <IconBack aria-hidden className="size-4 shrink-0" />
           <span className="max-w-48 truncate">{instance.name}</span>
         </Link>
       </header>
-      {instance.loader === "vanilla" ? (
-        <Notice tone="info">{t("modrinth.noLoader")}</Notice>
+      {!acceptsKind(instance, kind) ? (
+        <Notice tone="info">{t(kind === "shader" ? "modrinth.noLoaderShader" : "modrinth.noLoader")}</Notice>
       ) : (
-        // インスタンスが替わったら絞り込みを作り直す
-        <ModrinthBrowser key={instance.id} instance={instance} />
+        // インスタンスか種類が替わったら絞り込みを作り直す
+        <ModrinthBrowser key={`${instance.id}-${kind}`} instance={instance} kind={kind} />
       )}
     </div>
   );
