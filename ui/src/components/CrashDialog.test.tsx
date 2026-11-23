@@ -124,12 +124,35 @@ describe("CrashDialog", () => {
 
   it("offers only the log when there are no candidates, and opens the logs tab", async () => {
     mount({ logName: "42.log", candidates: [] });
-    await screen.findByRole("alertdialog");
+    await screen.findByText("The cause could not be found");
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "Disable" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open log" }));
-    expect(screen.getByTestId("where").textContent).toBe('/instances/i1{"tab":"logs"}');
+    expect(screen.getByTestId("where").textContent).toBe('/instances/i1{"tab":"logs","logName":"42.log"}');
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("keeps Disable off when only already disabled mods are still checked", async () => {
+    vi.mocked(setContentEnabled).mockImplementation(async (_i, _k, relPath) => {
+      if (relPath === "mods/a.jar") throw new IpcError({ code: "content.exists", params: {}, detail: null });
+      return null;
+    });
+    mount({ logName: "42.log", candidates: [candidate("mods/a.jar"), candidate("mods/b.jar")] });
+    await screen.findByRole("checkbox", { name: /a\.jar/ });
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: /b\.jar/ })).toBeNull());
+    // 失敗した a のチェックを外すと、残っているチェックは無効化し終えた b だけになる
+    fireEvent.click(screen.getByRole("checkbox", { name: /a\.jar/ }));
+    expect(screen.getByRole("button", { name: "Disable" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("adds the missing mod id only to the strongest reason", async () => {
+    mount({
+      logName: "42.log",
+      candidates: [candidate("mods/a.jar", { reasons: ["missingDependency", "incompatibleVersion"], missing: "bar" })],
+    });
+    await screen.findByRole("checkbox", { name: /a\.jar/ });
+    expect(screen.getAllByText(/bar/)).toHaveLength(1);
   });
 
   it("shows the same no-candidates dialog when the diagnosis fails", async () => {

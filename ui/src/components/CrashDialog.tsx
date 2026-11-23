@@ -19,11 +19,11 @@ import { centeredOverlayClass, modalClass } from "./modal";
 
 const reasonKey = (reason: CrashCandidate["reasons"][number]) => `crash.reason.${reason}` as const;
 
-/** 候補の 1 行。理由は強い順に並べ、足りない側の MOD があればその ID を添える。 */
+/** 候補の 1 行。理由は強い順に並べ、足りない側の MOD があればその ID を添える（`missing` は最も強い理由のものなので、先頭の理由にだけ添える）。 */
 function Reasons({ candidate }: { candidate: CrashCandidate }) {
   const { t } = useTranslation();
   const text = candidate.reasons
-    .map((reason) => t(reasonKey(reason), { missing: candidate.missing ?? "" }).trim())
+    .map((reason, i) => t(reasonKey(reason), { missing: i === 0 ? (candidate.missing ?? "") : "" }).trim())
     .join(" / ");
   return <span className="truncate text-xs text-text-muted">{text}</span>;
 }
@@ -48,6 +48,8 @@ function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const shown = found.filter((c) => !removed.has(c.relPath));
   const selected = checked ?? new Set(initialChecked(found));
+  // 無効化の対象。無効化し終えて一覧から消えた行は、チェックが残っていても数えない
+  const targets = shown.filter((c) => selected.has(c.relPath));
   const name = instances?.find((i) => i.id === entry.instanceId)?.name ?? entry.instanceId;
 
   const disable = useMutation({
@@ -55,7 +57,7 @@ function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
       const done = new Set<string>();
       const failed: Record<string, ErrorPayload> = {};
       // 1 件ずつ順に行う（インスタンスのロックを取り合わない）。1 件の失敗で残りを止めない
-      for (const c of shown.filter((x) => selected.has(x.relPath))) {
+      for (const c of targets) {
         try {
           await setContentEnabled(entry.instanceId, "mod", c.relPath, false);
           done.add(c.relPath);
@@ -75,7 +77,10 @@ function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
   });
 
   const openLog = () => {
-    navigate(`/instances/${entry.instanceId}`, { state: { tab: "logs" } });
+    // 今回の起動のログを開く。分からなければログのタブの既定（いちばん新しいもの）
+    navigate(`/instances/${entry.instanceId}`, {
+      state: { tab: "logs", logName: diagnosis.data?.logName ?? undefined },
+    });
     onClose();
   };
 
@@ -129,7 +134,7 @@ function Body({ entry, onClose }: { entry: CrashEntry; onClose: () => void }) {
             <Button
               onPress={() => disable.mutate()}
               isPending={disable.isPending}
-              isDisabled={selected.size === 0}
+              isDisabled={targets.length === 0}
               className={submitButton}
             >
               {t("crash.disable")}

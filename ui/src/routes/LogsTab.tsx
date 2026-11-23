@@ -1,4 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import {
   Button,
   Input,
@@ -69,8 +70,14 @@ export function LogsTab({ instance }: { instance: Instance }) {
   const running = useRunning();
   const isRunning = running?.some((s) => s.instanceId === instance.id) ?? false;
   const logs = useGameLogs(instance.id, isRunning);
-  // 選んだ起動。選んでいなければ、いちばん新しいもの
-  const [picked, setPicked] = useState<string | null>(null);
+  // 選んだ起動。選んでいなければ、いちばん新しいもの。クラッシュのダイアログなどから来たときは、頼まれた起動を選ぶ
+  const location = useLocation();
+  const askedLog = (location.state as { logName?: unknown } | null)?.logName;
+  const [picked, setPicked] = useState<string | null>(typeof askedLog === "string" ? askedLog : null);
+  // 開いたまま別の起動を頼まれたときも切り替える
+  useEffect(() => {
+    if (typeof askedLog === "string") setPicked(askedLog);
+  }, [location.key, askedLog]);
   const [level, setLevel] = useState<LevelFilter>("all");
   const [query, setQuery] = useState("");
   const list = logs.data;
