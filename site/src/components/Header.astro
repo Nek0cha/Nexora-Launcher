@@ -1,0 +1,28 @@
+---
+import IconGithub from "~icons/ph/github-logo";
+import IconGlobe from "~icons/ph/globe-simple";
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+
+const { lang } = Astro.props as { lang: Lang };
+const t = dict(lang);
+const quiet =
+  "inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-text-muted transition-colors duration-(--duration-fast) ease-out-quint hover:bg-surface-2 hover:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+---
+
+<header class="mx-auto flex max-w-[1240px] items-center justify-between gap-4 px-5 py-5 md:px-10">
+  <a href={lang === "ja" ? "/ja/" : "/"} class="flex items-center gap-2.5 rounded-md text-text-strong focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
+    <img src="/favicon.svg" alt="" width="28" height="28" class="size-7" />
+    <span class="font-display text-[17px] font-semibold tracking-[-0.01em]">Nexora</span>
+  </a>
+  <nav class="flex items-center gap-1">
+    <a href={t.nav.languageHref} hreflang={lang === "ja" ? "en" : "ja"} class={quiet}>
+      <IconGlobe aria-hidden="true" class="size-4" />
+      <span>{t.nav.language}</span>
+    </a>
+    <a href="https://github.com/Nek0cha/Nexora-Launcher" class={quiet}>
+      <IconGithub aria-hidden="true" class="size-4" />
+      <span>{t.nav.github}</span>
+    </a>
+  </nav>
+</header>

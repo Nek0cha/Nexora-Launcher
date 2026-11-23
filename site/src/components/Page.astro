@@ -1,0 +1,25 @@
+---
+import type { Lang } from "../i18n";
+import Base from "../layouts/Base.astro";
+import { loadRelease } from "../lib/release";
+import Compare from "./Compare.astro";
+import Features from "./Features.astro";
+import Footer from "./Footer.astro";
+import Header from "./Header.astro";
+import Hero from "./Hero.astro";
+import InstallNotes from "./InstallNotes.astro";
+
+const { lang } = Astro.props as { lang: Lang };
+const release = await loadRelease();
+---
+
+<Base lang={lang}>
+  <Header lang={lang} />
+  <main>
+    <Hero lang={lang} release={release} />
+    <Compare lang={lang} />
+    <Features lang={lang} />
+    <InstallNotes lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Base>

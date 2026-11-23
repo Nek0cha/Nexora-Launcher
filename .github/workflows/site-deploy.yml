@@ -1,0 +1,24 @@
+name: Site deploy
+
+# リリースを公開したら、公式サイトを作り直す（ダウンロードのリンクを新しいバージョンにする）。
+# リリースは下書きで作られ、人が公開するので、作成時ではなく公開時に動かす。
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Trigger the Cloudflare Pages deploy hook
+        env:
+          HOOK: ${{ secrets.CLOUDFLARE_PAGES_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "CLOUDFLARE_PAGES_DEPLOY_HOOK is not set; skipping."
+            exit 0
+          fi
+          curl --fail --silent --show-error -X POST "$HOOK" > /dev/null

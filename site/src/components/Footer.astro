@@ -1,0 +1,19 @@
+---
+import type { Lang } from "../i18n";
+import { dict } from "../i18n";
+
+const { lang } = Astro.props as { lang: Lang };
+const t = dict(lang);
+const link = "underline decoration-line-strong underline-offset-4 hover:text-text-strong";
+---
+
+<footer class="border-t border-line">
+  <div class="mx-auto flex max-w-[1240px] flex-col gap-3 px-5 py-10 text-sm text-text-muted md:flex-row md:items-center md:justify-between md:px-10">
+    <p class="flex flex-wrap items-center gap-x-4 gap-y-1">
+      <span class="font-semibold text-text-strong">Nexora Launcher</span>
+      <a href="https://github.com/Nek0cha/Nexora-Launcher/blob/main/LICENSE" class={link}>{t.footer.license}</a>
+      <a href="https://github.com/Nek0cha/Nexora-Launcher" class={link}>GitHub</a>
+    </p>
+    <p class="text-text-faint">{t.footer.disclaimer}</p>
+  </div>
+</footer>
