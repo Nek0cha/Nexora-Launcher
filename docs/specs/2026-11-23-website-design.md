@@ -40,9 +40,9 @@ Nexora Launcher を紹介する公式サイトを `nexora.ny4n.net` に公開す
 ## 5. 作り方
 
 - 技術スタック：Astro ＋ Tailwind CSS v4 の静的なサイト。理由は、1 ページで動く部分がほとんどなく、HTML を書き出すだけでよいため。
-- 置き場所：このリポジトリの `site/`。`.github/workflows/ci.yml` に `paths-ignore: ["site/**", "docs/**"]` を足し、サイトだけの変更ではアプリの CI を走らせない。
-- 公開先：Cloudflare Pages（`ny4n.net` の DNS が Cloudflare にあるため）。ルートのフォルダを `site`、ビルドのコマンドを `pnpm build`、出力を `dist` にする。`nexora.ny4n.net` はカスタムドメインとして Pages の画面でつなぐ（利用者の作業）。
-- ダウンロードのリンク：ビルドの時点で GitHub の API から最新のリリースを読み、OS ごとの配布物の URL を埋め込む。読めなかったときは Releases のページへのリンクにする。新しいリリースを出したときにサイトを作り直すため、`release.yml` の最後で Cloudflare Pages のデプロイフック（リポジトリの Secrets に置く URL）を呼ぶ。フックが未設定なら何もしない。
+- 置き場所：このリポジトリの `site/`（pnpm workspace の 1 つ。lockfile はルートの 1 つ）。`.github/workflows/ci.yml` に `paths-ignore: ["site/**", "docs/**"]` を足し、サイトだけの変更ではアプリの CI を走らせない。
+- 公開先：Cloudflare Pages（`ny4n.net` の DNS が Cloudflare にあるため）。設定は、ルートのフォルダをリポジトリのルート、ビルドのコマンドを `pnpm install --frozen-lockfile --filter nexora-site... && pnpm --filter nexora-site build`、出力を `site/dist`、環境変数 `NODE_VERSION=24`。`nexora.ny4n.net` はカスタムドメインとして Pages の画面でつなぐ（利用者の作業）。
+- ダウンロードのリンク：ビルドの時点で GitHub の API から最新のリリースを読み、OS ごとの配布物の URL を埋め込む。読めなかったときは Releases のページへのリンクにする。新しいリリースを公開したときにサイトを作り直すため、`.github/workflows/site-deploy.yml` が `release: published` で Cloudflare Pages のデプロイフック（Secrets の `CLOUDFLARE_PAGES_DEPLOY_HOOK`）を呼ぶ。フックが未設定なら何もしない。`release.yml` ではなく公開時にしたのは、リリースが下書きで作られ、公開されるまで API の最新に出ないため。
 - スクリーンショット：`docs/images/` のものを使う。足りなければ撮り直す。
 - 検証：versatile-design の自動チェックで違反 0 件にし、1440px と 390px、ダークとライトのスクリーンショットで自己批評を最大 2 周行う。
 

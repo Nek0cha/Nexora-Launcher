@@ -5,7 +5,8 @@
 # Nexora Launcher
 
 Minecraft: Java Edition 用の、軽くてモダンなオープンソースのランチャーです。<br>
-Rust と Tauri 2 で作っています。
+Rust と Tauri 2 で作っています。<br>
+<a href="https://nexora.ny4n.net/ja/">nexora.ny4n.net</a>
 
 [![CI](https://github.com/Nek0cha/Nexora-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nek0cha/Nexora-Launcher/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Nek0cha/Nexora-Launcher)](https://github.com/Nek0cha/Nexora-Launcher/releases)

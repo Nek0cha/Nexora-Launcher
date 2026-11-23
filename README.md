@@ -5,7 +5,8 @@
 # Nexora Launcher
 
 A modern, lightweight, open-source launcher for Minecraft: Java Edition.<br>
-Built with Rust and Tauri 2.
+Built with Rust and Tauri 2.<br>
+<a href="https://nexora.ny4n.net/">nexora.ny4n.net</a>
 
 [![CI](https://github.com/Nek0cha/Nexora-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nek0cha/Nexora-Launcher/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Nek0cha/Nexora-Launcher)](https://github.com/Nek0cha/Nexora-Launcher/releases)
