@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listGameLogs, listRunning, openInstanceFolder, readGameLog } from "../api/commands";
 import type { Instance } from "../bindings/Instance";
@@ -37,11 +38,13 @@ const sample = [
 
 const session: RunningSession = { instanceId: "i1", pid: 1, launchedAt: 2000, accountId: "a" } as RunningSession;
 
-function mount() {
+function mount(state?: unknown) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <LogsTab instance={instance} />
+      <MemoryRouter initialEntries={[{ pathname: "/instances/i1", state }]}>
+        <LogsTab instance={instance} />
+      </MemoryRouter>
       <ToastRegion />
     </QueryClientProvider>,
   );
@@ -75,6 +78,13 @@ describe("LogsTab", () => {
     // スタックトレースの続きは、直前のエラーの色になる
     expect(log.children[3]?.className).toContain("text-danger");
     expect(log.children[0]?.className).toContain("text-text");
+  });
+
+  it("opens the launch asked for by the navigation state", async () => {
+    mount({ tab: "logs", logName: "1000.log" });
+    await view();
+    expect(readGameLog).toHaveBeenCalledWith("i1", "1000.log");
+    expect(readGameLog).not.toHaveBeenCalledWith("i1", "2000.log");
   });
 
   it("says so when there are no logs", async () => {

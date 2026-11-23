@@ -12,6 +12,7 @@ import {
   searchModrinth,
   updateContent,
 } from "../../api/commands";
+import type { ContentKind } from "../../bindings/ContentKind";
 import type { ContentTaskReport } from "../../bindings/ContentTaskReport";
 import type { ItemFailure } from "../../bindings/ItemFailure";
 import type { ErrorPayload } from "../../bindings/ErrorPayload";
@@ -119,8 +120,8 @@ function identifyAfter(client: QueryClient, instanceId: string, outcome: Content
 /** 導入の前に見せる内容を調べる。 */
 export function usePreviewInstall() {
   return useMutation({
-    mutationFn: ({ instanceId, projectId }: { instanceId: string; projectId: string }) =>
-      previewContentInstall(instanceId, projectId),
+    mutationFn: ({ instanceId, kind, projectId }: { instanceId: string; kind: ContentKind; projectId: string }) =>
+      previewContentInstall(instanceId, kind, projectId),
   });
 }
 
@@ -132,8 +133,8 @@ export function usePreviewInstall() {
 export function useInstallContent() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (v: { instanceId: string; projectId: string; acceptIncompatible: boolean }) => {
-      const taskId = await installContent(v.instanceId, v.projectId, v.acceptIncompatible);
+    mutationFn: async (v: { instanceId: string; kind: ContentKind; projectId: string; acceptIncompatible: boolean }) => {
+      const taskId = await installContent(v.instanceId, v.kind, v.projectId, v.acceptIncompatible);
       return runContentTask(client, taskId);
     },
     onSettled: (data, _error, v) => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, listContentCategories, listInstances, listVersions, searchModrinth } from "../api/commands";
@@ -49,10 +49,28 @@ describe("Browse", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Browse mods" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Browse content" })).toBeTruthy();
     expect(await screen.findByRole("toolbar", { name: "Loader" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Minecraft version/ })).toBeTruthy();
     expect(screen.queryByText(/^Fixed:/)).toBeNull();
     expect(searchModrinth).toHaveBeenCalledWith(null, expect.objectContaining({ mcVersion: null, loaders: [] }), 0);
+  });
+
+  it("switches the kind, drops the loader filter and searches that kind", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Browse />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("toolbar", { name: "Loader" });
+    fireEvent.click(screen.getByRole("radio", { name: "Shaders" }));
+    expect(await screen.findByRole("searchbox", { name: "Search Modrinth" })).toBeTruthy();
+    expect(searchModrinth).toHaveBeenLastCalledWith(null, expect.objectContaining({ kind: "shader", loaders: [] }), 0);
+    expect(listContentCategories).toHaveBeenLastCalledWith("shader");
+    expect(screen.queryByRole("toolbar", { name: "Loader" })).toBeNull();
+    expect(screen.queryByRole("toolbar", { name: "Client side" })).toBeNull();
   });
 });

@@ -331,12 +331,13 @@ pub async fn search_modrinth(
 pub async fn preview_content_install(
     state: State<'_, AppState>,
     instance_id: String,
+    kind: ContentKind,
     project_id: String,
 ) -> CmdResult<InstallPreview> {
     let services = state.services()?;
     services
         .launcher
-        .preview_content_install(&instance_id, &project_id)
+        .preview_content_install(&instance_id, kind, &project_id)
         .await
         .map_err(ErrorPayload::from)
 }
@@ -347,13 +348,14 @@ pub async fn preview_content_install(
 pub async fn install_content(
     state: State<'_, AppState>,
     instance_id: String,
+    kind: ContentKind,
     project_id: String,
     accept_incompatible: bool,
 ) -> CmdResult<String> {
     state
         .services()?
         .launcher
-        .install_content(&instance_id, &project_id, accept_incompatible)
+        .install_content(&instance_id, kind, &project_id, accept_incompatible)
         .map_err(ErrorPayload::from)
 }
 
@@ -573,7 +575,8 @@ fn modrinth_project_url(slug: &str) -> Option<String> {
         && slug
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
-    valid.then(|| format!("https://modrinth.com/mod/{slug}"))
+    // `/project/` は MOD、リソースパック、シェーダーのどれでも、その種類のページに転送される
+    valid.then(|| format!("https://modrinth.com/project/{slug}"))
 }
 
 /// Modrinth のプロジェクトのページを、システムのブラウザで開く。
@@ -1064,11 +1067,11 @@ mod tests {
     fn project_url_accepts_only_slug_characters() {
         assert_eq!(
             modrinth_project_url("fabric-api").as_deref(),
-            Some("https://modrinth.com/mod/fabric-api")
+            Some("https://modrinth.com/project/fabric-api")
         );
         assert_eq!(
             modrinth_project_url("a_b-1").as_deref(),
-            Some("https://modrinth.com/mod/a_b-1")
+            Some("https://modrinth.com/project/a_b-1")
         );
         for bad in ["", "A", "a/b", "a b", "a?x=1", "a#b", "..", r"a\b", "日本"] {
             assert_eq!(modrinth_project_url(bad), None, "{bad}");

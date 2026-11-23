@@ -307,7 +307,11 @@
     "launch": "起動",
     "search": "ログを検索",
     "level": "表示するレベル",
-    "levels": { "all": "すべて", "warn": "警告以上", "error": "エラー" },
+    "levels": {
+      "all": "すべて",
+      "warn": "警告以上",
+      "error": "エラー"
+    },
     "content": "ゲームのログ",
     "copy": "表示中の行をコピー",
     "copied": "ログをコピーしました",
@@ -451,18 +455,23 @@
   },
   "modrinth": {
     "title": "Modrinth",
-    "browseTitle": "MOD を探す",
+    "browseTitle": "コンテンツを探す",
     "addFromModrinth": "Modrinth から追加",
-    "instanceTitle": "{{name}} に MOD を追加",
-    "search": "MOD を検索",
+    "instanceTitle": {
+      "mod": "{{name}} に MOD を追加",
+      "resourcepack": "{{name}} にリソースパックを追加",
+      "shader": "{{name}} にシェーダーを追加"
+    },
+    "search": "Modrinth を検索",
     "mcVersion": "Minecraft のバージョン",
     "anyVersion": "すべてのバージョン",
     "loader": "ローダー",
     "fixed": "固定: {{version}} / {{loader}}",
+    "fixedVersion": "固定: {{version}}",
     "fixedLabel": "このインスタンスの条件",
     "total": "{{value}} 件",
     "searching": "検索しています…",
-    "noResults": "条件に合う MOD は見つかりませんでした。",
+    "noResults": "条件に合うものは見つかりませんでした。",
     "offline": "Modrinth に接続できません。検索と追加は、オンラインのときに使えます。",
     "retry": "再試行",
     "loadMore": "さらに表示",
@@ -489,6 +498,7 @@
     "dependenciesAdded_other": "依存 MOD を {{count}} 件追加しました",
     "cancelled": "{{name}} の追加をキャンセルしました",
     "noLoader": "このインスタンスにはローダーがないため、MOD を追加できません。",
+    "noLoaderShader": "このインスタンスにはローダーがないため、シェーダーを追加できません。",
     "sort": "並び順",
     "sortValue": {
       "relevance": "関連度",

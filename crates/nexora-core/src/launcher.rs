@@ -856,6 +856,15 @@ impl Launcher {
         instance::discard_interrupted_imports(&self.env.db, &self.env.paths)
     }
 
+    /// アプリが落ちて `shared/` に残った書きかけのファイル（`.part`）を消す。
+    /// 動いているタスクがない起動時に呼ぶ。消した数を返す。
+    pub fn sweep_stale_parts(&self) -> usize {
+        crate::net::sweep::sweep_stale_parts(
+            &self.env.paths.shared_dir(),
+            std::time::SystemTime::now(),
+        )
+    }
+
     /// ランチャーの起動時に一度だけ呼ぶ（tokio の実行環境の中で）。二度目以降は何もしない。
     pub fn reattach(&self) -> Result<(), CoreError> {
         if self.reattached.swap(true, Ordering::SeqCst) {

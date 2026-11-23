@@ -12,15 +12,10 @@ fn unsafe_path(path: &str) -> CoreError {
 }
 
 /// Windows が予約しているデバイス名（拡張子の有無、大文字小文字を問わない）。
+/// 一覧はインスタンスのフォルダ名と同じものを使う。
 fn is_reserved_name(component: &str) -> bool {
     let stem = component.split('.').next().unwrap_or(component);
-    let upper = stem.to_ascii_uppercase();
-    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ["COM", "LPT"].iter().any(|prefix| {
-            upper
-                .strip_prefix(prefix)
-                .is_some_and(|n| matches!(n.as_bytes(), [b'1'..=b'9']))
-        })
+    crate::instance::dir_name::is_reserved_stem(stem)
 }
 
 fn is_unsafe_component(component: &str) -> bool {
@@ -135,6 +130,9 @@ mod tests {
             "con",
             "mods/NUL.jar",
             "mods/com1.txt",
+            "mods/LPT0.zip",
+            "config/conin$.json",
+            "mods/COM².jar",
             "mods/a. ",
             "mods/a.",
             "mods/a ",

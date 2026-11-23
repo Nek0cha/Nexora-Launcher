@@ -4,12 +4,12 @@ mod common;
 use std::time::Duration;
 
 use common::http;
-use nexora_core::content::Side;
 use nexora_core::content::modrinth::{
     DependencyKind, FullVersion, SearchQuery, SearchSort, UPDATE_BATCH, categories, loader_slugs,
     pick_version, primary_file, project_versions, projects, search, updates_by_hash,
     versions_by_hash, versions_by_ids,
 };
+use nexora_core::content::{ContentKind, Side};
 use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -197,6 +197,7 @@ const UPDATE: &str = include_str!("fixtures/modrinth/version_files_update.json")
 
 fn query() -> SearchQuery {
     SearchQuery {
+        kind: ContentKind::Mod,
         query: "sodium".into(),
         mc_version: Some("1.20.1".into()),
         loaders: vec!["fabric".into()],

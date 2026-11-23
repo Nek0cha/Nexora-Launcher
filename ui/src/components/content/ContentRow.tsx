@@ -37,7 +37,8 @@ export const ROW_SIZE = 56;
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-const defaultIcons: Record<ContentKind, typeof IconMod> = {
+/** アイコンが無いときに出す、種類ごとの絵。 */
+export const defaultIcons: Record<ContentKind, typeof IconMod> = {
   mod: IconMod,
   resourcepack: IconResourcePack,
   shader: IconShader,
@@ -242,6 +243,15 @@ function RowIcon({ item }: { item: ContentItem }) {
   // URL が読めなかった（オフラインなど）ときは jar の中のアイコンへ、それも読めなければ既定の絵に戻す
   const [remoteFailed, setRemoteFailed] = useState(false);
   const [localFailed, setLocalFailed] = useState(false);
+  // 行の URL や jar が替わったら（特定、更新、版の切り替えのあと）、読めなかった印を外して読み直す
+  const source = `${item.iconUrl ?? ""}
+${item.sha1}`;
+  const [seenSource, setSeenSource] = useState(source);
+  if (seenSource !== source) {
+    setSeenSource(source);
+    setRemoteFailed(false);
+    setLocalFailed(false);
+  }
   const local = useQuery({
     queryKey: ["content-icon", item.sha1],
     queryFn: () => getContentIcon(item.sha1),

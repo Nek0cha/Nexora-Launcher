@@ -113,6 +113,7 @@ struct Enabling {
 
 /// 確かめ終えた計画。
 struct Prepared<'p> {
+    kind: ContentKind,
     placements: Vec<Placement<'p>>,
     replaced: Vec<Replaced>,
     enabling: Vec<Enabling>,
@@ -174,7 +175,7 @@ fn key(rel_path: &str) -> String {
 
 /// 計画を確かめて、置き場所と変更の対象を決める。ファイルには触らない。
 fn prepare<'p>(cx: &ApplyContext<'_>, plan: &'p InstallPlan) -> Result<Prepared<'p>, CoreError> {
-    let kind = ContentKind::Mod;
+    let kind = plan.kind;
     let mut placements = Vec::new();
     let mut replaced = Vec::new();
     for (i, planned) in plan.files.iter().enumerate() {
@@ -294,6 +295,7 @@ fn prepare<'p>(cx: &ApplyContext<'_>, plan: &'p InstallPlan) -> Result<Prepared<
         });
     }
     Ok(Prepared {
+        kind,
         placements,
         replaced,
         enabling,
@@ -385,7 +387,7 @@ where
     check_cancel(cx.token)?;
 
     // 4. 退避。置き換える jar と、有効にする jar
-    let mods = cx.game_dir.join(ContentKind::Mod.dir());
+    let mods = cx.game_dir.join(prepared.kind.dir());
     std::fs::create_dir_all(&mods).map_err(|e| io_error(&mods, e))?;
     for r in &prepared.replaced {
         let orig = cx.game_dir.join(&r.rel_path);
@@ -432,7 +434,14 @@ where
     // 6. 行の更新と確定を 1 つのトランザクションで
     let mut rows = Vec::new();
     for (p, (sha1, sha512)) in prepared.placements.iter().zip(hashes) {
-        rows.push(new_row(cx.game_dir, p, sha1, sha512, now_ms)?);
+        rows.push(new_row(
+            cx.game_dir,
+            prepared.kind,
+            p,
+            sha1,
+            sha512,
+            now_ms,
+        )?);
     }
     cx.db.with_conn(|conn| {
         let tx = conn.transaction()?;
@@ -539,6 +548,7 @@ where
 /// 新しく入れた行（依存を含む）は、プロジェクトの情報が計画に無いので、次の特定で埋める。
 fn new_row(
     game_dir: &Path,
+    kind: ContentKind,
     p: &Placement<'_>,
     sha1: String,
     sha512: String,
@@ -552,7 +562,7 @@ fn new_row(
         size: meta.len(),
         mtime_ms: mtime_ms(&meta).map_err(|e| io_error(&path, e))?,
     };
-    let mut row = local_row(ContentKind::Mod, &file, sha1, sha512);
+    let mut row = local_row(kind, &file, sha1, sha512);
     let v = &p.planned.version;
     row.item.provider = Provider::Modrinth;
     row.item.project_id = Some(v.project_id.clone());
@@ -888,6 +898,7 @@ mod tests {
             ],
             enable: vec!["mods/c.jar.disabled".into()],
             incompatible_installed: Vec::new(),
+            kind: ContentKind::Mod,
         };
         let prepared = prepare(&cx, &plan).unwrap();
         let op = journal::begin(&db, "update", &inst.id, &prepared.targets, 1).unwrap();
@@ -1109,6 +1120,7 @@ mod tests {
             files: vec![planned("d", "d-2.jar", Some("mods/d.jar.disabled"))],
             enable: vec!["mods/c.jar.disabled".into()],
             incompatible_installed: Vec::new(),
+            kind: ContentKind::Mod,
         };
         let prepared = prepare(&cx, &plan).unwrap();
         let t = |rel: &str, backup: Option<&str>, created| Target {

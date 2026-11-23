@@ -3,6 +3,7 @@ import { Button, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-compone
 import { useTranslation } from "react-i18next";
 import IconCaret from "~icons/ph/caret-down";
 import IconPlus from "~icons/ph/plus";
+import type { ContentKind } from "../../bindings/ContentKind";
 import type { Instance } from "../../bindings/Instance";
 import type { SearchHit } from "../../bindings/SearchHit";
 import { compatibleInstances } from "../../features/modrinth/compatibleInstances";
@@ -32,6 +33,7 @@ const NONE = "__none";
  */
 export function AddToInstanceMenu(props: {
   hit: SearchHit;
+  kind: ContentKind;
   instances: Instance[];
   /** 最後に追加したインスタンス。未設定か、もう無ければ null */
   lastAdded: Instance | null;
@@ -39,8 +41,8 @@ export function AddToInstanceMenu(props: {
   onAdd: (target: Instance) => void;
 }) {
   const { t } = useTranslation();
-  const { hit, lastAdded } = props;
-  const compatible = useMemo(() => compatibleInstances(hit, props.instances), [hit, props.instances]);
+  const { hit, kind, lastAdded } = props;
+  const compatible = useMemo(() => compatibleInstances(hit, props.instances, kind), [hit, props.instances, kind]);
   const lastCompatible = lastAdded !== null && compatible.some((i) => i.id === lastAdded.id);
 
   return (

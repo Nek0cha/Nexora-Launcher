@@ -3,6 +3,7 @@
 pub mod download;
 pub mod hash;
 mod lock;
+pub mod sweep;
 
 use std::path::Path;
 use std::time::Duration;

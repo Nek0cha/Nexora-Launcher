@@ -10,7 +10,7 @@ use crate::content::apply::{
 use crate::content::modrinth::{
     self, FullVersion, SearchPage, SearchQuery, loader_slugs, updates_by_hash,
 };
-use crate::content::resolve::{ApiSource, InstallPlan, Installed, resolve};
+use crate::content::resolve::{ApiSource, InstallPlan, Installed, PlannedFile, resolve};
 use crate::content::store::Row;
 use crate::content::updates::{self, UpdateCheck};
 use crate::error::DependencyCause;
@@ -125,11 +125,45 @@ impl Planned<'_> {
         match self {
             Planned::Download(plan) => plan,
             Planned::Enable(row) => InstallPlan {
+                kind: row.item.kind,
                 enable: vec![row.item.rel_path.clone()],
                 ..InstallPlan::default()
             },
         }
     }
+}
+
+/// Modrinth の版を絞るローダー名。MOD はインスタンスのローダー、リソースパックは絞らない、
+/// シェーダーはシェーダーのローダー（Iris と OptiFine）。
+fn kind_loaders(kind: ContentKind, instance_loaders: Vec<String>) -> Vec<String> {
+    match kind {
+        ContentKind::Mod => instance_loaders,
+        ContentKind::ResourcePack => Vec::new(),
+        ContentKind::Shader => vec!["iris".into(), "optifine".into()],
+    }
+}
+
+/// 依存をたどらずに、版の主ファイルだけを入れる計画。
+fn single_file_plan(kind: ContentKind, version: FullVersion) -> Result<InstallPlan, CoreError> {
+    let file =
+        modrinth::primary_file(&version)
+            .cloned()
+            .ok_or_else(|| CoreError::ContentDependency {
+                project_id: version.project_id.clone(),
+                cause: DependencyCause::NoFile,
+                name: None,
+            })?;
+    Ok(InstallPlan {
+        kind,
+        files: vec![PlannedFile {
+            version,
+            file,
+            as_dependency: false,
+            replaces: None,
+            pin: None,
+        }],
+        ..InstallPlan::default()
+    })
 }
 
 /// 導入しようとする project がすでに入っているか。有効なものがあれば断り、無効なものだけならそれを返す。
@@ -205,8 +239,20 @@ impl Launcher {
     }
 
     pub(super) async fn mod_rows(&self, id: &str) -> Result<Vec<Row>, CoreError> {
+        self.kind_rows(id, ContentKind::Mod).await
+    }
+
+    async fn kind_rows(&self, id: &str, kind: ContentKind) -> Result<Vec<Row>, CoreError> {
         let (db, id) = (self.env.db.clone(), id.to_string());
-        blocking(move || store::rows(&db, &id, ContentKind::Mod)).await
+        blocking(move || store::rows(&db, &id, kind)).await
+    }
+
+    /// `kind` を入れる先。MOD とシェーダーはローダーの無い（バニラの）インスタンスでは動かないので断る。
+    fn kind_target(&self, id: &str, kind: ContentKind) -> Result<Target, CoreError> {
+        match kind {
+            ContentKind::ResourcePack => self.content_target(id),
+            ContentKind::Mod | ContentKind::Shader => self.install_target(id),
+        }
     }
 
     /// Modrinth で MOD を検索する。`instance_id` があれば、そのインスタンスの Minecraft とローダーで絞る。
@@ -219,7 +265,7 @@ impl Launcher {
         if let Some(id) = instance_id {
             let t = self.content_target(id)?;
             query.mc_version = Some(t.inst.mc_version);
-            query.loaders = t.loaders;
+            query.loaders = kind_loaders(query.kind, t.loaders);
         }
         modrinth::search(
             &self.env.http,
@@ -235,6 +281,7 @@ impl Launcher {
     async fn plan_install<'r>(
         &self,
         t: &Target,
+        kind: ContentKind,
         rows: &'r [Row],
         project_id: &str,
     ) -> Result<Planned<'r>, CoreError> {
@@ -249,12 +296,16 @@ impl Launcher {
                 &source.api,
                 project_id,
                 &source.mc_version,
-                &source.loaders,
+                &kind_loaders(kind, source.loaders.clone()),
             )
             .await?;
             let root = modrinth::pick_version(&versions)
                 .cloned()
                 .ok_or_else(|| no_version(project_id))?;
+            if kind != ContentKind::Mod {
+                // リソースパックとシェーダーは依存をたどらず、それ自体だけを入れる
+                return single_file_plan(kind, root);
+            }
             resolve(&source, root, &installed_of(rows), None).await
         }
         .await;
@@ -268,11 +319,12 @@ impl Launcher {
     pub async fn preview_content_install(
         &self,
         instance_id: &str,
+        kind: ContentKind,
         project_id: &str,
     ) -> Result<InstallPreview, CoreError> {
-        let t = self.install_target(instance_id)?;
-        let rows = self.mod_rows(instance_id).await?;
-        let plan = match self.plan_install(&t, &rows, project_id).await? {
+        let t = self.kind_target(instance_id, kind)?;
+        let rows = self.kind_rows(instance_id, kind).await?;
+        let plan = match self.plan_install(&t, kind, &rows, project_id).await? {
             Planned::Download(plan) => plan,
             Planned::Enable(row) => {
                 return Ok(InstallPreview {
@@ -298,10 +350,11 @@ impl Launcher {
     pub fn install_content(
         &self,
         instance_id: &str,
+        kind: ContentKind,
         project_id: &str,
         accept_incompatible: bool,
     ) -> Result<String, CoreError> {
-        self.install_target(instance_id)?;
+        self.kind_target(instance_id, kind)?;
         self.ensure_idle(instance_id)?;
         self.ensure_no_pending_operation(instance_id)?;
         let this = self.clone();
@@ -311,7 +364,7 @@ impl Launcher {
             .spawn(CONTENT_KIND, Some(id.clone()), move |handle| async move {
                 let _guard = this.locks.lock(&id).await;
                 let result = this
-                    .run_install(&id, &project_id, accept_incompatible, &handle)
+                    .run_install(&id, kind, &project_id, accept_incompatible, &handle)
                     .await;
                 this.updates.invalidate(&id);
                 result
@@ -331,15 +384,16 @@ impl Launcher {
     async fn run_install(
         &self,
         id: &str,
+        kind: ContentKind,
         project_id: &str,
         accept_incompatible: bool,
         handle: &TaskHandle,
     ) -> Result<(), CoreError> {
         self.ensure_content_task_may_run(id)?;
         handle.set_phase(TaskPhase::Resolving);
-        let t = self.install_target(id)?;
-        let rows = self.mod_rows(id).await?;
-        let planned = self.plan_install(&t, &rows, project_id).await?;
+        let t = self.kind_target(id, kind)?;
+        let rows = self.kind_rows(id, kind).await?;
+        let planned = self.plan_install(&t, kind, &rows, project_id).await?;
         let enables_installed = matches!(planned, Planned::Enable(_));
         let plan = planned.into_plan();
         let names = incompatible_names(&plan, &rows);

@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 
+use super::ContentKind;
 use super::modrinth::{self, DependencyKind, FileInfo, FullVersion, primary_file};
 use crate::error::CoreError;
 pub use crate::error::DependencyCause;
@@ -79,6 +80,8 @@ pub struct PlannedFile {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InstallPlan {
+    /// 入れる中身の種類。置き場所のフォルダーと行の種類を決める。依存の解決で立てる計画は MOD。
+    pub kind: ContentKind,
     /// 入れるファイル。依存が先に並ぶ。
     pub files: Vec<PlannedFile>,
     /// 有効にするだけの導入済みの `rel_path`。

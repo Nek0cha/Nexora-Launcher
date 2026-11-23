@@ -20,6 +20,7 @@ import IconPlus from "~icons/ph/plus";
 import IconOffline from "~icons/ph/wifi-slash";
 import { openModrinthProject } from "../../api/commands";
 import { toErrorPayload } from "../../api/ipc";
+import type { ContentKind } from "../../bindings/ContentKind";
 import type { InstallPreview } from "../../bindings/InstallPreview";
 import type { Instance } from "../../bindings/Instance";
 import type { LoaderKind } from "../../bindings/LoaderKind";
@@ -200,7 +201,7 @@ const SKELETON_HITS = 8;
  * 検索画面と同じ並びと寸法のスケルトン。左の列（絞り込み）と、結果の行（アイコン、名前、説明、下の行）を
  * 完成形の数と大きさに近づけて置く。
  */
-function BrowserSkeleton({ fixed }: { fixed: boolean }) {
+function BrowserSkeleton({ fixed, loaders }: { fixed: boolean; loaders: boolean }) {
   const { t } = useTranslation();
   return (
     <div data-testid="modrinth-skeleton" className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
@@ -219,17 +220,19 @@ function BrowserSkeleton({ fixed }: { fixed: boolean }) {
               <Skeleton className="h-[18px] w-24" />
               <Skeleton className="h-9 w-full" />
             </div>
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-[18px] w-16" />
-              <div className="flex flex-wrap gap-1.5">
-                {loaderOptions.map((id) => (
-                  <ChipSkeleton key={id} label={t(`create.tab.${id}`)} />
-                ))}
+            {loaders && (
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-[18px] w-16" />
+                <div className="flex flex-wrap gap-1.5">
+                  {loaderOptions.map((id) => (
+                    <ChipSkeleton key={id} label={t(`create.tab.${id}`)} />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
-        <FilterSkeleton status={false} />
+        <FilterSkeleton status={false} sides={loaders} />
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
         <div className="flex shrink-0 items-center gap-3 pb-1">
@@ -262,7 +265,7 @@ function BrowserSkeleton({ fixed }: { fixed: boolean }) {
 type Confirming = { hit: SearchHit; target: Instance; preview: InstallPreview };
 
 /** 追加の流れ。プレビュー → 非互換があれば確認 → 導入 → 結果をトーストで知らせる。 */
-function useAddFlow() {
+function useAddFlow(kind: ContentKind) {
   const { t } = useTranslation();
   const toast = useToast();
   const client = useQueryClient();
@@ -288,6 +291,7 @@ function useAddFlow() {
       try {
         const outcome = await install.mutateAsync({
           instanceId: target.id,
+          kind,
           projectId: hit.projectId,
           acceptIncompatible,
         });
@@ -310,7 +314,7 @@ function useAddFlow() {
         mark(hit.projectId, false);
       }
     },
-    [client, install.mutateAsync, mark, t, toast],
+    [client, install.mutateAsync, kind, mark, t, toast],
   );
 
   const add = useCallback(
@@ -319,7 +323,7 @@ function useAddFlow() {
       mark(hit.projectId, true);
       let result: InstallPreview;
       try {
-        result = await preview.mutateAsync({ instanceId: target.id, projectId: hit.projectId });
+        result = await preview.mutateAsync({ instanceId: target.id, kind, projectId: hit.projectId });
       } catch (error) {
         toast.showError(error);
         mark(hit.projectId, false);
@@ -334,7 +338,7 @@ function useAddFlow() {
       }
       await runInstall(hit, target, false, result.enablesInstalled);
     },
-    [mark, pending, preview.mutateAsync, runInstall, toast],
+    [kind, mark, pending, preview.mutateAsync, runInstall, toast],
   );
 
   const confirm = () => {
@@ -375,22 +379,25 @@ function useAddFlow() {
 }
 
 /**
- * Modrinth の MOD の検索（spec 6.1）。`instance` があれば、その Minecraft のバージョンとローダーに固定し、
- * それらの絞り込みは出さずに「固定」と示す。なければ自由に選べ、結果ごとに追加先のインスタンスを選ぶ。
+ * Modrinth の MOD、リソースパック、シェーダーの検索（spec 6.1）。`instance` があれば、その Minecraft の
+ * バージョン（MOD ではローダーも）に固定し、それらの絞り込みは出さずに「固定」と示す。なければ自由に選べ、
+ * 結果ごとに追加先のインスタンスを選ぶ。ローダーで絞るのは MOD だけ。
  */
-export function ModrinthBrowser(props: { instance?: Instance }) {
+export function ModrinthBrowser(props: { instance?: Instance; kind?: ContentKind }) {
   const { t, i18n } = useTranslation();
   const { instance } = props;
+  const kind = props.kind ?? "mod";
+  const isMod = kind === "mod";
   const [filter, setFilter] = useState<FilterState>(emptyFilter);
   const [mcVersion, setMcVersion] = useState<string | null>(null);
   const [loaders, setLoaders] = useState<ModLoader[]>([]);
   const [sort, setSort] = useState<SearchSort>("relevance");
-  const categories = useCategories("mod");
+  const categories = useCategories(kind);
   const instances = useInstances();
   const settings = useSettings();
-  const { add, pending, dialog } = useAddFlow();
+  const { add, pending, dialog } = useAddFlow(kind);
   // インスタンスの画面では、有効で導入済みの MOD は「導入済み」にして追加を押せなくする
-  const content = useContentList(instance?.id ?? "", "mod", instance !== undefined);
+  const content = useContentList(instance?.id ?? "", kind, instance !== undefined);
   const installed = useMemo(
     () =>
       new Set(
@@ -403,15 +410,17 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
   const text = useDebouncedValue(filter.query.trim(), SEARCH_DEBOUNCE_MS);
   const query = useMemo<SearchQuery>(
     () => ({
+      kind,
       query: text,
       mcVersion: instance ? instance.mcVersion : mcVersion,
-      loaders: instance ? loaderSlugs(instance.loader) : loaders,
+      // インスタンスの画面では、種類に合わせた絞り込みを backend が決める
+      loaders: !isMod ? [] : instance ? loaderSlugs(instance.loader) : loaders,
       categories: filter.categories,
       clientSides: filter.client,
       serverSides: filter.server,
       sort,
     }),
-    [text, instance, mcVersion, loaders, filter.categories, filter.client, filter.server, sort],
+    [kind, isMod, text, instance, mcVersion, loaders, filter.categories, filter.client, filter.server, sort],
   );
   const search = useModrinthSearch(instance?.id ?? null, query);
   const versions = useVersions(!instance);
@@ -452,7 +461,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
 
   return (
     <>
-      <ReadyGate queries={[{ isPending: gatePending }]} skeleton={<BrowserSkeleton fixed={instance !== undefined} />}>
+      <ReadyGate queries={[{ isPending: gatePending }]} skeleton={<BrowserSkeleton fixed={instance !== undefined} loaders={isMod} />}>
         <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-6">
           {/* 絞り込みは左の列（コンテンツの一覧と同じ並び）。長いときはこの列の中でスクロールする */}
           <div data-testid="modrinth-facets" className="scroll-thin flex min-h-0 flex-col gap-4 overflow-auto pr-1 [scrollbar-gutter:stable]">
@@ -462,19 +471,23 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                 <p className="flex items-center gap-1.5 text-sm text-text">
                   <IconLock aria-hidden className="size-3.5 shrink-0 text-text-muted" />
                   <span>
-                    {t("modrinth.fixed", { version: instance.mcVersion, loader: t(`create.tab.${instance.loader}`) })}
+                    {isMod
+                      ? t("modrinth.fixed", { version: instance.mcVersion, loader: t(`create.tab.${instance.loader}`) })
+                      : t("modrinth.fixedVersion", { version: instance.mcVersion })}
                   </span>
                 </p>
               </div>
             ) : (
               <>
                 <VersionSelect value={mcVersion} onChange={setMcVersion} />
-                <ChipGroup
-                  label={t("modrinth.loader")}
-                  options={loaderOptions.map((id) => ({ id, label: t(`create.tab.${id}`) }))}
-                  selected={loaders}
-                  onChange={setLoaders}
-                />
+                {isMod && (
+                  <ChipGroup
+                    label={t("modrinth.loader")}
+                    options={loaderOptions.map((id) => ({ id, label: t(`create.tab.${id}`) }))}
+                    selected={loaders}
+                    onChange={setLoaders}
+                  />
+                )}
               </>
             )}
             <ContentFilter
@@ -484,6 +497,8 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
               categoriesError={categories.error ? toErrorPayload(categories.error) : null}
               showStatus={false}
               showSearch={false}
+              // リソースパックとシェーダーはクライアントだけで使うので、動く側の絞り込みは出さない
+              showSides={isMod}
             />
           </div>
           <div className="flex min-h-0 flex-col gap-2">
@@ -536,7 +551,8 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                         <HitCard
                           hit={hit}
                           onOpen={open}
-                          showLoaders={!instance}
+                          showLoaders={!instance && isMod}
+                          kind={kind}
                           actions={
                             instance && installed.has(hit.projectId) ? (
                               <Button isDisabled className={actionButton}>
@@ -555,6 +571,7 @@ export function ModrinthBrowser(props: { instance?: Instance }) {
                             ) : (
                               <AddToInstanceMenu
                                 hit={hit}
+                                kind={kind}
                                 instances={instanceList}
                                 lastAdded={lastAdded}
                                 pending={pending.has(hit.projectId)}

@@ -63,6 +63,27 @@ describe("Settings route", () => {
     await waitFor(() => expect(setSetting).toHaveBeenCalledWith({ key: "defaultMemoryMb", value: 8192 }));
   });
 
+  it("steps the default memory by 256 MB", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      theme: "dark",
+      language: "en",
+      maxConcurrentDownloads: 8,
+      defaultMemoryMb: 2048,
+      lastAddedInstance: null,
+    });
+    vi.mocked(setSetting).mockResolvedValue({
+      theme: "dark",
+      language: "en",
+      maxConcurrentDownloads: 8,
+      defaultMemoryMb: 2304,
+      lastAddedInstance: null,
+    });
+    mount();
+    await screen.findByRole("textbox", { name: "Default memory (MB)" });
+    fireEvent.click(screen.getAllByRole("button", { name: /Increase/ })[0]!);
+    await waitFor(() => expect(setSetting).toHaveBeenCalledWith({ key: "defaultMemoryMb", value: 2304 }));
+  });
+
   it("shows an error instead of a blank screen when loading fails", async () => {
     vi.mocked(getSettings).mockRejectedValue(new IpcError({ code: "db.failed", params: {}, detail: "secret path" }));
     mount();

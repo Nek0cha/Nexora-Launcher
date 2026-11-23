@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::Side;
+use super::{ContentKind, Side};
 use crate::error::CoreError;
 use crate::meta::{fetch_cached, parse_json};
 use crate::net::Http;
@@ -179,6 +179,9 @@ pub enum SearchSort {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchQuery {
+    /// 探す中身の種類。無ければ MOD。
+    #[serde(default)]
+    pub kind: ContentKind,
     pub query: String,
     #[serde(default)]
     pub mc_version: Option<String>,
@@ -390,7 +393,7 @@ fn build_url(base: String, params: &[(&str, String)]) -> Result<reqwest::Url, Co
 
 /// facets は、外側の配列どうしが AND、内側の配列の中が OR になる。
 fn facets(q: &SearchQuery) -> Vec<Vec<String>> {
-    let mut groups = vec![vec!["project_type:mod".to_string()]];
+    let mut groups = vec![vec![format!("project_type:{}", q.kind.as_str())]];
     if let Some(v) = &q.mc_version {
         groups.push(vec![format!("versions:{v}")]);
     }
@@ -424,7 +427,7 @@ fn facets(q: &SearchQuery) -> Vec<Vec<String>> {
     groups
 }
 
-/// MOD を検索する。
+/// MOD、リソースパック、シェーダーを検索する。
 pub async fn search(
     http: &Http,
     api: &str,

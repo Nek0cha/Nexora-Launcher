@@ -3,8 +3,9 @@ import { Button, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import IconOpen from "~icons/ph/arrow-square-out";
 import IconDownload from "~icons/ph/download-simple";
-import IconMod from "~icons/ph/puzzle-piece";
+import type { ContentKind } from "../../bindings/ContentKind";
 import type { LoaderKind } from "../../bindings/LoaderKind";
+import { defaultIcons } from "../content/ContentRow";
 import type { SearchHit } from "../../bindings/SearchHit";
 import { categoryLabel, isKnownCategory } from "../content/ContentFilter";
 import { tooltipClass } from "../tooltip";
@@ -35,7 +36,8 @@ const loaderNames: LoaderKind[] = ["fabric", "quilt", "forge", "neoforge"];
  * 枠が大きさを決める正方形で、画像は枠に重ねて広げる。img のままだと既定の `max-width: 100%` で
  * 列の幅に縮み、正方形でなくなる（コンテンツの一覧の行のアイコンと同じ作り）。
  */
-function HitIcon({ url }: { url: string | null }) {
+function HitIcon({ url, kind }: { url: string | null; kind: ContentKind }) {
+  const Icon = defaultIcons[kind];
   const [failed, setFailed] = useState(false);
   return (
     <span
@@ -53,7 +55,7 @@ function HitIcon({ url }: { url: string | null }) {
           className="absolute inset-0 block size-full max-w-none object-cover"
         />
       ) : (
-        <IconMod aria-hidden className="size-5" />
+        <Icon aria-hidden className="size-5" />
       )}
     </span>
   );
@@ -69,6 +71,8 @@ export function HitCard(props: {
   onOpen: (slug: string) => void;
   /** 対応するローダーを出すか（ローダーを固定していない全体の画面だけで出す） */
   showLoaders: boolean;
+  /** 結果の種類。アイコンが無いときの絵を決める。既定は MOD */
+  kind?: ContentKind;
 }) {
   const { t, i18n } = useTranslation();
   const { hit } = props;
@@ -81,7 +85,7 @@ export function HitCard(props: {
     // 左の列の幅はアイコンに合わせる（auto）。rem の固定の幅は、ルートの文字の大きさによってアイコンより狭くなる。
     // 一覧（@container）が狭いときは、下の行（ダウンロード数と操作）をアイコンの下まで広げて、ボタンを 1 行に収める
     <article aria-labelledby={titleId} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 py-4">
-      <HitIcon url={hit.iconUrl} />
+      <HitIcon url={hit.iconUrl} kind={props.kind ?? "mod"} />
       <div className="col-start-2 flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 items-start gap-2">
           <h3 id={titleId} className="min-w-0 flex-1 truncate pt-0.5 font-medium text-text-strong">

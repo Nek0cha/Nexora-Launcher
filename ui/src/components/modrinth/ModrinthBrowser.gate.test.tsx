@@ -80,7 +80,7 @@ describe("ModrinthBrowser loading", () => {
     await screen.findByRole("article", { name: "Sodium" });
     const next = deferred<SearchPage>();
     vi.mocked(searchModrinth).mockReturnValue(next.promise);
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search mods" }), { target: { value: "iris" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search Modrinth" }), { target: { value: "iris" } });
     await wait(SEARCH_DEBOUNCE_MS + 100);
     // 一覧は空にせず、スケルトンにも戻さない
     expect(screen.getByRole("article", { name: "Sodium" })).toBeTruthy();

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::*;
-use crate::import::copy::copy_tree;
+use crate::import::copy::{copy_tree, tree_size};
 use crate::import::curseforge::CurseForgeApp;
 use crate::import::duplicates::find_duplicates;
 use crate::import::modrinth_app::ModrinthApp;
@@ -286,18 +286,33 @@ impl Launcher {
             .filter(|k| request.kinds.contains(k))
             .flat_map(|k| k.parts().iter().copied())
             .collect();
-        for part in parts {
-            let from = {
-                let (source, source_id) = (source.clone(), request.id.clone());
-                blocking(move || source.source_path(&source_id, part)).await?
-            };
-            let Some(from) = from else { continue };
+        // 進み具合はすべての部分を通して 1 本にする。先に元の場所と大きさを調べる
+        let planned = {
+            let (source, source_id, token) =
+                (source.clone(), request.id.clone(), handle.token().clone());
+            blocking(move || {
+                let mut out = Vec::new();
+                for part in parts {
+                    if let Some(from) = source.source_path(&source_id, part)? {
+                        let size = tree_size(&from, &token)?;
+                        out.push((part, from, size));
+                    }
+                }
+                Ok(out)
+            })
+            .await?
+        };
+        let grand_total: u64 = planned.iter().map(|(_, _, size)| size).sum();
+        let mut offset = 0u64;
+        for (part, from, size) in planned {
             let (root, token, progress) =
                 (game_dir.clone(), handle.token().clone(), handle.clone());
             let dest = game_dir.join(part);
             blocking(move || {
-                let report = copy_tree(&from, &root, &dest, &token, &mut |done, total| {
-                    progress.set_progress(kib(done), kib(total))
+                let report = copy_tree(&from, &root, &dest, &token, &mut |done, _| {
+                    // 調べたあとに増えたファイルがあっても、全体を超えて見せない
+                    let done = (offset + done).min(grand_total);
+                    progress.set_progress(kib(done), kib(grand_total))
                 })?;
                 if report.skipped_links > 0 {
                     tracing::warn!(
@@ -308,6 +323,7 @@ impl Launcher {
                 Ok(())
             })
             .await?;
+            offset += size;
         }
 
         handle.set_phase(TaskPhase::Finishing);
