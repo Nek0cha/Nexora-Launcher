@@ -123,6 +123,8 @@ export function ContentFilter(props: {
   showStatus: boolean;
   showSearch?: boolean;
   statuses?: StatusKey[];
+  /** 動く側（クライアント、サーバー）の絞り込みを出すか。既定は出す */
+  showSides?: boolean;
 }) {
   const { t } = useTranslation();
   const { state, onChange } = props;
@@ -133,18 +135,22 @@ export function ContentFilter(props: {
       {(props.showSearch ?? true) && (
         <ContentSearchField value={state.query} onChange={(query) => onChange({ ...state, query })} />
       )}
-      <ChipGroup
-        label={t("content.filter.client")}
-        options={sideOptions}
-        selected={state.client}
-        onChange={(client) => onChange({ ...state, client })}
-      />
-      <ChipGroup
-        label={t("content.filter.server")}
-        options={sideOptions}
-        selected={state.server}
-        onChange={(server) => onChange({ ...state, server })}
-      />
+      {(props.showSides ?? true) && (
+        <>
+          <ChipGroup
+            label={t("content.filter.client")}
+            options={sideOptions}
+            selected={state.client}
+            onChange={(client) => onChange({ ...state, client })}
+          />
+          <ChipGroup
+            label={t("content.filter.server")}
+            options={sideOptions}
+            selected={state.server}
+            onChange={(server) => onChange({ ...state, server })}
+          />
+        </>
+      )}
       {props.categoriesError && (
         <div data-testid="categories-failed" className="flex flex-col gap-2">
           <span className="text-xs text-text-muted">{t("content.filter.categories")}</span>
@@ -208,13 +214,13 @@ const skeletonCategories = [
  * 絞り込みの列と同じ並びと寸法のスケルトン。見出しと札の数は、完成形（クライアント、サーバー、カテゴリ、状態）に合わせる。
  * 札は本物と同じ幅の場所取りで、折り返しも同じになる。
  */
-export function FilterSkeleton({ status }: { status: boolean }) {
+export function FilterSkeleton({ status, sides: withSides = true }: { status: boolean; sides?: boolean }) {
   const { t } = useTranslation();
   const sideLabels = sides.map((id) => t(`content.filter.side.${id}`));
   return (
     <div className="flex flex-col gap-4">
-      <ChipGroupSkeleton labels={sideLabels} />
-      <ChipGroupSkeleton labels={sideLabels} />
+      {withSides && <ChipGroupSkeleton labels={sideLabels} />}
+      {withSides && <ChipGroupSkeleton labels={sideLabels} />}
       <ChipGroupSkeleton labels={skeletonCategories.map(categoryLabel)} />
       {status && <ChipGroupSkeleton labels={defaultStatuses.map((id) => t(`content.filter.statusValue.${id}`))} />}
     </div>

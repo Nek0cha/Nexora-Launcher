@@ -37,7 +37,8 @@ export const ROW_SIZE = 56;
 
 const ring = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-const defaultIcons: Record<ContentKind, typeof IconMod> = {
+/** アイコンが無いときに出す、種類ごとの絵。 */
+export const defaultIcons: Record<ContentKind, typeof IconMod> = {
   mod: IconMod,
   resourcepack: IconResourcePack,
   shader: IconShader,

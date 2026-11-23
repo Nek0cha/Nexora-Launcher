@@ -232,7 +232,7 @@ function BrowserSkeleton({ fixed, loaders }: { fixed: boolean; loaders: boolean 
             )}
           </>
         )}
-        <FilterSkeleton status={false} />
+        <FilterSkeleton status={false} sides={loaders} />
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
         <div className="flex shrink-0 items-center gap-3 pb-1">
@@ -497,6 +497,8 @@ export function ModrinthBrowser(props: { instance?: Instance; kind?: ContentKind
               categoriesError={categories.error ? toErrorPayload(categories.error) : null}
               showStatus={false}
               showSearch={false}
+              // リソースパックとシェーダーはクライアントだけで使うので、動く側の絞り込みは出さない
+              showSides={isMod}
             />
           </div>
           <div className="flex min-h-0 flex-col gap-2">
@@ -550,6 +552,7 @@ export function ModrinthBrowser(props: { instance?: Instance; kind?: ContentKind
                           hit={hit}
                           onOpen={open}
                           showLoaders={!instance && isMod}
+                          kind={kind}
                           actions={
                             instance && installed.has(hit.projectId) ? (
                               <Button isDisabled className={actionButton}>

@@ -71,5 +71,6 @@ describe("Browse", () => {
     expect(searchModrinth).toHaveBeenLastCalledWith(null, expect.objectContaining({ kind: "shader", loaders: [] }), 0);
     expect(listContentCategories).toHaveBeenLastCalledWith("shader");
     expect(screen.queryByRole("toolbar", { name: "Loader" })).toBeNull();
+    expect(screen.queryByRole("toolbar", { name: "Client side" })).toBeNull();
   });
 });
