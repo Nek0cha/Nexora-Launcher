@@ -141,6 +141,21 @@ describe("ContentList", () => {
     fireEvent.error(document.querySelector("img[src^='data:']")!);
     await waitFor(() => expect(document.querySelector("img")).toBeNull());
   });
+  it("tries the icon again when the row's icon URL changes after a failure", () => {
+    const client = new QueryClient();
+    const props = { onToggle: vi.fn(), onRemove: vi.fn(), busy: false };
+    const view = (items: ContentItem[]) => (
+      <QueryClientProvider client={client}>
+        <ContentList items={items} {...props} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view([item({ iconUrl: "https://cdn.example/old.png" })]));
+    fireEvent.error(document.querySelector("img[src='https://cdn.example/old.png']")!);
+    expect(document.querySelector("img")).toBeNull();
+    rerender(view([item({ iconUrl: "https://cdn.example/new.png" })]));
+    expect(document.querySelector("img[src='https://cdn.example/new.png']")).not.toBeNull();
+  });
+
   it("keeps rendering when a row's file name changes after a toggle", () => {
     const client = new QueryClient();
     const props = { onToggle: vi.fn(), onRemove: vi.fn(), busy: false };

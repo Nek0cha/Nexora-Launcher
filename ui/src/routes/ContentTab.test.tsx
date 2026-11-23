@@ -412,6 +412,20 @@ describe("ContentTab", () => {
     expect(alert.textContent).toContain("Only .jar files can be added here.");
   });
 
+  it("still shows the add result after the tab was closed while adding", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof addContentFiles>>>();
+    vi.mocked(addContentFiles).mockReturnValueOnce(pending.promise);
+    const view = mount();
+    await ready();
+    await act(async () => handlers!.drop(["C:\Downloads\notes.txt"]));
+    view.remount();
+    await act(async () =>
+      pending.resolve({ added: [], conflicts: [], rejected: [{ name: "notes.txt", reason: "wrongExtension" }] }),
+    );
+    const alert = await within(toasts()).findByRole("alert");
+    expect(alert.textContent).toContain("notes.txt");
+  });
+
   it("the drop target appears on enter and disappears on leave", async () => {
     mount();
     await ready();

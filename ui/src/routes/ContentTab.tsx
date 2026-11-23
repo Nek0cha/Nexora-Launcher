@@ -202,7 +202,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
     toast,
     t,
     setEnabled: setEnabled.mutateAsync,
-    add: add.mutate,
+    add: add.mutateAsync,
     identify: identify.mutate,
   });
   useLayoutEffect(() => {
@@ -215,7 +215,7 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
       toast,
       t,
       setEnabled: setEnabled.mutateAsync,
-      add: add.mutate,
+      add: add.mutateAsync,
       identify: identify.mutate,
     };
   });
@@ -257,10 +257,11 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
   const addFiles = useCallback((target: ContentKind, paths: string[], overwrite: boolean) => {
     const { t, toast } = latest.current;
     adding.current = true;
-    latest.current.add(
-      { kind: target, paths, overwrite },
-      {
-        onSuccess: (report) => {
+    // mutate の呼び出しごとの callback は、画面を離れると呼ばれない（トーストが消える）。Promise で受ける
+    latest.current
+      .add({ kind: target, paths, overwrite })
+      .then(
+        (report) => {
           // 入れたファイルにも、開いている間に名前、アイコン、依存を付ける
           if (report.added.length > 0) latest.current.identify();
           for (const r of report.rejected)
@@ -272,12 +273,11 @@ export function ContentTab({ instance, busy: locked }: { instance: Instance; bus
             setDialogOpen(true);
           }
         },
-        onError: toast.showError,
-        onSettled: () => {
-          adding.current = false;
-        },
-      },
-    );
+        (error: unknown) => toast.showError(error),
+      )
+      .finally(() => {
+        adding.current = false;
+      });
   }, []);
 
   // 行の操作。行を描き直さずに済むよう、関数は作り直さない
