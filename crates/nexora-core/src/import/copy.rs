@@ -97,6 +97,18 @@ fn copy_one(
     })
 }
 
+/// `copy_tree` がコピーするバイト数（リンクの先は数えない）。`src` が無ければ 0。
+pub fn tree_size(src: &Path, token: &CancellationToken) -> Result<u64, CoreError> {
+    if is_link(src) {
+        return Ok(0);
+    }
+    match fs::metadata(src) {
+        Err(_) => Ok(0),
+        Ok(m) if m.is_file() => Ok(m.len()),
+        Ok(_) => Ok(plan(src, token)?.files.iter().map(|(_, len)| len).sum()),
+    }
+}
+
 /// `src` の中身を `dest` へコピーする。`dest` は `dest_root` の下でなければならない。
 /// リンクはたどらず数えるだけ。`progress(done, total)` はバイト数で呼ぶ。
 pub fn copy_tree(
@@ -172,6 +184,18 @@ mod tests {
         token: &CancellationToken,
     ) -> Result<CopyReport, CoreError> {
         copy_tree(src, root, dest, token, &mut |_, _| {})
+    }
+
+    #[test]
+    fn tree_size_counts_files_in_folders_and_single_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        write(&src.join("a.txt"), b"abc");
+        write(&src.join("sub").join("b.txt"), b"defgh");
+        let token = CancellationToken::new();
+        assert_eq!(tree_size(&src, &token).unwrap(), 8);
+        assert_eq!(tree_size(&src.join("a.txt"), &token).unwrap(), 3);
+        assert_eq!(tree_size(&tmp.path().join("none"), &token).unwrap(), 0);
     }
 
     #[test]

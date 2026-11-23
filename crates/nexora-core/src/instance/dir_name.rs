@@ -6,9 +6,9 @@ pub const MAX_CHARS: usize = 64;
 /// Windows の予約名。COM0 と LPT0、上付き数字（¹²³）の COM と LPT、コンソールの CONIN$ と CONOUT$ も含む。
 /// 比較は ASCII の大文字と小文字を区別しない（上付き数字はそのまま一致させる）。
 const RESERVED: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM0", "LPT0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "COM¹", "COM²",
-    "COM³", "LPT¹", "LPT²", "LPT³", "CONIN$", "CONOUT$",
+    "CON", "PRN", "AUX", "NUL", "COM0", "LPT0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
+    "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³", "CONIN$", "CONOUT$",
 ];
 
 /// 拡張子を除いた名前（最初の `.` より前）が Windows の予約名か。

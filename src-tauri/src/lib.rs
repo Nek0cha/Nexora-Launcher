@@ -115,6 +115,11 @@ pub fn run() {
                     if let Err(err) = services.launcher.discard_interrupted_imports() {
                         tracing::warn!(code = err.code(), "failed to remove interrupted imports");
                     }
+                    // 落ちたときに残った書きかけのダウンロードを消す
+                    let swept = services.launcher.sweep_stale_parts();
+                    if swept > 0 {
+                        tracing::info!(count = swept, "removed stale partial downloads");
+                    }
                     // コマンドを受け付ける前に、実行中のゲームを一度だけ引き継ぐ。
                     // tokio の実行環境の中で動かすため block_on で待つ。
                     let launcher = services.launcher.clone();
