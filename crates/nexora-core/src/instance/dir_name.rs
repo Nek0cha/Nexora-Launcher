@@ -3,13 +3,18 @@
 /// フォルダ名の最大の文字数。パスを短く保つため（Java 8 のコマンドラインの上限と MAX_PATH）。
 pub const MAX_CHARS: usize = 64;
 
-/// Windows の予約名。上付き数字（¹²³）の COM と LPT、コンソールの CONIN$ と CONOUT$ も含む。
+/// Windows の予約名。COM0 と LPT0、上付き数字（¹²³）の COM と LPT、コンソールの CONIN$ と CONOUT$ も含む。
 /// 比較は ASCII の大文字と小文字を区別しない（上付き数字はそのまま一致させる）。
 const RESERVED: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "CON", "PRN", "AUX", "NUL", "COM0", "LPT0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "COM¹", "COM²",
     "COM³", "LPT¹", "LPT²", "LPT³", "CONIN$", "CONOUT$",
 ];
+
+/// 拡張子を除いた名前（最初の `.` より前）が Windows の予約名か。
+pub(crate) fn is_reserved_stem(stem: &str) -> bool {
+    RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem))
+}
 
 fn is_forbidden(c: char) -> bool {
     matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control()
@@ -32,7 +37,7 @@ pub fn sanitize(name: &str) -> String {
         Some(i) => trimmed.split_at(i),
         None => (trimmed.as_str(), ""),
     };
-    if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
+    if is_reserved_stem(stem) {
         let escaped = format!("{stem}_{rest}");
         return escaped.chars().take(MAX_CHARS).collect();
     }
@@ -95,6 +100,8 @@ mod tests {
                 format!("{}_.txt", name.to_lowercase())
             );
         }
+        assert_eq!(sanitize("COM0"), "COM0_");
+        assert_eq!(sanitize("lpt0.txt"), "lpt0_.txt");
         // 予約名ではないもの
         assert_eq!(sanitize("CONIN"), "CONIN");
         assert_eq!(sanitize("COM⁴"), "COM⁴");

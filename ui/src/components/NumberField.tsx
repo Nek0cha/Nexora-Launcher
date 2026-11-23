@@ -20,13 +20,15 @@ export function NumberField(props: {
   onChange: (value: number) => void;
   /** 入力欄の幅のクラス。既定は 2 桁向けの w-10 である */
   inputWidth?: string;
+  /** ＋と－で動く幅。既定は 1 である */
+  step?: number;
 }) {
   return (
     <AriaNumberField
       value={props.value}
       minValue={props.min}
       maxValue={props.max}
-      step={1}
+      step={props.step ?? 1}
       formatOptions={{ maximumFractionDigits: 0 }}
       // スクロールの途中で値が変わる事故を防ぐ
       isWheelDisabled

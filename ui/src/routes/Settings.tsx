@@ -6,6 +6,7 @@ import { AboutRows } from "../components/AboutSection";
 import { FailureNotice } from "../components/FailureNotice";
 import { toErrorPayload } from "../api/ipc";
 import { MEMORY_MAX_MB, MEMORY_MIN_MB } from "../features/instances/settingsForm";
+import { SLIDER_STEP_MB } from "../features/instances/memorySlider";
 import { useSettings, useSettingsWriteError, useUpdateSetting } from "../features/settings/useSettings";
 import { detectLanguage, type Lang } from "../i18n";
 import type { Theme } from "../bindings/Theme";
@@ -78,6 +79,8 @@ export default function Settings() {
           value={data.defaultMemoryMb}
           min={MEMORY_MIN_MB}
           max={MEMORY_MAX_MB}
+          // インスタンスの設定のスライダーと同じ刻みにする
+          step={SLIDER_STEP_MB}
           inputWidth="w-16"
           onChange={(value) => update.mutate({ key: "defaultMemoryMb", value })}
         />
